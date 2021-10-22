@@ -14,9 +14,13 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_CXX_FLAGS  "${CMAKE_CXX_FLAGS} -Wall -Wextra")
 
+# subdirectories
+add_subdirectory(deps/fcl EXCLUDE_FROM_ALL)
+
 include_directories(
-  libMultiRobotPlanning/include
   ${EIGEN3_INCLUDE_DIR}
+  ${CMAKE_BINARY_DIR}/deps/fcl/include
+  ${CMAKE_SOURCE_DIR}/deps/fcl/include
 )
 
 # Applications
@@ -39,4 +43,15 @@ target_link_libraries(ompl_aorrt
   ${Boost_LIBRARIES}
   ${OMPL_LIBRARIES}
   # yaml-cpp
+)
+
+## test_fcl
+add_executable(test_fcl
+  src/main_fcl.cpp
+)
+target_link_libraries(test_fcl
+  ${Boost_LIBRARIES}
+  # ${OMPL_LIBRARIES}
+  fcl
+  yaml-cpp
 )
