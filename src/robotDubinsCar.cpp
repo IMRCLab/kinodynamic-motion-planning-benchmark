@@ -61,9 +61,9 @@ fcl::Transform3f RobotDubinsCar::getTransform(
   auto stateTyped = state->as<ob::SE2StateSpace::StateType>();
 
   fcl::Transform3f result;
+  result = Eigen::Translation<float, 3>(fcl::Vector3f(stateTyped->getX(), stateTyped->getY(), 0));
   float yaw = stateTyped->getYaw();
   result.rotate(Eigen::AngleAxisf(yaw, Eigen::Vector3f::UnitZ()));
-  result.translation() = fcl::Vector3f(stateTyped->getX(), stateTyped->getY(), 0);
   return result;
 }
 

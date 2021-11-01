@@ -67,8 +67,8 @@ int main(int argc, char* argv[]) {
       throw std::runtime_error("Unknown obstacle type!");
     }
   }
-  // std::shared_ptr<fcl::BroadPhaseCollisionManagerf> bpcm_env(new fcl::DynamicAABBTreeCollisionManagerf());
-  std::shared_ptr<fcl::BroadPhaseCollisionManagerf> bpcm_env(new fcl::NaiveCollisionManagerf());
+  std::shared_ptr<fcl::BroadPhaseCollisionManagerf> bpcm_env(new fcl::DynamicAABBTreeCollisionManagerf());
+  // std::shared_ptr<fcl::BroadPhaseCollisionManagerf> bpcm_env(new fcl::NaiveCollisionManagerf());
   bpcm_env->registerObjects(obstacles);
   bpcm_env->setup();
 

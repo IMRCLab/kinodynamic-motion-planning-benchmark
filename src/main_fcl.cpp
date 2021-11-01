@@ -59,22 +59,21 @@ int main(int argc, char* argv[]) {
   bpcm_env->setup();
 
   // load robot
-  fcl::BroadPhaseCollisionManagerf *bpcm_robot = new fcl::DynamicAABBTreeCollisionManagerf();
+  // fcl::BroadPhaseCollisionManagerf *bpcm_robot = new fcl::DynamicAABBTreeCollisionManagerf();
+  std::shared_ptr<fcl::CollisionObjectf> co_robot;
 
   const auto& robot = env["robots"][0];
   if (robot["type"].as<std::string>() == "dubins_0") {
     std::shared_ptr<fcl::CollisionGeometryf> geom;
     geom.reset(new fcl::Boxf(0.5, 0.25, 1.0));
-    auto co = new fcl::CollisionObjectf(geom);
-    co->setTranslation(fcl::Vector3f(3, 3.5, 0));
-    bpcm_robot->registerObject(co);
+    co_robot.reset(new fcl::CollisionObjectf(geom));
+    co_robot->setTranslation(fcl::Vector3f(3, 2, 0));
   } else {
     throw std::runtime_error("Unknown robot type!");
   }
-  bpcm_robot->setup();
 
   fcl::DefaultCollisionData<float> collision_data;
-  bpcm_env->collide(bpcm_robot, &collision_data, fcl::DefaultCollisionFunction<float>);
+  bpcm_env->collide(co_robot.get(), &collision_data, fcl::DefaultCollisionFunction<float>);
 
   std::cout << collision_data.result.isCollision() << std::endl;
 

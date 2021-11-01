@@ -25,11 +25,12 @@ public:
       return false;
     }
 
-    fcl::CollisionObjectf robot(robot_->getCollisionGeometry(), robot_->getTransform(state));
+    const auto& transform = robot_->getTransform(state);
+    fcl::CollisionObjectf robot(robot_->getCollisionGeometry()); //, robot_->getTransform(state));
+    robot.setTranslation(transform.translation());
+    robot.setRotation(transform.rotation());
     fcl::DefaultCollisionData<float> collision_data;
     environment_->collide(&robot, &collision_data, fcl::DefaultCollisionFunction<float>);
-
-    // std::cout << collision_data.result.isCollision() << std::endl;
 
     return !collision_data.result.isCollision();
   }
