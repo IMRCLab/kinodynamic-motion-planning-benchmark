@@ -2,13 +2,15 @@
 
 #include "robot.h"
 
-class RobotDubinsCar : public Robot
+class RobotCarSecondOrder : public Robot
 {
 public:
-  RobotDubinsCar(
+  RobotCarSecondOrder(
     const ompl::base::RealVectorBounds& position_bounds,
-    float w_limit,
-    float v);
+    float v_limit, // max velocity in m/s
+    float w_limit, // max angular velocity in rad/s
+    float a_limit, // max accelleration in m/s^2
+    float w_dot_limit); // max angular acceleration in rad/s^2
 
   void propagate(
     const ompl::base::State *start,
@@ -18,8 +20,4 @@ public:
 
   virtual fcl::Transform3f getTransform(
       const ompl::base::State *state) override;
-
-protected:
-  float v_; // fixed speed
-  float w_limit_; // maximum magnitude of angular velocity control
 };

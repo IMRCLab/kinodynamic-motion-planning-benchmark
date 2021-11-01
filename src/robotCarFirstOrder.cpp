@@ -1,4 +1,4 @@
-#include "robotDubinsCar.h"
+#include "robotCarFirstOrder.h"
 
 #include <ompl/control/spaces/RealVectorControlSpace.h>
 #include <ompl/base/spaces/SE2StateSpace.h>
@@ -6,11 +6,11 @@
 namespace ob = ompl::base;
 namespace oc = ompl::control;
 
-RobotDubinsCar::RobotDubinsCar(
+RobotCarFirstOrder::RobotCarFirstOrder(
     const ompl::base::RealVectorBounds &position_bounds,
     float w_limit,
-    float v)
-    : Robot(), v_(v), w_limit_(w_limit)
+    float v_limit)
+    : Robot()
 {
   geom_.reset(new fcl::Boxf(0.5, 0.25, 1.0));
 
@@ -19,12 +19,14 @@ RobotDubinsCar::RobotDubinsCar(
 
   // create a control space
   // R^1: turning speed
-  auto cspace(std::make_shared<oc::RealVectorControlSpace>(space, 1));
+  auto cspace(std::make_shared<oc::RealVectorControlSpace>(space, 2));
 
   // set the bounds for the control space
-  ob::RealVectorBounds cbounds(1);
-  cbounds.setLow(-w_limit_);
-  cbounds.setHigh(w_limit_);
+  ob::RealVectorBounds cbounds(2);
+  cbounds.setLow(0, -v_limit);
+  cbounds.setHigh(0, v_limit);
+  cbounds.setLow(1,-w_limit);
+  cbounds.setHigh(1,w_limit);
 
   cspace->setBounds(cbounds);
 
@@ -32,7 +34,7 @@ RobotDubinsCar::RobotDubinsCar(
   si_ = std::make_shared<oc::SpaceInformation>(space, cspace);
 }
 
-void RobotDubinsCar::propagate(
+void RobotCarFirstOrder::propagate(
   const ompl::base::State *start,
   const ompl::control::Control *control,
   const double duration,
@@ -52,9 +54,9 @@ void RobotDubinsCar::propagate(
   do {
     float dt = std::min(remaining_time, integration_dt);
 
-    x += v_ * cosf(yaw) * dt;
-    y += v_ * sinf(yaw) * dt;
-    yaw += ctrl[0] * dt;
+    x += ctrl[0] * cosf(yaw) * dt;
+    y += ctrl[0] * sinf(yaw) * dt;
+    yaw += ctrl[1] * dt;
 
     remaining_time -= dt;
   } while (remaining_time >= integration_dt);
@@ -70,7 +72,7 @@ void RobotDubinsCar::propagate(
   SO2.enforceBounds(resultTyped->as<ob::SO2StateSpace::StateType>(1));
 }
 
-fcl::Transform3f RobotDubinsCar::getTransform(
+fcl::Transform3f RobotCarFirstOrder::getTransform(
     const ompl::base::State *state)
 {
   auto stateTyped = state->as<ob::SE2StateSpace::StateType>();

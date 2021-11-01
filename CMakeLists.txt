@@ -43,6 +43,8 @@ link_directories(
 add_executable(ompl_rrt
   src/main_ompl_rrt.cpp
   src/robotDubinsCar.cpp
+  src/robotCarFirstOrder.cpp
+  src/robotCarSecondOrder.cpp
 )
 target_link_libraries(ompl_rrt
   ${Boost_LIBRARIES}

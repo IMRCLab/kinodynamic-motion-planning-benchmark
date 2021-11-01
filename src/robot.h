@@ -23,6 +23,7 @@ public:
   virtual fcl::Transform3f getTransform(
     const ompl::base::State *state) = 0;
 
+#if 0
   virtual bool is2D() = 0;
 
   virtual float stateActionCost(
@@ -41,6 +42,7 @@ public:
     }
     return sqrtf(sum);
   }
+#endif
 
   std::shared_ptr<fcl::CollisionGeometryf> getCollisionGeometry()
   {

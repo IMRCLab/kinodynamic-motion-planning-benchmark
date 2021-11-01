@@ -14,6 +14,8 @@
 #include <ompl/control/planners/rrt/RRT.h>
 
 #include "robotDubinsCar.h"
+#include "robotCarFirstOrder.h"
+#include "robotCarSecondOrder.h"
 #include "robotStatePropagator.hpp"
 #include "fclStateValidityChecker.hpp"
 
@@ -84,8 +86,34 @@ int main(int argc, char* argv[]) {
 
     robot.reset(new RobotDubinsCar(
         position_bounds,
-        -1, 1,
-        1, 1));
+        /*w_limit*/ 0.5 /*rad/s*/,
+        /*v*/ 0.1 /* m/s*/));
+  } else if (robotType == "car_first_order_0") {
+    ob::RealVectorBounds position_bounds(2);
+    const auto& dims = env["environment"]["dimensions"];
+    position_bounds.setLow(0);
+    position_bounds.setHigh(0, dims[0].as<double>());
+    position_bounds.setHigh(1, dims[1].as<double>());
+
+    robot.reset(new RobotCarFirstOrder(
+        position_bounds,
+        /*w_limit*/ 0.5 /*rad/s*/,
+        /*v_limit*/ 0.5 /* m/s*/));
+  } else if (robotType == "car_second_order_0")
+  {
+    ob::RealVectorBounds position_bounds(2);
+    const auto &dims = env["environment"]["dimensions"];
+    position_bounds.setLow(0);
+    position_bounds.setHigh(0, dims[0].as<double>());
+    position_bounds.setHigh(1, dims[1].as<double>());
+
+    robot.reset(new RobotCarSecondOrder(
+        position_bounds,
+        /*v_limit*/ 0.5 /*m/s*/,
+        /*w_limit*/ 0.5 /*rad/s*/,
+        /*a_limit*/ 2.0 /*m/s^2*/,
+        /*w_dot_limit*/ 2.0 /*rad/s^2*/
+      ));
   } else {
     throw std::runtime_error("Unknown robot type!");
   }

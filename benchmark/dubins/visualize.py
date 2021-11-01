@@ -37,10 +37,12 @@ if __name__ == "__main__":
       print("ERROR: unknown obstacle type")
 
   for robot in env["robots"]:
-    if robot["type"] == "dubins_0":
+    if robot["type"] in ["dubins_0", "car_first_order_0", "car_second_order_0"]:
       size = np.array([0.5, 0.25])
       draw_box_patch(ax, robot["start"][0:2], size, robot["start"][2], facecolor='red')
       draw_box_patch(ax, robot["goal"][0:2], size, robot["goal"][2], facecolor='none', edgecolor='red')
+    else:
+      raise Exception("Unknown robot type!")
 
   if args.result is not None:
     with open(args.result) as result_file:
