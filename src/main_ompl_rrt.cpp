@@ -2,7 +2,7 @@
 #include <iostream>
 #include <algorithm>
 
-// #include <yaml-cpp/yaml.h>
+#include <yaml-cpp/yaml.h>
 
 // #include <boost/functional/hash.hpp>
 #include <boost/program_options.hpp>
@@ -13,48 +13,22 @@
 #include <ompl/control/spaces/RealVectorControlSpace.h>
 #include <ompl/control/planners/rrt/RRT.h>
 
+#include "robotDubinsCar.h"
+#include "robotStatePropagator.hpp"
+#include "fclStateValidityChecker.hpp"
+
 namespace ob = ompl::base;
 namespace oc = ompl::control;
-
-void propagate(
-    const ob::State *start,
-    const oc::Control *control,
-    const double /*duration*/,
-    ob::State *result)
-{
-  auto startCS = start->as<ob::CompoundStateSpace::StateType>();
-  const double *pos = startCS->as<ob::RealVectorStateSpace::StateType>(0)->values;
-  const double *vel = startCS->as<ob::RealVectorStateSpace::StateType>(1)->values;
-
-  const double *ctrl = control->as<ompl::control::RealVectorControlSpace::ControlType>()->values;
-
-  auto resultCS = result->as<ob::CompoundStateSpace::StateType>();
-  double *resPos = resultCS->as<ob::RealVectorStateSpace::StateType>(0)->values;
-  double *resVel = resultCS->as<ob::RealVectorStateSpace::StateType>(1)->values;
-
-  // double force = ctrl[0]; // guaranteed to be within bounds
-  // resVel[0] = vel[0] + force - 0.0025 * cos(3 * pos[0]);
-  // resVel[0] = std::clamp(resVel[0], -0.07, 0.07);
-
-  // resPos[0] = pos[0] + resVel[0];
-  // resPos[0] = std::clamp(resPos[0], -1.2, 0.6);
-
-  double force = ctrl[0]; // guaranteed to be within bounds
-  resVel[0] = vel[0] + force - 0.0025 * cos(3 * pos[0]);
-  // resVel[0] = std::clamp(resVel[0], -0.07, 0.07);
-
-  resPos[0] = pos[0] + vel[0];
-  // resPos[0] = std::clamp(resPos[0], -1.2, 0.6);
-}
 
 int main(int argc, char* argv[]) {
   namespace po = boost::program_options;
   // Declare the supported options.
   po::options_description desc("Allowed options");
-  std::string motionsFile;
+  std::string inputFile;
   std::string outputFile;
   desc.add_options()
     ("help", "produce help message")
+    ("input,i", po::value<std::string>(&inputFile)->required(), "input file (yaml)")
     ("output,o", po::value<std::string>(&outputFile)->required(), "output file (yaml)");
 
   try {
@@ -72,59 +46,86 @@ int main(int argc, char* argv[]) {
     return 1;
   }
 
-  // Create state space
-  auto space(std::make_shared<ob::CompoundStateSpace>());
-  space->addSubspace(std::make_shared<ob::RealVectorStateSpace>(1), 1.0);
-  space->addSubspace(std::make_shared<ob::RealVectorStateSpace>(1), 0.5);
+  // load problem description
+  YAML::Node env = YAML::LoadFile(inputFile);
 
-  // set bounds for position
-  ob::RealVectorBounds boundsPos(1);
-  boundsPos.setLow(0, -1.2);
-  boundsPos.setHigh(0, 0.6);
-  space->getSubspace(0)->as<ob::RealVectorStateSpace>()->setBounds(boundsPos);
+  std::vector<fcl::CollisionObjectf *> obstacles;
+  for (const auto &obs : env["environment"]["obstacles"])
+  {
+    if (obs["type"].as<std::string>() == "box")
+    {
+      const auto &size = obs["size"];
+      std::shared_ptr<fcl::CollisionGeometryf> geom;
+      geom.reset(new fcl::Boxf(size[0].as<float>(), size[1].as<float>(), 1.0));
+      const auto &center = obs["center"];
+      auto co = new fcl::CollisionObjectf(geom);
+      co->setTranslation(fcl::Vector3f(center[0].as<float>(), center[1].as<float>(), 0));
+      obstacles.push_back(co);
+    }
+    else
+    {
+      throw std::runtime_error("Unknown obstacle type!");
+    }
+  }
+  // std::shared_ptr<fcl::BroadPhaseCollisionManagerf> bpcm_env(new fcl::DynamicAABBTreeCollisionManagerf());
+  std::shared_ptr<fcl::BroadPhaseCollisionManagerf> bpcm_env(new fcl::NaiveCollisionManagerf());
+  bpcm_env->registerObjects(obstacles);
+  bpcm_env->setup();
 
-  // set bounds for velocity
-  ob::RealVectorBounds boundsVel(1);
-  boundsVel.setLow(0, -0.07);
-  boundsVel.setHigh(0, 0.07);
-  space->getSubspace(1)->as<ob::RealVectorStateSpace>()->setBounds(boundsVel);
+  const auto& robot_node = env["robots"][0];
+  auto robotType = robot_node["type"].as<std::string>();
+  std::shared_ptr<Robot> robot;
+  if (robotType == "dubins_0") {
+    ob::RealVectorBounds position_bounds(2);
+    const auto& dims = env["environment"]["dimensions"];
+    position_bounds.setLow(0);
+    position_bounds.setHigh(0, dims[0].as<double>());
+    position_bounds.setHigh(1, dims[1].as<double>());
 
-  // create control space
-  auto cspace(std::make_shared<oc::RealVectorControlSpace>(space, 1));
+    robot.reset(new RobotDubinsCar(
+        position_bounds,
+        -1, 1,
+        1, 1));
+  } else {
+    throw std::runtime_error("Unknown robot type!");
+  }
 
-  // set the bounds for the control space
-  ob::RealVectorBounds cbounds(1);
-  cbounds.setLow(-0.0015);
-  cbounds.setHigh(0.0015);
-
-  cspace->setBounds(cbounds);
-
-  // construct an instance of space information from this state and control space
-  auto si(std::make_shared<oc::SpaceInformation>(space, cspace));
+  auto si = robot->getSpaceInformation();
 
   // set number of control steps
   si->setPropagationStepSize(1);
   si->setMinMaxControlDuration(1, 1);
 
-  // set state propagator
-  si->setStatePropagator(&propagate);
+  // set state validity checking for this space
+  auto stateValidityChecker(std::make_shared<fclStateValidityChecker>(si, bpcm_env, robot));
+  si->setStateValidityChecker(stateValidityChecker);
+
+  // set the state propagator
+  std::shared_ptr<oc::StatePropagator> statePropagator(new RobotStatePropagator(si, robot));
+  si->setStatePropagator(statePropagator);
+
+  si->setup();
 
   // create a problem instance
   auto pdef(std::make_shared<ob::ProblemDefinition>(si));
 
   // create and set a start state
   auto startState = si->allocState();
-  auto startStateCS = startState->as<ob::CompoundStateSpace::StateType>();
-  startStateCS->as<ob::RealVectorStateSpace::StateType>(0)->values[0] = -0.5;
-  startStateCS->as<ob::RealVectorStateSpace::StateType>(1)->values[0] = 0.0;
+  std::vector<double> reals;
+  for (const auto& v : robot_node["start"]) {
+    reals.push_back(v.as<double>());
+  }
+  si->getStateSpace()->copyFromReals(startState, reals);
   pdef->addStartState(startState);
   si->freeState(startState);
 
   // set goal state
   auto goalState = si->allocState();
-  auto goalStateCS = goalState->as<ob::CompoundStateSpace::StateType>();
-  goalStateCS->as<ob::RealVectorStateSpace::StateType>(0)->values[0] = 0.45;
-  goalStateCS->as<ob::RealVectorStateSpace::StateType>(1)->values[0] = 0.0;
+  reals.clear();
+  for (const auto &v : robot_node["goal"]) {
+    reals.push_back(v.as<double>());
+  }
+  si->getStateSpace()->copyFromReals(goalState, reals);
   pdef->setGoalState(goalState, 0.01);
   si->freeState(goalState);
 
@@ -149,6 +150,20 @@ int main(int argc, char* argv[]) {
   float timelimit = 10; 
   ob::PlannerStatus solved = planner->ob::Planner::solve(timelimit);
 
+  if (solved)
+  {
+    // get the goal representation from the problem definition (not the same as the goal state)
+    // and inquire about the found path
+    ob::PathPtr path = pdef->getSolutionPath();
+    std::cout << "Found solution:" << std::endl;
+
+    // print the path to screen
+    path->print(std::cout);
+  }
+  else {
+    std::cout << "No solution found" << std::endl;
+  }
+
   std::cout << solved << std::endl;
   auto path = pdef->getSolutionPath()->as<oc::PathControl>();
 
@@ -156,15 +171,28 @@ int main(int argc, char* argv[]) {
   assert(path->getStateCount() == path->getControlCount() + 1);
 
   std::ofstream out(outputFile);
-  out << "pos[m],vel[m/s],a" << std::endl;
+  out << "result:" << std::endl;
+  out << "  - states:" << std::endl;
   for (size_t i = 0; i < path->getControlCount(); ++i) {
     const auto state = path->getState(i);
-    auto stateCS = state->as<ob::CompoundStateSpace::StateType>();
-    double pos = stateCS->as<ob::RealVectorStateSpace::StateType>(0)->values[0];
-    double vel = stateCS->as<ob::RealVectorStateSpace::StateType>(1)->values[0];
 
-    double a = path->getControl(i)->as<ompl::control::RealVectorControlSpace::ControlType>()->values[0];
-    out << pos << "," << vel << "," << a << std::endl;
+    std::vector<double> reals;
+    si->getStateSpace()->copyToReals(reals, state);
+    out << "      - [";
+    for (size_t i = 0; i < reals.size(); ++i) {
+      out << reals[i];
+      if (i < reals.size() - 1) {
+        out << ",";
+      }
+    }
+    out << "]" << std::endl;
+
+    // auto stateCS = state->as<ob::CompoundStateSpace::StateType>();
+    // double pos = stateCS->as<ob::RealVectorStateSpace::StateType>(0)->values[0];
+    // double vel = stateCS->as<ob::RealVectorStateSpace::StateType>(1)->values[0];
+
+    // double a = path->getControl(i)->as<ompl::control::RealVectorControlSpace::ControlType>()->values[0];
+    // out << pos << "," << vel << "," << a << std::endl;
   }
 
   return 0;

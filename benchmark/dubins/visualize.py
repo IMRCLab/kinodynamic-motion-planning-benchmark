@@ -19,6 +19,7 @@ def draw_box_patch(ax, center, size, angle = 0, **kwargs):
 if __name__ == "__main__":
   parser = argparse.ArgumentParser()
   parser.add_argument("env", help="input file containing map")
+  parser.add_argument("--result", help="output file containing solution")
   args = parser.parse_args()
 
   with open(args.env) as env_file:
@@ -40,5 +41,13 @@ if __name__ == "__main__":
       size = np.array([0.5, 0.25])
       draw_box_patch(ax, robot["start"][0:2], size, robot["start"][2], facecolor='red')
       draw_box_patch(ax, robot["goal"][0:2], size, robot["goal"][2], facecolor='none', edgecolor='red')
+
+  if args.result is not None:
+    with open(args.result) as result_file:
+      result = yaml.safe_load(result_file)
+
+    for robot in result["result"]:
+      for state in robot["states"]:
+        draw_box_patch(ax, state[0:2], size, state[2], facecolor='blue')
 
   plt.show()
