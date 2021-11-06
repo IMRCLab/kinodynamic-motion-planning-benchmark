@@ -16,6 +16,7 @@ set(CMAKE_CXX_FLAGS  "${CMAKE_CXX_FLAGS} -Wall -Wextra")
 
 # subdirectories
 add_subdirectory(deps/fcl EXCLUDE_FROM_ALL)
+add_subdirectory(deps/sbpl)# EXCLUDE_FROM_ALL)
 # add_subdirectory(deps/ompl EXCLUDE_FROM_ALL)
 
 # external projects
@@ -30,6 +31,7 @@ include_directories(
   ${OMPL_INCLUDE_DIRS}
   ${CMAKE_BINARY_DIR}/deps/fcl/include
   ${CMAKE_SOURCE_DIR}/deps/fcl/include
+  ${CMAKE_SOURCE_DIR}/deps/sbpl/src/include
   # ${CMAKE_SOURCE_DIR}/deps/ompl/src
 )
 
@@ -74,4 +76,16 @@ target_link_libraries(test_fcl
   # ${OMPL_LIBRARIES}
   fcl
   yaml-cpp
+)
+
+## main_sbpl
+add_executable(main_sbpl
+  src/main_sbpl.cpp
+)
+target_link_libraries(main_sbpl
+  ${Boost_LIBRARIES}
+  # ${OMPL_LIBRARIES}
+  fcl
+  yaml-cpp
+  sbpl
 )
