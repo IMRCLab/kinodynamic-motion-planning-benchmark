@@ -45,54 +45,112 @@ public:
   size_t idx;
 };
 
+// forward declaration
+struct AStarNode;
+
+struct compareAStarNode
+{
+  bool operator()(const AStarNode *a, const AStarNode *b) const;
+};
+
+// open type
+typedef typename boost::heap::d_ary_heap<
+    AStarNode *,
+    boost::heap::arity<2>,
+    boost::heap::compare<compareAStarNode>,
+    boost::heap::mutable_<true>>
+    open_t;
+
+// Node type (used for open and explored states)
 struct AStarNode
 {
-  AStarNode(const ob::State* state, float fScore, float gScore)
-      : state(state), fScore(fScore), gScore(gScore) {}
-
-  bool operator<(const AStarNode &other) const
-  {
-    // Sort order
-    // 1. lowest fScore
-    // 2. highest gScore
-
-    // Our heap is a maximum heap, so we invert the comperator function here
-    if (fScore != other.fScore)
-    {
-      return fScore > other.fScore;
-    }
-    else
-    {
-      return gScore < other.gScore;
-    }
-  }
-
-  // friend std::ostream &operator<<(std::ostream &os, const Node &node)
-  // {
-  //   os << "state: " << node.state << " fScore: " << node.fScore
-  //      << " gScore: " << node.gScore;
-  //   return os;
-  // }
-
-  const ob::State* state;
+  const ob::State *state;
 
   float fScore;
   float gScore;
 
-  typename boost::heap::d_ary_heap<AStarNode, boost::heap::arity<2>,
-                                   boost::heap::mutable_<true>>::handle_type
-      handle;
-
-  typename boost::heap::d_ary_heap<AStarNode, boost::heap::arity<2>,
-                                   boost::heap::mutable_<true>>::handle_type
-      came_from;
+  const AStarNode* came_from;
 
   size_t used_motion;
+
+  open_t::handle_type handle;
+  bool is_in_open;
 };
 
-float heuristic(const ob::State *s)
+bool compareAStarNode::operator()(const AStarNode *a, const AStarNode *b) const
 {
-  return 0;
+  // Sort order
+  // 1. lowest fScore
+  // 2. highest gScore
+
+  // Our heap is a maximum heap, so we invert the comperator function here
+  if (a->fScore != b->fScore)
+  {
+    return a->fScore > b->fScore;
+  }
+  else
+  {
+    return a->gScore < b->gScore;
+  }
+}
+
+// struct AStarOpenNode
+// {
+//   AStarOpenNode(const AStarNode* node)
+//       : node(node)
+//   {
+//   }
+
+//   bool operator<(const AStarOpenNode &other) const
+//   {
+//     // Sort order
+//     // 1. lowest fScore
+//     // 2. highest gScore
+
+//     // Our heap is a maximum heap, so we invert the comperator function here
+//     if (node->fScore != other.node->fScore)
+//     {
+//       return node->fScore > other.node->fScore;
+//     }
+//     else
+//     {
+//       return node->gScore < other.node->gScore;
+//     }
+//   }
+
+//   // friend std::ostream &operator<<(std::ostream &os, const Node &node)
+//   // {
+//   //   os << "state: " << node.state << " fScore: " << node.fScore
+//   //      << " gScore: " << node.gScore;
+//   //   return os;
+//   // }
+
+//   const AStarNode* node;
+
+//   // const ob::State* state;
+
+//   // float fScore;
+//   // float gScore;
+
+//   // typename boost::heap::d_ary_heap<AStarOpenNode, boost::heap::arity<2>,
+//   //                                  boost::heap::mutable_<true>>::handle_type
+//   //     handle;
+
+//   // typename boost::heap::d_ary_heap<AStarNode, boost::heap::arity<2>,
+//   //                                  boost::heap::mutable_<true>>::handle_type
+//   //     came_from;
+
+//   // size_t used_motion;
+// };
+
+float heuristic(std::shared_ptr<Robot> robot, const ob::State *s, const ob::State *g)
+{
+  // heuristic is the time it might take to get to the goal
+  const auto current_pos = robot->getTransform(s).translation();
+  const auto goal_pos = robot->getTransform(g).translation();
+  float dist = (current_pos - goal_pos).norm();
+
+  return dist * 0.5;
 }
 
 int main(int argc, char* argv[]) {
@@ -219,66 +277,92 @@ int main(int argc, char* argv[]) {
   }
 
   // db-A* search
-  typedef typename boost::heap::d_ary_heap<AStarNode, boost::heap::arity<2>,
-                                           boost::heap::mutable_<true>>
-      open_t;
-
   open_t open;
 
   // kd-tree for nodes
-  typedef std::pair<ob::State*, open_t::handle_type> nn_t;
-
-  ompl::NearestNeighbors<nn_t> *T_n;
+  ompl::NearestNeighbors<AStarNode*> *T_n;
   if (si->getStateSpace()->isMetricSpace())
   {
-    T_n = new ompl::NearestNeighborsGNATNoThreadSafety<nn_t>();
+    T_n = new ompl::NearestNeighborsGNATNoThreadSafety<AStarNode*>();
   }
   else
   {
-    T_n = new ompl::NearestNeighborsSqrtApprox<nn_t>();
+    T_n = new ompl::NearestNeighborsSqrtApprox<AStarNode*>();
   }
-  T_n->setDistanceFunction([si](const nn_t& a, const nn_t& b)
-                           { return si->distance(a.first, b.first); });
+  T_n->setDistanceFunction([si](const AStarNode* a, const AStarNode* b)
+                           { return si->distance(a->state, b->state); });
 
-  auto handle = open.push(AStarNode(startState, heuristic(startState), 0));
-  (*handle).handle = handle;
-  (*handle).used_motion = -1;
+  auto start_node = new AStarNode();
+  start_node->state = startState;
+  start_node->gScore = 0;
+  start_node->fScore = heuristic(robot, startState, goalState);
+  start_node->came_from = nullptr;
+  start_node->used_motion = -1;
 
-  T_n->add(std::make_pair<>(startState, handle));
+  auto handle = open.push(start_node);
+  start_node->handle = handle;
+  start_node->is_in_open = true;
+
+  T_n->add(start_node);
 
   Motion fakeMotion;
   fakeMotion.idx = -1;
   fakeMotion.states.push_back(si->allocState());
 
-  nn_t query_n;
+  AStarNode* query_n = new AStarNode();
 
   ob::State* tmpState = si->allocState();
   std::vector<Motion*> neighbors_m;
-  std::vector<nn_t> neighbors_n;
+  std::vector<AStarNode*> neighbors_n;
 
   while (!open.empty())
   {
-    AStarNode current = open.top();
-    std::cout << "current";
-    si->printState(current.state);
-    if (si->distance(current.state, goalState) <= delta) {
+    AStarNode* current = open.top();
+    // std::cout << "current";
+    // si->printState(current->state);
+    if (si->distance(current->state, goalState) <= delta) {
       std::cout << "SOLUTION FOUND!!!!" << std::endl;
 
-      auto handle = current.handle;
-      while ((*handle).used_motion != -1) {
-        std::cout << (*handle).used_motion << std::endl;
-        si->printState((*handle).state);
+      std::vector<const AStarNode*> result;
 
-        handle = (*handle).came_from;
+      const AStarNode* n = current;
+      while (n != nullptr) {
+        result.push_back(n);
+        // std::cout << n->used_motion << std::endl;
+        // si->printState(n->state);
+        n = n->came_from;
+      }
+      std::reverse(result.begin(), result.end());
+
+      std::ofstream out(outputFile);
+      out << "result:" << std::endl;
+      out << "  - states:" << std::endl;
+      for (size_t i = 0; i < result.size(); ++i)
+      {
+        const auto state = result[i]->state;
+
+        std::vector<double> reals;
+        si->getStateSpace()->copyToReals(reals, state);
+        out << "      - [";
+        for (size_t i = 0; i < reals.size(); ++i)
+        {
+          out << reals[i];
+          if (i < reals.size() - 1)
+          {
+            out << ",";
+          }
+        }
+        out << "]" << std::endl;
       }
 
       break;
     }
 
+    current->is_in_open = false;
     open.pop();
 
     // find relevant motions (within delta of current state)
-    si->copyState(fakeMotion.states[0], current.state);
+    si->copyState(fakeMotion.states[0], current->state);
     robot->setPosition(fakeMotion.states[0], fcl::Vector3f(0,0,0));
 
     T_m->nearestR(&fakeMotion, delta, neighbors_m);
@@ -286,10 +370,12 @@ int main(int argc, char* argv[]) {
     // Loop over all potential applicable motions
     for (const Motion* motion : neighbors_m) {
       // Compute intermediate states and check their validity
-      const auto current_pos = robot->getTransform(current.state).translation();
+      const auto current_pos = robot->getTransform(current->state).translation();
 
       bool motionValid = true;
-      for (const auto& state : motion->states) {
+      for (const auto& state : motion->states) 
+      {
+        // const auto& state = motion->states.back();
         si->copyState(tmpState, state);
         const auto relative_pos = robot->getTransform(state).translation();
         robot->setPosition(tmpState, current_pos + relative_pos);
@@ -308,44 +394,49 @@ int main(int argc, char* argv[]) {
       if (!motionValid) {
         continue;
       }
-      std::cout << "valid " << si->distance(current.state, tmpState) << std::endl;
-      si->printState(tmpState);
+      // std::cout << "valid " << si->distance(current->state, tmpState) << std::endl;
+      // si->printState(tmpState);
 
       // Check if we have this state (or any within delta) already
-      query_n.first = tmpState;
+      query_n->state = tmpState;
       T_n->nearestR(query_n, delta, neighbors_n);
 
-      std::cout << neighbors_n.size() << std::endl;
+      // std::cout << neighbors_n.size() << std::endl;
 
-      float tentative_gScore = current.gScore + motion->states.size();
+      float tentative_gScore = current->gScore + motion->states.size();
       if (neighbors_n.size() == 0)
       {
-        std::cout << "new state";
+        // std::cout << "new state";
 
         // new state -> add it to open and T_n
-        auto new_state = si->cloneState(tmpState);
-        auto handle = open.push(AStarNode(new_state, heuristic(new_state), tentative_gScore));
-        (*handle).handle = handle;
-        (*handle).came_from = current.handle;
-        (*handle).used_motion = motion->idx;
-        T_n->add(std::make_pair<>(new_state, handle));
+        auto node = new AStarNode();
+        node->state = si->cloneState(tmpState);
+        node->gScore = tentative_gScore;
+        node->fScore = tentative_gScore + heuristic(robot, node->state, goalState);
+        node->came_from = current;
+        node->used_motion = motion->idx;
+
+        auto handle = open.push(node);
+        node->handle = handle;
+        T_n->add(node);
       }
       else
       {
         // check if we have a better path now
-        for (const nn_t& entry : neighbors_n) {
-          auto handle = entry.second;
-          float delta = (*handle).gScore - tentative_gScore;
+        for (AStarNode* entry : neighbors_n) {
+          float delta = entry->gScore - tentative_gScore;
           if (delta > 0) {
-            std::cout << "improve score";
-            si->printState((*handle).state);
+            // std::cout << "improve score";
+            // si->printState(entry->state);
 
-            (*handle).gScore = tentative_gScore;
-            (*handle).fScore -= delta;
-            assert((*handle).fScore >= 0);
-            (*handle).came_from = current.handle;
-            (*handle).used_motion = motion->idx;
-            open.increase(handle);
+            entry->gScore = tentative_gScore;
+            entry->fScore -= delta;
+            assert(entry->fScore >= 0);
+            entry->came_from = current;
+            entry->used_motion = motion->idx;
+            if (entry->is_in_open) {
+              open.increase(entry->handle);
+            }
           }
         }
       }
