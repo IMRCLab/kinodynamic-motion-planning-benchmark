@@ -4,3 +4,6 @@
 [submodule "deps/sbpl"]
 	path = deps/sbpl
 	url = https://github.com/sbpl/sbpl.git
+[submodule "deps/libMultiRobotPlanning"]
+	path = deps/libMultiRobotPlanning
+	url = https://github.com/whoenig/libMultiRobotPlanning.git

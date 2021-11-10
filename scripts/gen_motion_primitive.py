@@ -68,16 +68,20 @@ if __name__ == '__main__':
 	robot = robots.RobotCarFirstOrder(0.5, 0.5)
 
 	motions = []
-	# motion = gen_random_motion(robot)
-	for x in [-0.25, 0, 0.25]:
-		for y in [-0.25, 0, 0.25]:
-			for yaw in np.linspace(-np.pi, np.pi, 8):
-				motion = gen_motion(robot, 
-					np.array([0, 0, 0], dtype=np.float32),
-					np.array([x, y, yaw], dtype=np.float32))
-				if motion is not None:
-					print(x,y, yaw)
-					motions.append(motion)
+	for k in range(100):
+		print(k)
+		motion = gen_random_motion(robot)
+		motions.append(motion)
 
-	with open('result.yaml', 'w') as file:
+	# for x in [-0.25, 0, 0.25]:
+	# 	for y in [-0.25, 0, 0.25]:
+	# 		for yaw in np.linspace(-np.pi, np.pi, 8):
+	# 			motion = gen_motion(robot, 
+	# 				np.array([0, 0, 0], dtype=np.float32),
+	# 				np.array([x, y, yaw], dtype=np.float32))
+	# 			if motion is not None:
+	# 				print(x,y, yaw)
+	# 				motions.append(motion)
+
+	with open('motions.yaml', 'w') as file:
 		yaml.dump(motions, file)

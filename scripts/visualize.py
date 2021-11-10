@@ -31,7 +31,7 @@ if __name__ == "__main__":
 
   size = np.array([0.5, 0.25])
 
-  for motion in motions[3:4]:
+  for motion in motions:
     for state in motion["states"]:
       draw_box_patch(ax, state[0:2], size, state[2], facecolor='blue', alpha=0.1)
 

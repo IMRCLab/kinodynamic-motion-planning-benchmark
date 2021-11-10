@@ -15,9 +15,9 @@ environment:
       size: [3.0, 2.0]
 
 robots:
-  # - type: car_first_order_0
-  #   start: [0.5,4.0,1.55] # x,y,theta
-  #   goal: [5.5,4.0,1.55] # x,y,theta
-  - type: car_second_order_0
-    start: [0.5,4.0,1.55,0,0] # x,y,theta,v,w
-    goal: [5.5,4.0,1.55,0,0] # x,y,theta,v,w
+  - type: car_first_order_0
+    start: [0.5,4.0,1.55] # x,y,theta
+    goal: [5.5,4.0,1.55] # x,y,theta
+  # - type: car_second_order_0
+  #   start: [0.5,4.0,1.55,0,0] # x,y,theta,v,w
+  #   goal: [5.5,4.0,1.55,0,0] # x,y,theta,v,w

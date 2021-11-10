@@ -18,4 +18,7 @@ public:
 
   virtual fcl::Transform3f getTransform(
       const ompl::base::State *state) override;
+
+  // virtual void setPositionToZero(ompl::base::State *state) override;
+  virtual void setPosition(ompl::base::State *state, const fcl::Vector3f position) override;
 };

@@ -32,7 +32,7 @@ include_directories(
   ${CMAKE_BINARY_DIR}/deps/fcl/include
   ${CMAKE_SOURCE_DIR}/deps/fcl/include
   ${CMAKE_SOURCE_DIR}/deps/sbpl/src/include
-  # ${CMAKE_SOURCE_DIR}/deps/ompl/src
+  ${CMAKE_SOURCE_DIR}/deps/libMultiRobotPlanning/include
 )
 
 link_directories(
@@ -88,4 +88,16 @@ target_link_libraries(main_sbpl
   fcl
   yaml-cpp
   sbpl
+)
+
+## dbastar
+add_executable(dbastar
+  src/main_dbastar.cpp
+  src/robotCarFirstOrder.cpp
+)
+target_link_libraries(dbastar
+  ${Boost_LIBRARIES}
+  ${OMPL_LIBRARIES}
+  fcl
+  yaml-cpp
 )

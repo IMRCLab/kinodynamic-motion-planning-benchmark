@@ -23,6 +23,9 @@ public:
   virtual fcl::Transform3f getTransform(
     const ompl::base::State *state) = 0;
 
+  // virtual void setPositionToZero(ompl::base::State* state) = 0;
+  virtual void setPosition(ompl::base::State* state, const fcl::Vector3f position) = 0;
+
 #if 0
   virtual bool is2D() = 0;
 
