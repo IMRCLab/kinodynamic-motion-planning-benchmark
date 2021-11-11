@@ -23,29 +23,7 @@ public:
   virtual fcl::Transform3f getTransform(
     const ompl::base::State *state) = 0;
 
-  // virtual void setPositionToZero(ompl::base::State* state) = 0;
   virtual void setPosition(ompl::base::State* state, const fcl::Vector3f position) = 0;
-
-#if 0
-  virtual bool is2D() = 0;
-
-  virtual float stateActionCost(
-     const ompl::base::State* /*state*/,
-     const ompl::control::Control *control)
-  {
-    // default cost is just u^Tu
-
-    // propagate cost
-    unsigned int dim = si_->getControlSpace()->getDimension();
-
-    const double* ctrl = control->as<ompl::control::RealVectorControlSpace::ControlType>()->values;
-    float sum = 0;
-    for (unsigned int k = 0; k < dim; ++k) {
-        sum += powf(ctrl[k], 2);
-    }
-    return sqrtf(sum);
-  }
-#endif
 
   std::shared_ptr<fcl::CollisionGeometryf> getCollisionGeometry()
   {

@@ -13,7 +13,6 @@
 #include <ompl/control/spaces/RealVectorControlSpace.h>
 #include <ompl/control/planners/rrt/RRT.h>
 
-#include "robotDubinsCar.h"
 #include "robotCarFirstOrder.h"
 #include "robotCarSecondOrder.h"
 #include "robotStatePropagator.hpp"
@@ -77,18 +76,7 @@ int main(int argc, char* argv[]) {
   const auto& robot_node = env["robots"][0];
   auto robotType = robot_node["type"].as<std::string>();
   std::shared_ptr<Robot> robot;
-  if (robotType == "dubins_0") {
-    ob::RealVectorBounds position_bounds(2);
-    const auto& dims = env["environment"]["dimensions"];
-    position_bounds.setLow(0);
-    position_bounds.setHigh(0, dims[0].as<double>());
-    position_bounds.setHigh(1, dims[1].as<double>());
-
-    robot.reset(new RobotDubinsCar(
-        position_bounds,
-        /*w_limit*/ 0.5 /*rad/s*/,
-        /*v*/ 0.1 /* m/s*/));
-  } else if (robotType == "car_first_order_0") {
+  if (robotType == "car_first_order_0") {
     ob::RealVectorBounds position_bounds(2);
     const auto& dims = env["environment"]["dimensions"];
     position_bounds.setLow(0);

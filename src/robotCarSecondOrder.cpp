@@ -249,3 +249,10 @@ fcl::Transform3f RobotCarSecondOrder::getTransform(
   result.rotate(Eigen::AngleAxisf(yaw, Eigen::Vector3f::UnitZ()));
   return result;
 }
+
+void RobotCarSecondOrder::setPosition(ompl::base::State *state, const fcl::Vector3f position)
+{
+  auto stateTyped = state->as<ob::SE2StateSpace::StateType>();
+  stateTyped->setX(position(0));
+  stateTyped->setY(position(1));
+}

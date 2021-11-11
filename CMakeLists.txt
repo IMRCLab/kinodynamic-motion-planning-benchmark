@@ -44,7 +44,6 @@ link_directories(
 ## ompl_rrt
 add_executable(ompl_rrt
   src/main_ompl_rrt.cpp
-  src/robotDubinsCar.cpp
   src/robotCarFirstOrder.cpp
   src/robotCarSecondOrder.cpp
 )
