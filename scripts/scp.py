@@ -13,7 +13,8 @@ class SCP():
   def min_xf(self, initial_x, initial_u, xf,
     num_iterations=10, 
     trust_x = None,
-    trust_u = None):
+    trust_u = None,
+    verbose = False):
 
     X, U = [initial_x], [initial_u]
 
@@ -82,7 +83,7 @@ class SCP():
       # The optimal objective value is returned by `prob.solve()`.
       try:
         # result = prob.solve(verbose=True, warm_start=True,solver=cp.GUROBI, BarQCPConvTol=1e-9)
-        result = prob.solve(verbose=False, solver=cp.GUROBI)
+        result = prob.solve(verbose=verbose, solver=cp.GUROBI)
         # result = prob.solve(verbose=True, warm_start=True, solver=cp.OSQP, max_iter=1000000)
       except cp.error.SolverError:
         # print("Warning: Solver failed!")
@@ -106,5 +107,96 @@ class SCP():
 
       if max_error_to_goal < 1e-5:
         return X, U, prob.value
+
+    return X, U, float('inf')
+
+  def min_u(self, initial_x, initial_u, 
+             x0, xf,
+             num_iterations=10,
+             trust_x=None,
+             trust_u=None,
+             verbose=False):
+
+    X, U = [initial_x], [initial_u]
+
+    xprev = initial_x
+    uprev = initial_u
+    T = xprev.shape[0]
+    stateDim = xprev.shape[1]
+    actionDim = uprev.shape[1]
+
+    for _ in range(num_iterations):
+      x = cp.Variable((T, stateDim))
+      u = cp.Variable((T-1, actionDim))
+
+      # set initial guesses for warm start
+      x.value = xprev
+      u.value = uprev
+
+      cp_objective = cp.Minimize(cp.sum_squares(u))
+
+      constraints = [
+          x[0] == x0,  # initial state constraint
+          x[-1] == xf,  # final state constraint
+      ]
+
+      # trust region
+      if trust_x is not None:
+        for t in range(0, T):
+          constraints.append(
+              cp.abs(x[t] - xprev[t]) <= trust_x
+          )
+      if trust_u is not None:
+        for t in range(0, T-1):
+          constraints.append(
+              cp.abs(u[t] - uprev[t]) <= trust_u
+          )
+
+      # dynamics constraints
+      for t in range(0, T-1):
+        xbar = xprev[t]
+        ubar = uprev[t]
+
+        A = self.constructA(xbar, ubar)
+        B = self.constructB(xbar, ubar)
+        constraints.append(
+            x[t+1] == self.step(xbar, ubar) + A @ (x[t] - xbar) + B @ (u[t] - ubar)
+        )
+
+      # bounds on u
+      for t in range(0, T-1):
+        constraints.extend([
+            self.robot.min_u <= u[t],
+            u[t] <= self.robot.max_u
+        ])
+
+      # bounds on x
+      for t in range(0, T):
+        constraints.extend([
+            self.robot.min_x <= x[t],
+            x[t] <= self.robot.max_x
+        ])
+
+      prob = cp.Problem(cp_objective, constraints)
+
+      # The optimal objective value is returned by `prob.solve()`.
+      try:
+        # result = prob.solve(verbose=True, warm_start=True,solver=cp.GUROBI, BarQCPConvTol=1e-9)
+        result = prob.solve(verbose=verbose, solver=cp.GUROBI)
+        # result = prob.solve(verbose=True, warm_start=True, solver=cp.OSQP, max_iter=1000000)
+      except cp.error.SolverError:
+        # print("Warning: Solver failed!")
+        return X, U, float('inf')
+      except KeyError:
+        # print("Warning BarQCPConvTol too big?")
+        return X, U, float('inf')
+
+      if 'optimal' not in prob.status:
+        return X, U, float('inf')
+
+      xprev = numpy.array(x.value, dtype=np.float32)
+      uprev = numpy.array(u.value, dtype=np.float32)
+      X.append(xprev)
+      U.append(uprev)
 
     return X, U, float('inf')

@@ -37,10 +37,60 @@ ob::State* allocAndFillState(std::shared_ptr<ompl::control::SpaceInformation> si
   return state;
 }
 
+std::ofstream& printState(std::ofstream &stream, std::shared_ptr<ompl::control::SpaceInformation> si, const ob::State* state)
+{
+  std::vector<double> reals;
+  si->getStateSpace()->copyToReals(reals, state);
+  stream << "[";
+  for (size_t d = 0; d < reals.size(); ++d)
+  {
+    stream << reals[d];
+    if (d < reals.size() - 1)
+    {
+      stream << ",";
+    }
+  }
+  stream << "]";
+  return stream;
+}
+
+oc::Control *allocAndFillControl(std::shared_ptr<ompl::control::SpaceInformation> si, const YAML::Node &node)
+{
+  oc::Control *control = si->allocControl();
+  for (size_t idx = 0; idx < node.size(); ++idx)
+  {
+    double* address = si->getControlSpace()->getValueAddressAtIndex(control, idx);
+    if (address) {
+      *address = node[idx].as<double>();
+    }
+  }
+  return control;
+}
+
+std::ofstream& printAction(std::ofstream &stream, std::shared_ptr<ompl::control::SpaceInformation> si, oc::Control *action)
+{
+  const size_t dim = si->getControlSpace()->getDimension();
+  stream << "[";
+  for (size_t d = 0; d < dim; ++d)
+  {
+    double *address = si->getControlSpace()->getValueAddressAtIndex(action, d);
+    stream << *address;
+    if (d < dim - 1)
+    {
+      stream << ",";
+    }
+  }
+  stream << "]";
+  return stream;
+}
+
 class Motion
 {
 public:
   std::vector<ob::State*> states;
+  std::vector<oc::Control*> actions;
+
+  float cost;
 
   size_t idx;
 };
@@ -258,6 +308,10 @@ int main(int argc, char* argv[]) {
     for (const auto& state : motion["states"]) {
       m.states.push_back(allocAndFillState(si, state));
     }
+    for (const auto& action : motion["actions"]) {
+      m.actions.push_back(allocAndFillControl(si, action));
+    }
+    m.cost = m.actions.size();
     m.idx = motions.size();
     motions.push_back(m);
   }
@@ -337,22 +391,41 @@ int main(int argc, char* argv[]) {
       std::ofstream out(outputFile);
       out << "result:" << std::endl;
       out << "  - states:" << std::endl;
-      for (size_t i = 0; i < result.size(); ++i)
+      for (size_t i = 0; i < result.size() - 1; ++i)
       {
-        const auto state = result[i]->state;
-
-        std::vector<double> reals;
-        si->getStateSpace()->copyToReals(reals, state);
-        out << "      - [";
-        for (size_t i = 0; i < reals.size(); ++i)
+        // Compute intermediate states
+        const auto node_state = result[i]->state;
+        const fcl::Vector3f current_pos = robot->getTransform(node_state).translation();
+        const auto &motion = motions.at(result[i+1]->used_motion);
+        // skip last state each
+        for (size_t k = 0; k < motion.states.size() - 1; ++k)
         {
-          out << reals[i];
-          if (i < reals.size() - 1)
-          {
-            out << ",";
-          }
+          const auto state = motion.states[k];
+          si->copyState(tmpState, state);
+          const fcl::Vector3f relative_pos = robot->getTransform(state).translation();
+          robot->setPosition(tmpState, current_pos + relative_pos);
+
+          out << "      - ";
+          printState(out, si, tmpState);
+          out << std::endl;
         }
-        out << "]" << std::endl;
+        out << std::endl;
+      }
+      out << "      - ";
+      printState(out, si, result.back()->state);
+      out << std::endl;
+      out << "    actions:" << std::endl;
+      for (size_t i = 0; i < result.size() - 1; ++i)
+      {
+        const auto &motion = motions[result[i+1]->used_motion];
+        for (size_t k = 0; k < motion.actions.size(); ++k)
+        {
+          const auto& action = motion.actions[k];
+          out << "      - ";
+          printAction(out, si, action);
+          out << std::endl;
+        }
+        out << std::endl;
       }
 
       break;
@@ -403,7 +476,7 @@ int main(int argc, char* argv[]) {
 
       // std::cout << neighbors_n.size() << std::endl;
 
-      float tentative_gScore = current->gScore + motion->states.size();
+      float tentative_gScore = current->gScore + motion->cost;
       if (neighbors_n.size() == 0)
       {
         // std::cout << "new state";
