@@ -4,8 +4,9 @@ import numpy
 from jax import jacfwd, jit
 
 class SCP():
-  def __init__(self, robot):
+  def __init__(self, robot, collisionChecker=None):
     self.robot = robot
+    self.collisionChecker = collisionChecker
     self.constructA = jit(jacfwd(robot.step, 0))
     self.constructB = jit(jacfwd(robot.step, 1))
     self.step = jit(robot.step)
@@ -177,6 +178,26 @@ class SCP():
             x[t] <= self.robot.max_x
         ])
 
+      # collision constraints
+      if self.collisionChecker is not None:
+        for t in range(0, T):
+          # See 12a in "Convex optimization for proximity maneuvering of a spacecraft with a robotic manipulator"
+          # Also used in GuSTO
+          dist_tilde, p_obs, p_robot = self.collisionChecker.distance(xprev[t])
+          if dist_tilde > 0:
+            d_tilde = p_robot - p_obs
+          else:
+            d_tilde = p_obs - p_robot
+
+
+          norm_d_tilde = numpy.linalg.norm(d_tilde)
+          if norm_d_tilde > 0:
+            d_hat = d_tilde / norm_d_tilde
+
+            constraints.extend([
+              dist_tilde + d_hat[0:2].T @ (x[t,0:2] - xprev[t,0:2]) >= 0.0
+            ])
+
       prob = cp.Problem(cp_objective, constraints)
 
       # The optimal objective value is returned by `prob.solve()`.
@@ -193,6 +214,28 @@ class SCP():
 
       if 'optimal' not in prob.status:
         return X, U, float('inf')
+
+      # DEBUG
+      xsol = numpy.array(x.value, dtype=np.float32)
+      if self.collisionChecker is not None:
+        for t in range(0, T):
+          # See 12a in "Convex optimization for proximity maneuvering of a spacecraft with a robotic manipulator"
+          # Also used in GuSTO
+          dist_tilde, p_obs, p_robot = self.collisionChecker.distance(xprev[t])
+          if dist_tilde > 0:
+            d_tilde = p_robot - p_obs
+          else:
+            d_tilde = p_obs - p_robot
+
+          norm_d_tilde = numpy.linalg.norm(d_tilde)
+          if norm_d_tilde > 0:
+            d_hat = d_tilde / norm_d_tilde
+            con = dist_tilde + d_hat[0:2].T @ (xsol[t, 0:2] - xprev[t, 0:2])
+            print(t, con)
+
+            # constraints.extend([
+            #   d_tilde + d_hat[0:2].T @ (x[t,0:2] - xprev[t,0:2]) >= 0.0
+            # ])
 
       xprev = numpy.array(x.value, dtype=np.float32)
       uprev = numpy.array(u.value, dtype=np.float32)

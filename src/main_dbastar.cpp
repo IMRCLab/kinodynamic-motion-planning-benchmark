@@ -446,7 +446,7 @@ int main(int argc, char* argv[]) {
       const auto current_pos = robot->getTransform(current->state).translation();
 
       bool motionValid = true;
-      for (const auto& state : motion->states) 
+      for (const auto& state : motion->states)
       {
         // const auto& state = motion->states.back();
         si->copyState(tmpState, state);

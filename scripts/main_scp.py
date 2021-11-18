@@ -4,6 +4,11 @@ import robots
 import yaml
 import argparse
 
+import sys
+import os
+sys.path.append(os.getcwd())
+from motionplanningutils import CollisionChecker
+
 
 if __name__ == '__main__':
 	parser = argparse.ArgumentParser()
@@ -24,14 +29,26 @@ if __name__ == '__main__':
 	x0 = np.array(robot_node["start"])
 	xf = np.array(robot_node["goal"])
 
+	cc = CollisionChecker()
+	cc.load(args.env)
+	# r = cc.distance(np.array(robot_node["start"]))
+	# print(r)
+	# exit()
+
 	with open(args.initial_guess) as f:
 		initial_guess = yaml.safe_load(f)
 
 	states = np.array(initial_guess["result"][0]["states"])
 	actions = np.array(initial_guess["result"][0]["actions"])
 
-	scp = SCP(robot)
-	X, U, val = scp.min_u(states, actions, x0, xf, 10, trust_x=None, trust_u=None, verbose=True)
+	trust_x_est = np.max(np.abs(np.diff(states, axis=0)), axis=0)
+	trust_u_est = np.max(np.abs(np.diff(actions, axis=0)), axis=0)
+	# print(trust_x_est, trust_u_est)
+	# exit()
+	
+	# scp = SCP(robot)
+	scp = SCP(robot, cc)
+	X, U, val = scp.min_u(states, actions, x0, xf, 3, trust_x=2*trust_x_est, trust_u=2*trust_u_est, verbose=True)
 
 	result = dict()
 	result["result"] = [{'states': X[-1].tolist(), 'actions': U[-1].tolist()}]

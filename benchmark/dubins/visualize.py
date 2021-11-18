@@ -5,6 +5,10 @@ import yaml
 import matplotlib.pyplot as plt
 import matplotlib
 from matplotlib.patches import Circle, Rectangle, Arrow
+import os
+import sys
+
+
 
 
 def draw_box_patch(ax, center, size, angle = 0, **kwargs):
@@ -24,6 +28,11 @@ if __name__ == "__main__":
 
   with open(args.env) as env_file:
     env = yaml.safe_load(env_file)
+
+  sys.path.append(os.getcwd())
+  from motionplanningutils import CollisionChecker
+  cc = CollisionChecker()
+  cc.load(args.env)
 
   fig = plt.figure()#frameon=False, figsize=(4 * aspect, 4))
   ax = fig.add_subplot(111, aspect='equal')
@@ -49,7 +58,18 @@ if __name__ == "__main__":
       result = yaml.safe_load(result_file)
 
     for robot in result["result"]:
+      p_obs_all = []
+      p_robot_all = []
       for state in robot["states"]:
         draw_box_patch(ax, state[0:2], size, state[2], facecolor='blue')
+        if cc:
+          d, p_obs, p_robot = cc.distance(state)
+          p_obs_all.append(p_obs)
+          p_robot_all.append(p_robot)
+      p_obs_all = np.array(p_obs_all)
+      ax.scatter(p_obs_all[:,0], p_obs_all[:,1])
+      p_robot_all = np.array(p_robot_all)
+      ax.scatter(p_robot_all[:, 0], p_robot_all[:, 1])
+
 
   plt.show()

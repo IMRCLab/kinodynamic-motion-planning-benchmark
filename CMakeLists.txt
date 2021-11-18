@@ -39,15 +39,20 @@ link_directories(
   ${OMPL_LIBRARY_DIRS}
 )
 
+add_library(motion_planning_common
+  src/robotCarFirstOrder.cpp
+  src/robotCarSecondOrder.cpp
+)
+set_property(TARGET motion_planning_common PROPERTY POSITION_INDEPENDENT_CODE ON)
+
 # Applications
 
 ## ompl_rrt
 add_executable(ompl_rrt
   src/main_ompl_rrt.cpp
-  src/robotCarFirstOrder.cpp
-  src/robotCarSecondOrder.cpp
 )
 target_link_libraries(ompl_rrt
+  motion_planning_common
   ${Boost_LIBRARIES}
   ${OMPL_LIBRARIES}
   # ompl
@@ -92,9 +97,23 @@ target_link_libraries(main_sbpl
 ## dbastar
 add_executable(dbastar
   src/main_dbastar.cpp
-  src/robotCarFirstOrder.cpp
 )
 target_link_libraries(dbastar
+  motion_planning_common
+  ${Boost_LIBRARIES}
+  ${OMPL_LIBRARIES}
+  fcl
+  yaml-cpp
+)
+
+# Python bindings
+add_subdirectory(deps/pybind11 EXCLUDE_FROM_ALL)
+
+pybind11_add_module(motionplanningutils
+  src/python_bindings.cpp
+)
+target_link_libraries(motionplanningutils PRIVATE
+  motion_planning_common
   ${Boost_LIBRARIES}
   ${OMPL_LIBRARIES}
   fcl
