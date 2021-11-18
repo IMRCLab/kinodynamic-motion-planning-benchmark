@@ -108,9 +108,9 @@ int main(int argc, char* argv[]) {
 
   auto si = robot->getSpaceInformation();
 
-  // set number of control steps
-  si->setPropagationStepSize(1);
-  si->setMinMaxControlDuration(1, 1);
+  // set number of control steps (use 0.1s as increment -> 0.1 to 1s per Steer function)
+  si->setPropagationStepSize(0.1);
+  si->setMinMaxControlDuration(1, 10);
 
   // set state validity checking for this space
   auto stateValidityChecker(std::make_shared<fclStateValidityChecker>(si, bpcm_env, robot));
@@ -183,13 +183,17 @@ int main(int argc, char* argv[]) {
   std::cout << solved << std::endl;
   auto path = pdef->getSolutionPath()->as<oc::PathControl>();
 
+  // update propagation step size to get right interpolation resolution
+  si->setPropagationStepSize(0.1);
+  path->interpolate(); // normalize to a single control step
+
   std::cout << path->getStateCount() << "," << path->getControlCount() << std::endl;
   assert(path->getStateCount() == path->getControlCount() + 1);
 
   std::ofstream out(outputFile);
   out << "result:" << std::endl;
   out << "  - states:" << std::endl;
-  for (size_t i = 0; i < path->getControlCount(); ++i) {
+  for (size_t i = 0; i < path->getStateCount(); ++i) {
     const auto state = path->getState(i);
 
     std::vector<double> reals;
@@ -202,13 +206,23 @@ int main(int argc, char* argv[]) {
       }
     }
     out << "]" << std::endl;
+  }
+  out << "    actions:" << std::endl;
+  for (size_t i = 0; i < path->getControlCount(); ++i) {
 
-    // auto stateCS = state->as<ob::CompoundStateSpace::StateType>();
-    // double pos = stateCS->as<ob::RealVectorStateSpace::StateType>(0)->values[0];
-    // double vel = stateCS->as<ob::RealVectorStateSpace::StateType>(1)->values[0];
-
-    // double a = path->getControl(i)->as<ompl::control::RealVectorControlSpace::ControlType>()->values[0];
-    // out << pos << "," << vel << "," << a << std::endl;
+    const size_t dim = si->getControlSpace()->getDimension();
+    out << "      - [";
+    for (size_t d = 0; d < dim; ++d)
+    {
+      const auto action = path->getControl(i);
+      double *address = si->getControlSpace()->getValueAddressAtIndex(action, d);
+      out << *address;
+      if (d < dim - 1)
+      {
+        out << ",";
+      }
+    }
+    out << "]" << std::endl;
   }
 
   return 0;

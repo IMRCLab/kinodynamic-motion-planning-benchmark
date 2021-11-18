@@ -21,6 +21,65 @@ using namespace pybind11::literals;
 namespace ob = ompl::base;
 namespace oc = ompl::control;
 
+class RobotHelper
+{
+public:
+  RobotHelper(const std::string& robotType)
+  {
+    if (robotType == "car_first_order_0")
+    {
+      ob::RealVectorBounds position_bounds(2);
+      position_bounds.setLow(-100);
+      position_bounds.setHigh(100);
+      robot_.reset(new RobotCarFirstOrder(
+          position_bounds,
+          /*w_limit*/ 0.5 /*rad/s*/,
+          /*v_limit*/ 0.5 /* m/s*/));
+    }
+    else if (robotType == "car_second_order_0")
+    {
+      ob::RealVectorBounds position_bounds(2);
+      robot_.reset(new RobotCarSecondOrder(
+          position_bounds,
+          /*v_limit*/ 0.5 /*m/s*/,
+          /*w_limit*/ 0.5 /*rad/s*/,
+          /*a_limit*/ 2.0 /*m/s^2*/,
+          /*w_dot_limit*/ 2.0 /*rad/s^2*/
+          ));
+    }
+    else
+    {
+      throw std::runtime_error("Unknown robot type!");
+    }
+
+    auto si = robot_->getSpaceInformation();
+    si->getStateSpace()->setup();
+
+    tmp_state_a_ = si->allocState();
+    tmp_state_b_ = si->allocState();
+  }
+
+  ~RobotHelper()
+  {
+    auto si = robot_->getSpaceInformation();
+    si->freeState(tmp_state_a_);
+    si->freeState(tmp_state_b_);
+  }
+
+  float distance(const std::vector<double> &stateA, const std::vector<double> &stateB)
+  {
+    auto si = robot_->getSpaceInformation();
+    si->getStateSpace()->copyFromReals(tmp_state_a_, stateA);
+    si->getStateSpace()->copyFromReals(tmp_state_b_, stateB);
+    return si->distance(tmp_state_a_, tmp_state_b_);
+  }
+
+private: 
+  std::shared_ptr<Robot> robot_;
+  ob::State* tmp_state_a_;
+  ob::State* tmp_state_b_;
+};
+
 class CollisionChecker
 {
 public:
@@ -144,4 +203,8 @@ PYBIND11_MODULE(motionplanningutils, m)
       .def(pybind11::init())
       .def("load", &CollisionChecker::load)
       .def("distance", &CollisionChecker::distance);
+
+  pybind11::class_<RobotHelper>(m, "RobotHelper")
+      .def(pybind11::init<const std::string &>())
+      .def("distance", &RobotHelper::distance);
 }

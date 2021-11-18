@@ -428,6 +428,7 @@ int main(int argc, char* argv[]) {
         out << std::endl;
       }
 
+      return 0;
       break;
     }
 
@@ -439,7 +440,7 @@ int main(int argc, char* argv[]) {
     robot->setPosition(fakeMotion.states[0], fcl::Vector3f(0,0,0));
 
     T_m->nearestR(&fakeMotion, delta, neighbors_m);
-
+    // std::cout << "found " << neighbors_m.size() << " motions" << std::endl;
     // Loop over all potential applicable motions
     for (const Motion* motion : neighbors_m) {
       // Compute intermediate states and check their validity
@@ -473,6 +474,10 @@ int main(int argc, char* argv[]) {
       // Check if we have this state (or any within delta) already
       query_n->state = tmpState;
       T_n->nearestR(query_n, delta, neighbors_n);
+
+      // exclude state we came from (otherwise we never add motions that are less than delta away)
+      // auto it = std::remove(neighbors_n.begin(), neighbors_n.end(), current);
+      // neighbors_n.erase(it, neighbors_n.end());
 
       // std::cout << neighbors_n.size() << std::endl;
 
@@ -517,5 +522,5 @@ int main(int argc, char* argv[]) {
 
   }
 
-  return 0;
+  return 1;
 }
