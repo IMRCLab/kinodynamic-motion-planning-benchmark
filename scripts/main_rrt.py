@@ -4,7 +4,7 @@ import main_scp
 
 def run_dbastar(filename_env):
 
-	result = subprocess.run(["./ompl_rrt", "-i", filename_env, "-o", "result_rrt.yaml"])
+	result = subprocess.run(["./ompl_rrt", "-i", filename_env, "-o", "result_rrt.yaml", "-p", "sst"])
 	if result.returncode != 0:
 		print("RRT failed")
 

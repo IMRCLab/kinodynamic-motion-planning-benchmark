@@ -98,6 +98,7 @@ class Animation:
 def visualize(filename_env, filename_result = None):
   anim = Animation(filename_env, filename_result)
   anim.show()
+  # anim.save("bugtrap_0_rrt.mp4", 10)
   # with open(filename_env) as env_file:
   #   env = yaml.safe_load(env_file)
 

@@ -1,0 +1,25 @@
+{
+    "files.associations": {
+        "*.ipp": "cpp",
+        "bit": "cpp",
+        "*.tcc": "cpp",
+        "bitset": "cpp",
+        "codecvt": "cpp",
+        "exception": "cpp",
+        "algorithm": "cpp",
+        "functional": "cpp",
+        "iterator": "cpp",
+        "memory": "cpp",
+        "future": "cpp",
+        "limits": "cpp",
+        "numeric": "cpp",
+        "ratio": "cpp",
+        "shared_mutex": "cpp",
+        "streambuf": "cpp",
+        "regex": "cpp",
+        "tuple": "cpp",
+        "type_traits": "cpp",
+        "valarray": "cpp",
+        "variant": "cpp"
+    }
+}

@@ -210,12 +210,14 @@ int main(int argc, char* argv[]) {
   std::string inputFile;
   std::string motionsFile;
   float delta;
+  float maxCost;
   std::string outputFile;
   desc.add_options()
     ("help", "produce help message")
     ("input,i", po::value<std::string>(&inputFile)->required(), "input file (yaml)")
     ("motions,m", po::value<std::string>(&motionsFile)->required(), "motions file (yaml)")
     ("delta", po::value<float>(&delta)->default_value(0.01), "discontinuity bound")
+    ("maxCost", po::value<float>(&maxCost)->default_value(std::numeric_limits<float>::infinity()), "cost bound")
     ("output,o", po::value<std::string>(&outputFile)->required(), "output file (yaml)");
 
   try {
@@ -445,6 +447,10 @@ int main(int argc, char* argv[]) {
     for (const Motion* motion : neighbors_m) {
       // Compute intermediate states and check their validity
       const auto current_pos = robot->getTransform(current->state).translation();
+      float tentative_gScore = current->gScore + motion->cost;
+      if (tentative_gScore > maxCost) {
+        continue;
+      }
 
       bool motionValid = true;
       for (const auto& state : motion->states)
@@ -481,7 +487,6 @@ int main(int argc, char* argv[]) {
 
       // std::cout << neighbors_n.size() << std::endl;
 
-      float tentative_gScore = current->gScore + motion->cost;
       if (neighbors_n.size() == 0)
       {
         // std::cout << "new state";

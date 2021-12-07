@@ -67,7 +67,7 @@ def run_scp(filename_env, filename_initial_guess):
 
 	# scp = SCP(robot)
 	scp = SCP(robot, cc)
-	X, U, val = scp.min_u(states, actions, x0, xf, 10, trust_x=2*trust_x_est, trust_u=2*trust_u_est, verbose=True)
+	X, U, val = scp.min_u(states, actions, x0, xf, 5, trust_x=2*trust_x_est, trust_u=2*trust_u_est, verbose=True)
 	# X, U, val = scp.min_u(states, actions, x0, xf, 3, trust_x=None, trust_u=None, verbose=True)
 
 	result = dict()

@@ -33,22 +33,25 @@ def run_dbastar(filename_env):
 	xf = np.array(robot_node["goal"])
 
 	delta = rh.distance(x0, xf) * 0.9
+	maxCost = 1e6
 
 
 	# load existing motions
 	with open('motions.yaml') as f:
 		motions = yaml.safe_load(f)
+	# motions = []
 
 	median = np.median([m['distance'] for m in motions])
 	if delta > median:
 		print("Adjusting delta!", delta, median)
 		delta = median
 
+	initialDelta = delta
 
 	while True:
-		print("delta", delta)
+		print("delta", delta, "maxCost", maxCost)
 
-		result = subprocess.run(["./dbastar", "-i", filename_env, "-m", "motions.yaml", "-o", "result_dbastar.yaml", "--delta", str(delta)])
+		result = subprocess.run(["./dbastar", "-i", filename_env, "-m", "motions.yaml", "-o", "result_dbastar.yaml", "--delta", str(delta), "--maxCost", str(maxCost)])
 		if result.returncode != 0:
 			print("dbA* failed; Generating more primitives")
 
@@ -71,7 +74,13 @@ def run_dbastar(filename_env):
 				print("Optimization failed; Reducing delta")
 				delta = delta * 0.9
 			else:
-				break
+				with open("result_dbastar.yaml") as f:
+					result = yaml.safe_load(f)
+					cost = len(result["result"][0]["states"])
+				print("success!", cost)
+				maxCost = cost * 0.99
+				# delta = initialDelta
+				# break
 
 def main():
 	parser = argparse.ArgumentParser()

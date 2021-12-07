@@ -50,6 +50,7 @@ set_property(TARGET motion_planning_common PROPERTY POSITION_INDEPENDENT_CODE ON
 ## ompl_rrt
 add_executable(ompl_rrt
   src/main_ompl_rrt.cpp
+  src/AO_RRT.cpp
 )
 target_link_libraries(ompl_rrt
   motion_planning_common

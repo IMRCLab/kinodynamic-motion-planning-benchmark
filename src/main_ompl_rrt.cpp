@@ -12,6 +12,9 @@
 #include <ompl/control/SpaceInformation.h>
 #include <ompl/control/spaces/RealVectorControlSpace.h>
 #include <ompl/control/planners/rrt/RRT.h>
+#include <ompl/control/planners/sst/SST.h>
+#include <ompl/base/objectives/ControlDurationObjective.h>
+#include "AO_RRT.h"
 
 #include "robotCarFirstOrder.h"
 #include "robotCarSecondOrder.h"
@@ -27,10 +30,12 @@ int main(int argc, char* argv[]) {
   po::options_description desc("Allowed options");
   std::string inputFile;
   std::string outputFile;
+  std::string plannerDesc;
   desc.add_options()
     ("help", "produce help message")
     ("input,i", po::value<std::string>(&inputFile)->required(), "input file (yaml)")
-    ("output,o", po::value<std::string>(&outputFile)->required(), "output file (yaml)");
+    ("output,o", po::value<std::string>(&outputFile)->required(), "output file (yaml)")
+    ("planner,p", po::value<std::string>(&plannerDesc)->default_value("rrt"), "Planner");
 
   try {
     po::variables_map vm;
@@ -142,16 +147,34 @@ int main(int argc, char* argv[]) {
     reals.push_back(v.as<double>());
   }
   si->getStateSpace()->copyFromReals(goalState, reals);
-  pdef->setGoalState(goalState, 0.01);
+  pdef->setGoalState(goalState, 0.1);
   si->freeState(goalState);
 
   // create a planner for the defined space
-  auto rrt(std::make_shared<oc::RRT>(si));
+  std::shared_ptr<ob::Planner> planner;
+  if (plannerDesc == "rrt")
+  {
+    planner.reset(new oc::RRT(si));
+  } else if (plannerDesc == "aorrt") {
+    planner.reset(new AO_RRT(si));
+  } else if (plannerDesc == "sst") {
+    planner.reset(new oc::SST(si));
+  }
   // rrt->setGoalBias(params["goalBias"].as<float>());
-  auto planner(rrt);
+  // auto planner(rrt);
+
+  pdef->setOptimizationObjective(std::make_shared<ob::ControlDurationObjective>(si));
+
+  pdef->setIntermediateSolutionCallback(
+      [](const ob::Planner *, const std::vector<const ob::State *> &, const ob::Cost cost)
+      {
+        std::cout << "Intermediate solution! " << cost.value() << std::endl;
+      });
 
   // set the problem we are trying to solve for the planner
   planner->setProblemDefinition(pdef);
+
+
 
   // perform setup steps for the planner
   planner->setup();
@@ -163,8 +186,13 @@ int main(int argc, char* argv[]) {
   pdef->print(std::cout);
 
   // attempt to solve the problem within timelimit
-  float timelimit = 10; 
-  ob::PlannerStatus solved = planner->ob::Planner::solve(timelimit);
+  ob::PlannerStatus solved;
+
+  // for (int i = 0; i < 3; ++i) {
+  float timelimit = 60;
+  solved = planner->ob::Planner::solve(timelimit);
+  std::cout << solved << std::endl;
+  // }
 
   if (solved)
   {
