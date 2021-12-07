@@ -20,6 +20,7 @@
         "tuple": "cpp",
         "type_traits": "cpp",
         "valarray": "cpp",
-        "variant": "cpp"
+        "variant": "cpp",
+        "chrono": "cpp"
     }
 }

@@ -1,6 +1,7 @@
 #include <fstream>
 #include <iostream>
 #include <algorithm>
+#include <chrono>
 
 #include <yaml-cpp/yaml.h>
 
@@ -165,10 +166,14 @@ int main(int argc, char* argv[]) {
 
   pdef->setOptimizationObjective(std::make_shared<ob::ControlDurationObjective>(si));
 
+  auto start = std::chrono::steady_clock::now();
+
   pdef->setIntermediateSolutionCallback(
-      [](const ob::Planner *, const std::vector<const ob::State *> &, const ob::Cost cost)
+      [start](const ob::Planner *, const std::vector<const ob::State *> &, const ob::Cost cost)
       {
-        std::cout << "Intermediate solution! " << cost.value() << std::endl;
+        auto now = std::chrono::steady_clock::now();
+        double t = std::chrono::duration_cast<std::chrono::milliseconds>(now - start).count();
+        std::cout << "Intermediate solution! " << cost.value() << " " << t/1000.0f << std::endl;
       });
 
   // set the problem we are trying to solve for the planner

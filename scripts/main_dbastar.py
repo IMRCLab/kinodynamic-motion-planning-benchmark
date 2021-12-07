@@ -4,6 +4,7 @@ import robots
 import yaml
 import argparse
 import subprocess
+import time
 
 import sys
 import os
@@ -48,6 +49,8 @@ def run_dbastar(filename_env):
 
 	initialDelta = delta
 
+	start = time.time()
+
 	while True:
 		print("delta", delta, "maxCost", maxCost)
 
@@ -76,8 +79,10 @@ def run_dbastar(filename_env):
 			else:
 				with open("result_dbastar.yaml") as f:
 					result = yaml.safe_load(f)
-					cost = len(result["result"][0]["states"])
-				print("success!", cost)
+					cost = len(result["result"][0]["actions"])
+				now = time.time()
+				t = now - start
+				print("success!", cost, t)
 				maxCost = cost * 0.99
 				# delta = initialDelta
 				# break

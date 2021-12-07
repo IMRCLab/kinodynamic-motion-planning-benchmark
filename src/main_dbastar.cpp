@@ -377,7 +377,7 @@ int main(int argc, char* argv[]) {
     // std::cout << "current";
     // si->printState(current->state);
     if (si->distance(current->state, goalState) <= delta) {
-      std::cout << "SOLUTION FOUND!!!!" << std::endl;
+      std::cout << "SOLUTION FOUND!!!! cost: " << current->gScore << std::endl;
 
       std::vector<const AStarNode*> result;
 
