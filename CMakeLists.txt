@@ -47,29 +47,18 @@ set_property(TARGET motion_planning_common PROPERTY POSITION_INDEPENDENT_CODE ON
 
 # Applications
 
-## ompl_rrt
-add_executable(ompl_rrt
-  src/main_ompl_rrt.cpp
+## ompl
+add_executable(main_ompl
+  src/main_ompl.cpp
   src/AO_RRT.cpp
 )
-target_link_libraries(ompl_rrt
+target_link_libraries(main_ompl
   motion_planning_common
   ${Boost_LIBRARIES}
   ${OMPL_LIBRARIES}
   # ompl
   fcl
   yaml-cpp
-)
-
-## ompl_aorrt
-add_executable(ompl_aorrt
-  src/main_ompl_aorrt.cpp
-)
-target_link_libraries(ompl_aorrt
-  ${Boost_LIBRARIES}
-  ${OMPL_LIBRARIES}
-  # ompl
-  # yaml-cpp
 )
 
 ## test_fcl
