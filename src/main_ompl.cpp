@@ -31,12 +31,16 @@ int main(int argc, char* argv[]) {
   po::options_description desc("Allowed options");
   std::string inputFile;
   std::string outputFile;
+  std::string statsFile;
   std::string plannerDesc;
+  int timelimit;
   desc.add_options()
     ("help", "produce help message")
     ("input,i", po::value<std::string>(&inputFile)->required(), "input file (yaml)")
     ("output,o", po::value<std::string>(&outputFile)->required(), "output file (yaml)")
-    ("planner,p", po::value<std::string>(&plannerDesc)->default_value("rrt"), "Planner");
+    ("stats", po::value<std::string>(&statsFile)->default_value("ompl_stats.yaml"), "output file (yaml)")
+    ("planner,p", po::value<std::string>(&plannerDesc)->default_value("rrt"), "Planner")
+    ("timelimit", po::value<int>(&timelimit)->default_value(60), "Time limit for planner");
 
   try {
     po::variables_map vm;
@@ -166,13 +170,19 @@ int main(int argc, char* argv[]) {
 
   pdef->setOptimizationObjective(std::make_shared<ob::ControlDurationObjective>(si));
 
+  // empty stats file
+  std::ofstream stats(statsFile);
+  stats << "stats:" << std::endl;
+
   auto start = std::chrono::steady_clock::now();
 
   pdef->setIntermediateSolutionCallback(
-      [start](const ob::Planner *, const std::vector<const ob::State *> &, const ob::Cost cost)
+      [start, &stats](const ob::Planner *, const std::vector<const ob::State *> &, const ob::Cost cost)
       {
         auto now = std::chrono::steady_clock::now();
         double t = std::chrono::duration_cast<std::chrono::milliseconds>(now - start).count();
+        stats << "  - t: " << t/1000.0f << std::endl;
+        stats << "    cost: " << cost.value() << std::endl;
         std::cout << "Intermediate solution! " << cost.value() << " " << t/1000.0f << std::endl;
       });
 
@@ -194,7 +204,6 @@ int main(int argc, char* argv[]) {
   ob::PlannerStatus solved;
 
   // for (int i = 0; i < 3; ++i) {
-  float timelimit = 60;
   solved = planner->ob::Planner::solve(timelimit);
   std::cout << solved << std::endl;
   // }

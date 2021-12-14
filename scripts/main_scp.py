@@ -9,7 +9,7 @@ import os
 sys.path.append(os.getcwd())
 from motionplanningutils import CollisionChecker
 
-def run_scp(filename_env, filename_initial_guess):
+def run_scp(filename_env, filename_initial_guess, filename_result='result_scp.yaml', iterations=5):
 
 	with open(filename_env) as f:
 		env = yaml.safe_load(f)
@@ -67,12 +67,12 @@ def run_scp(filename_env, filename_initial_guess):
 
 	# scp = SCP(robot)
 	scp = SCP(robot, cc)
-	X, U, val = scp.min_u(states, actions, x0, xf, 5, trust_x=2*trust_x_est, trust_u=2*trust_u_est, verbose=True)
+	X, U, val = scp.min_u(states, actions, x0, xf, iterations, trust_x=2*trust_x_est, trust_u=2*trust_u_est, verbose=True)
 	# X, U, val = scp.min_u(states, actions, x0, xf, 3, trust_x=None, trust_u=None, verbose=True)
 
 	result = dict()
 	result["result"] = [{'states': X[-1].tolist(), 'actions': U[-1].tolist()}]
-	with open('result_scp.yaml', 'w') as f:
+	with open(filename_result, 'w') as f:
 		yaml.dump(result, f)
 
 	if len(X) > 2:

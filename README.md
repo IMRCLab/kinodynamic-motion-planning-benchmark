@@ -12,17 +12,16 @@ make
 
 ## Planners
 
-### ompl_rrt
+### main_ompl
 
-* Sampling-based using OMPL
-* Currently hard-coded to the mountain car example, without collision checking
-* Probabilistically complete, suboptimal
+* Sampling-based using OMPL (main asymptotic optimal planner: SST)
 
-### ompl_aorrt
+## Notes
 
-* Sampling-based using OMPL
-* Currently hard-coded to the mountain car example, without collision checking
-* Implements a simplified version of AO-RRT
-  * This does not prune the tree, but executes a new search
-  * Currently, the weight of the cost components in the state is set to zero
-* Probabilistically complete, asymptotically optimal
+* can we find the best motions automatically using 
+    a) statistical inference? (bayes learning?) -OR-
+    b) using dispersion optimization -OR-
+    c) graph theory (finding critical motions)
+      * find histogram of motions used
+      * remove one kind of motion (of the used ones) -> 1 - old cost/new cost is importance (if infeasible: new cost = inf -> importance =1; if no change in cost importance is 0)
+* 

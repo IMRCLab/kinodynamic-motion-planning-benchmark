@@ -429,6 +429,22 @@ int main(int argc, char* argv[]) {
         }
         out << std::endl;
       }
+      // statistics for the motions used
+      std::map<size_t, size_t> motionsCount; // motionId -> usage count
+      for (size_t i = 0; i < result.size() - 1; ++i)
+      {
+        auto motionId = result[i+1]->used_motion;
+        auto iter = motionsCount.find(motionId);
+        if (iter == motionsCount.end()) {
+          motionsCount[motionId] = 1;
+        } else {
+          iter->second += 1;
+        }
+      }
+      out << "    motion_stats:" << std::endl;
+      for (const auto& kv : motionsCount) {
+        out << "      " << kv.first << ": " << kv.second << std::endl;
+      }
 
       return 0;
       break;
