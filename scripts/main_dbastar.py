@@ -7,6 +7,7 @@ import subprocess
 import time
 import random
 import copy
+from collections import defaultdict
 
 import sys
 import os
@@ -46,8 +47,7 @@ def find_smallest_delta(filename_env, filename_motions, filename_result_dbastar,
 	return best_delta
 
 
-def compute_motion_importance(filename_env, filename_motions, filename_result_dbastar, delta, max_cost):
-
+def compute_motion_importance(filename_env, filename_motions, filename_result_dbastar, delta, max_cost, motions_stats):
 	# load the result
 	with open(filename_result_dbastar) as f:
 		result = yaml.safe_load(f)
@@ -74,6 +74,7 @@ def compute_motion_importance(filename_env, filename_motions, filename_result_db
 		if result.returncode != 0:
 			# failure -> this was a very important edge
 			print(k, "super important!")
+			motions_stats[motions[k]["name"]] += 1
 		else:
 			# success -> compute numeric importance
 			# load the result
@@ -81,8 +82,10 @@ def compute_motion_importance(filename_env, filename_motions, filename_result_db
 				result = yaml.safe_load(f)
 				new_cost = len(result["result"][0]["actions"])
 			print(k, old_cost, new_cost, 1 - old_cost / new_cost)
+			motions_stats[motions[k]["name"]] += np.clip(1 - old_cost / new_cost, 0, 1)
+	return motions_stats
 
-def run_dbastar(filename_env, prefix=""):
+def run_dbastar(filename_env, prefix, motions_stats):
 
 	filename_motions = "motions_{}.yaml".format(prefix)
 	filename_result_dbastar = "result_dbastar_{}.yaml".format(prefix)
@@ -111,9 +114,9 @@ def run_dbastar(filename_env, prefix=""):
 	# load existing motions
 	with open('motions.yaml') as f:
 		all_motions = yaml.safe_load(f)
-	# random.shuffle(all_motions)
-	# motions = all_motions[0:100]
-	motions = all_motions
+	random.shuffle(all_motions)
+	motions = all_motions[0:100]
+	del all_motions[0:100]
 	with open(filename_motions, 'w') as file:
 		yaml.dump(motions, file)
 
@@ -145,13 +148,17 @@ def run_dbastar(filename_env, prefix=""):
 				"--delta", str(delta),
 				"--maxCost", str(maxCost)])
 			if result.returncode != 0:
-				print("dbA* failed; Generating more primitives")
+				# print("dbA* failed; Generating more primitives")
+				# for _ in range(10):
+				# 	print("gen motion", len(motions))
+				# 	motion = gen_motion_primitive.gen_random_motion(robot)
+				# 	motion['distance'] = rh.distance(motion['x0'], motion['xf'])
+				# 	motions.append(motion)
 
-				for _ in range(10):
-					print("gen motion", len(motions))
-					motion = gen_motion_primitive.gen_random_motion(robot)
-					motion['distance'] = rh.distance(motion['x0'], motion['xf'])
-					motions.append(motion)
+				print("dbA* failed; Using more primitives")
+				motions.extend(all_motions[0:10])
+				del all_motions[0:10]
+
 				with open(filename_motions, 'w') as file:
 					yaml.dump(motions, file)
 
@@ -167,8 +174,7 @@ def run_dbastar(filename_env, prefix=""):
 					delta = delta * 0.9
 				else:
 					# ONLY FOR MOTION PRIMITIVE SELECTION
-					compute_motion_importance(filename_env, filename_motions, filename_result_dbastar, delta, maxCost)
-					
+					compute_motion_importance(filename_env, filename_motions, filename_result_dbastar, delta, maxCost, motions_stats)
 					with open(filename_result_dbastar) as f:
 						result = yaml.safe_load(f)
 						cost = len(result["result"][0]["actions"])
@@ -187,8 +193,10 @@ def main():
 	parser.add_argument("env", help="file containing the environment (YAML)")
 	args = parser.parse_args()
 
+	motions_stats = defaultdict(float)
 	for i in range(3):
-		run_dbastar(args.env, i)
+		run_dbastar(args.env, i, motions_stats)
+	print(sorted( ((v,k) for k,v in motions_stats.items()), reverse=True) )
 
 
 if __name__ == '__main__':

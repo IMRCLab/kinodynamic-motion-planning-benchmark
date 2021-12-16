@@ -2,6 +2,14 @@ import numpy as np
 from scp import SCP
 import robots
 import yaml
+import multiprocessing as mp
+import tqdm
+import itertools
+
+import sys, os
+sys.path.append(os.getcwd())
+from motionplanningutils import RobotHelper
+
 
 # two point boundary value problem
 def TPBVP_fixed_time(robot, x0, xf, T):
@@ -19,9 +27,7 @@ def TPBVP_fixed_time(robot, x0, xf, T):
 	# actions = np.zeros((T-1, 2))
 	# states[1:] += np.random.normal(0, 0.001, states.shape)[1:]
 	# actions += np.random.normal(0, 0.001, actions.shape)
-
 	X, U, val = scp.min_xf(states, actions, xf, 10, trust_x=0.1, trust_u=0.1)
-
 	if len(X) > 1:
 		return X[-1], U[-1], val
 
@@ -37,8 +43,10 @@ def gen_random_motion(robot):
 		yawf = np.random.uniform(-np.pi, np.pi)
 		xf = np.array([xf, yf, yawf], dtype=np.float32)
 		T = np.random.choice([8, 16, 32])
+		print(T)
 
 		X, U, _ = TPBVP_fixed_time(robot, x0, xf, T)
+		print(X)
 		if X is not None:
 			r = dict()
 			r['x0'] = x0.tolist()
@@ -63,15 +71,30 @@ def gen_motion(robot, x0, xf):
 			r['T'] = int(T)
 			return r
 
+def main():
+	robot_type = "car_first_order_0"
+	if robot_type == "car_first_order_0":
+		robot = robots.RobotCarFirstOrder(0.5, 0.5)
+	else:
+		raise Exception("Unknown robot type!")
 
-if __name__ == '__main__':
-	robot = robots.RobotCarFirstOrder(0.5, 0.5)
+	rh = RobotHelper(robot_type)
+	N = 1000
 
 	motions = []
-	for k in range(100):
-		print(k)
-		motion = gen_random_motion(robot)
-		motions.append(motion)
+	# tasks = list(itertools.repeat(robot, N))
+	# print(tasks)
+	# for k in range(N):
+	# 	print(k)
+	# 	motion = gen_random_motion(robot)
+	# 	motions.append(motion)
+
+	mp.set_start_method('spawn')
+	with mp.Pool(24) as p:
+		for motion in tqdm.tqdm(p.imap_unordered(gen_random_motion, itertools.repeat(robot, N))):
+			motion['distance'] = rh.distance(motion['x0'], motion['xf'])
+			motion['name'] = 'm{}'.format(len(motions))
+			motions.append(motion)
 
 	# for x in [-0.25, 0, 0.25]:
 	# 	for y in [-0.25, 0, 0.25]:
@@ -85,3 +108,7 @@ if __name__ == '__main__':
 
 	with open('motions.yaml', 'w') as file:
 		yaml.dump(motions, file)
+
+
+if __name__ == '__main__':
+	main()
