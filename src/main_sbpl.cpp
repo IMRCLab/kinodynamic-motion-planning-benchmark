@@ -17,10 +17,12 @@ int main(int argc, char* argv[]) {
   // Declare the supported options.
   po::options_description desc("Allowed options");
   std::string inputFile;
+  std::string primitivesFile;
   std::string outputFile;
   desc.add_options()
     ("help", "produce help message")
     ("input,i", po::value<std::string>(&inputFile)->required(), "input file (yaml)")
+    ("primitives,p", po::value<std::string>(&primitivesFile)->required(), "primitive file (prim)")
     ("output,o", po::value<std::string>(&outputFile)->required(), "output file (yaml)");
 
   try {
@@ -65,7 +67,7 @@ int main(int argc, char* argv[]) {
   bpcm_env->setup();
 
   // logic based on planxythetamlevlat in the offical SBPL test application
-  std::string motPrimFilename = "/home/whoenig/projects/tuberlin/kinodynamic-motion-planning-benchmark/deps/sbpl/matlab/mprim/unicycle_noturninplace.mprim";
+  // std::string motPrimFilename = "/home/whoenig/projects/tuberlin/kinodynamic-motion-planning-benchmark/deps/sbpl/matlab/mprim/unicycle_noturninplace.mprim";
   double initialEpsilon = 2.0;
   bool bsearchuntilfirstsolution = true;
   double allocated_time_secs = 10.0; // in seconds
@@ -137,7 +139,7 @@ int main(int argc, char* argv[]) {
       /*nominalvel_mpersecs*/ 0.5,
       /*timetoturn45degsinplace_secs*/ 0.5 * M_PI_2,
       /*obsthresh*/ 100,
-      motPrimFilename.c_str());
+      primitivesFile.c_str());
 
   if (!r)
   {
@@ -170,8 +172,8 @@ int main(int argc, char* argv[]) {
   // plan
   std::vector<int> solution_stateIDs_V;
   int bRet = planner->replan(allocated_time_secs, &solution_stateIDs_V);
-  // printf("done planning\n");
-  // printf("size of solution=%d\n", (unsigned int)solution_stateIDs_V.size());
+  printf("done planning\n");
+  printf("size of solution=%d\n", (unsigned int)solution_stateIDs_V.size());
 
   // write the continuous solution to file
   std::vector<sbpl_xy_theta_pt_t> xythetaPath;

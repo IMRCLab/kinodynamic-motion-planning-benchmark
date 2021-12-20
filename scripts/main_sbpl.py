@@ -1,0 +1,26 @@
+import argparse
+import subprocess
+import main_scp
+
+def run_ompl(filename_env, prefix=""):
+
+	result = subprocess.run(["./main_sbpl", 
+		"-i", filename_env,
+		"-o", "result_sbpl_{}.yaml".format(prefix),
+		"-p", "../tuning/carFirstOrder/car_first_order_0.mprim"])
+	if result.returncode != 0:
+		print("SBPL failed")
+	else:
+		success = main_scp.run_scp(filename_env, "result_sbpl_{}.yaml".format(prefix))
+
+def main():
+	parser = argparse.ArgumentParser()
+	parser.add_argument("env", help="file containing the environment (YAML)")
+	args = parser.parse_args()
+
+	for i in range(1):
+		run_ompl(args.env, i)
+
+
+if __name__ == '__main__':
+	main()
