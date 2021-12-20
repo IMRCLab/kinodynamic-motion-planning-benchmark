@@ -1,6 +1,4 @@
 import numpy as np
-from scp import SCP
-import robots
 import yaml
 import argparse
 
@@ -9,16 +7,16 @@ import os
 sys.path.append(os.getcwd())
 from motionplanningutils import CollisionChecker
 
+from scp import SCP
+import robots
+
 def run_scp(filename_env, filename_initial_guess, filename_result='result_scp.yaml', iterations=5):
 
 	with open(filename_env) as f:
 		env = yaml.safe_load(f)
 
 	robot_node = env["robots"][0]
-	if robot_node["type"] == "car_first_order_0":
-		robot = robots.RobotCarFirstOrder(0.5, 0.5)
-	else:
-		raise Exception("Unknown robot type!")
+	robot = robots.create_robot(robot_node["type"])
 
 	x0 = np.array(robot_node["start"])
 	xf = np.array(robot_node["goal"])

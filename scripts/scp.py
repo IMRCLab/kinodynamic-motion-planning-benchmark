@@ -126,6 +126,8 @@ class SCP():
     stateDim = xprev.shape[1]
     actionDim = uprev.shape[1]
 
+    print(initial_x)
+
     for _ in range(num_iterations):
       x = cp.Variable((T, stateDim))
       u = cp.Variable((T-1, actionDim))

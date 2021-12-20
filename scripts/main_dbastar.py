@@ -57,9 +57,12 @@ def compute_motion_importance(filename_env, filename_motions, filename_result_db
 	with open(filename_motions) as f:
 		all_motions = yaml.safe_load(f)
 
-	for k, v in result["result"][0]["motion_stats"].items():
+	for name, v in result["result"][0]["motion_stats"].items():
 		# create temporary motions file with one motion removed
 		motions = copy.copy(all_motions)
+		for k, m in enumerate(motions):
+			if name == m["name"]:
+				break
 		del motions[k]
 		with open("motions_tmp.yaml", 'w') as file:
 			yaml.dump(motions, file)
@@ -74,7 +77,7 @@ def compute_motion_importance(filename_env, filename_motions, filename_result_db
 		if result.returncode != 0:
 			# failure -> this was a very important edge
 			print(k, "super important!")
-			motions_stats[motions[k]["name"]] += 1
+			motions_stats[name] += 1
 		else:
 			# success -> compute numeric importance
 			# load the result
@@ -82,7 +85,7 @@ def compute_motion_importance(filename_env, filename_motions, filename_result_db
 				result = yaml.safe_load(f)
 				new_cost = len(result["result"][0]["actions"])
 			print(k, old_cost, new_cost, 1 - old_cost / new_cost)
-			motions_stats[motions[k]["name"]] += np.clip(1 - old_cost / new_cost, 0, 1)
+			motions_stats[name] += np.clip(1 - old_cost / new_cost, 0, 1)
 	return motions_stats
 
 def run_dbastar(filename_env, prefix, motions_stats):
@@ -97,12 +100,9 @@ def run_dbastar(filename_env, prefix, motions_stats):
 		env = yaml.safe_load(f)
 
 	robot_node = env["robots"][0]
-	if robot_node["type"] == "car_first_order_0":
-		robot = robots.RobotCarFirstOrder(0.5, 0.5)
-	else:
-		raise Exception("Unknown robot type!")
-
-	rh = RobotHelper(robot_node["type"])
+	robot_type = robot_node["type"]
+	robot = robots.create_robot(robot_type)
+	rh = RobotHelper(robot_type)
 	# initialize delta
 	x0 = np.array(robot_node["start"])
 	xf = np.array(robot_node["goal"])
@@ -112,7 +112,7 @@ def run_dbastar(filename_env, prefix, motions_stats):
 
 
 	# load existing motions
-	with open('motions.yaml') as f:
+	with open('motions_{}.yaml'.format(robot_node["type"])) as f:
 		all_motions = yaml.safe_load(f)
 	random.shuffle(all_motions)
 	motions = all_motions[0:100]
@@ -149,15 +149,19 @@ def run_dbastar(filename_env, prefix, motions_stats):
 				"--maxCost", str(maxCost)])
 			if result.returncode != 0:
 				# print("dbA* failed; Generating more primitives")
-				# for _ in range(10):
-				# 	print("gen motion", len(motions))
-				# 	motion = gen_motion_primitive.gen_random_motion(robot)
-				# 	motion['distance'] = rh.distance(motion['x0'], motion['xf'])
-				# 	motions.append(motion)
+
 
 				print("dbA* failed; Using more primitives")
-				motions.extend(all_motions[0:10])
-				del all_motions[0:10]
+				if len(all_motions) > 10:
+					motions.extend(all_motions[0:10])
+					del all_motions[0:10]
+				else:
+					for _ in range(10):
+						print("gen motion", len(motions))
+						motion = gen_motion_primitive.gen_random_motion(robot_type)
+						motion['distance'] = rh.distance(motion['x0'], motion['xf'])
+						motions.append(motion)
+
 
 				with open(filename_motions, 'w') as file:
 					yaml.dump(motions, file)

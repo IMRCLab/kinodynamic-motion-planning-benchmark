@@ -34,13 +34,15 @@ int main(int argc, char* argv[]) {
   std::string statsFile;
   std::string plannerDesc;
   int timelimit;
+  float goalRegion;
   desc.add_options()
     ("help", "produce help message")
     ("input,i", po::value<std::string>(&inputFile)->required(), "input file (yaml)")
     ("output,o", po::value<std::string>(&outputFile)->required(), "output file (yaml)")
     ("stats", po::value<std::string>(&statsFile)->default_value("ompl_stats.yaml"), "output file (yaml)")
     ("planner,p", po::value<std::string>(&plannerDesc)->default_value("rrt"), "Planner")
-    ("timelimit", po::value<int>(&timelimit)->default_value(60), "Time limit for planner");
+    ("timelimit", po::value<int>(&timelimit)->default_value(60), "Time limit for planner")
+    ("goalregion", po::value<float>(&goalRegion)->default_value(0.1), "radius around goal to count success");
 
   try {
     po::variables_map vm;
@@ -152,7 +154,7 @@ int main(int argc, char* argv[]) {
     reals.push_back(v.as<double>());
   }
   si->getStateSpace()->copyFromReals(goalState, reals);
-  pdef->setGoalState(goalState, 0.1);
+  pdef->setGoalState(goalState, goalRegion);
   si->freeState(goalState);
 
   // create a planner for the defined space
@@ -212,11 +214,11 @@ int main(int argc, char* argv[]) {
   {
     // get the goal representation from the problem definition (not the same as the goal state)
     // and inquire about the found path
-    ob::PathPtr path = pdef->getSolutionPath();
+    // ob::PathPtr path = pdef->getSolutionPath();
     std::cout << "Found solution:" << std::endl;
 
     // print the path to screen
-    path->print(std::cout);
+    // path->print(std::cout);
   }
   else {
     std::cout << "No solution found" << std::endl;

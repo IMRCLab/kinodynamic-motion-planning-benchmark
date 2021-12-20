@@ -17,9 +17,8 @@
 #include <ompl/datastructures/NearestNeighborsSqrtApprox.h>
 #include <ompl/datastructures/NearestNeighborsGNATNoThreadSafety.h>
 
-// #include "robotDubinsCar.h"
 #include "robotCarFirstOrder.h"
-// #include "robotCarSecondOrder.h"
+#include "robotCarSecondOrder.h"
 #include "robotStatePropagator.hpp"
 #include "fclStateValidityChecker.hpp"
 
@@ -93,6 +92,7 @@ public:
   float cost;
 
   size_t idx;
+  std::string name;
 };
 
 // forward declaration
@@ -274,6 +274,20 @@ int main(int argc, char* argv[]) {
         position_bounds,
         /*w_limit*/ 0.5 /*rad/s*/,
         /*v_limit*/ 0.5 /* m/s*/));
+  }  else if (robotType == "car_second_order_0") {
+    ob::RealVectorBounds position_bounds(2);
+    const auto &dims = env["environment"]["dimensions"];
+    position_bounds.setLow(0);
+    position_bounds.setHigh(0, dims[0].as<double>());
+    position_bounds.setHigh(1, dims[1].as<double>());
+
+    robot.reset(new RobotCarSecondOrder(
+        position_bounds,
+        /*v_limit*/ 0.5 /*m/s*/,
+        /*w_limit*/ 0.5 /*rad/s*/,
+        /*a_limit*/ 2.0 /*m/s^2*/,
+        /*w_dot_limit*/ 2.0 /*rad/s^2*/
+      ));
   } else {
     throw std::runtime_error("Unknown robot type!");
   }
@@ -315,6 +329,7 @@ int main(int argc, char* argv[]) {
     }
     m.cost = m.actions.size();
     m.idx = motions.size();
+    m.name = motion["name"].as<std::string>();
     motions.push_back(m);
   }
 
@@ -443,7 +458,7 @@ int main(int argc, char* argv[]) {
       }
       out << "    motion_stats:" << std::endl;
       for (const auto& kv : motionsCount) {
-        out << "      " << kv.first << ": " << kv.second << std::endl;
+        out << "      " << motions[kv.first].name << ": " << kv.second << std::endl;
       }
 
       return 0;

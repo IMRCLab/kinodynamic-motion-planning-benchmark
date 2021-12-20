@@ -5,6 +5,7 @@ import yaml
 import multiprocessing as mp
 import tqdm
 import itertools
+import argparse
 
 import sys, os
 sys.path.append(os.getcwd())
@@ -33,15 +34,13 @@ def TPBVP_fixed_time(robot, x0, xf, T):
 
 	return None, None, None
 
-def gen_random_motion(robot):
+def gen_random_motion(robot_type):
+	robot = robots.create_robot(robot_type)
+	rh = RobotHelper(robot_type)
 	while True:
-		yaw0 = np.random.uniform(-np.pi, np.pi)
-		x0 = np.array([0, 0, yaw0], dtype=np.float32)
-
-		xf = np.random.uniform(-2, 2)
-		yf = np.random.uniform(-2, 2)
-		yawf = np.random.uniform(-np.pi, np.pi)
-		xf = np.array([xf, yf, yawf], dtype=np.float32)
+		x0 = np.array(rh.sampleUniform())
+		x0[0:2] = 0 # set position part to 0
+		xf = np.array(rh.sampleUniform())
 		T = np.random.choice([8, 16, 32])
 		print(T)
 
@@ -72,14 +71,13 @@ def gen_motion(robot, x0, xf):
 			return r
 
 def main():
-	robot_type = "car_first_order_0"
-	if robot_type == "car_first_order_0":
-		robot = robots.RobotCarFirstOrder(0.5, 0.5)
-	else:
-		raise Exception("Unknown robot type!")
+	parser = argparse.ArgumentParser()
+	parser.add_argument("robot_type", help="name of robot type to generate motions for")
+	parser.add_argument("output", help="output file (YAML)")
+	parser.add_argument("--N", help="number of motions", default=100, type=int)
+	args = parser.parse_args()
 
-	rh = RobotHelper(robot_type)
-	N = 1000
+	rh = RobotHelper(args.robot_type)
 
 	motions = []
 	# tasks = list(itertools.repeat(robot, N))
@@ -90,8 +88,8 @@ def main():
 	# 	motions.append(motion)
 
 	mp.set_start_method('spawn')
-	with mp.Pool(24) as p:
-		for motion in tqdm.tqdm(p.imap_unordered(gen_random_motion, itertools.repeat(robot, N))):
+	with mp.Pool() as p:
+		for motion in tqdm.tqdm(p.imap_unordered(gen_random_motion, itertools.repeat(args.robot_type, args.N))):
 			motion['distance'] = rh.distance(motion['x0'], motion['xf'])
 			motion['name'] = 'm{}'.format(len(motions))
 			motions.append(motion)
@@ -106,7 +104,7 @@ def main():
 	# 				print(x,y, yaw)
 	# 				motions.append(motion)
 
-	with open('motions.yaml', 'w') as file:
+	with open(args.output, 'w') as file:
 		yaml.dump(motions, file)
 
 

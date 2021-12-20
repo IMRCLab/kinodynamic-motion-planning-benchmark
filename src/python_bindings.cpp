@@ -29,8 +29,8 @@ public:
     if (robotType == "car_first_order_0")
     {
       ob::RealVectorBounds position_bounds(2);
-      position_bounds.setLow(-100);
-      position_bounds.setHigh(100);
+      position_bounds.setLow(-2);
+      position_bounds.setHigh(2);
       robot_.reset(new RobotCarFirstOrder(
           position_bounds,
           /*w_limit*/ 0.5 /*rad/s*/,
@@ -39,6 +39,8 @@ public:
     else if (robotType == "car_second_order_0")
     {
       ob::RealVectorBounds position_bounds(2);
+      position_bounds.setLow(-2);
+      position_bounds.setHigh(2);
       robot_.reset(new RobotCarSecondOrder(
           position_bounds,
           /*v_limit*/ 0.5 /*m/s*/,
@@ -54,6 +56,7 @@ public:
 
     auto si = robot_->getSpaceInformation();
     si->getStateSpace()->setup();
+    state_sampler_ = si->allocStateSampler();
 
     tmp_state_a_ = si->allocState();
     tmp_state_b_ = si->allocState();
@@ -74,8 +77,18 @@ public:
     return si->distance(tmp_state_a_, tmp_state_b_);
   }
 
+  std::vector<double> sampleUniform()
+  {
+    state_sampler_->sampleUniform(tmp_state_a_);
+    auto si = robot_->getSpaceInformation();
+    std::vector<double> reals;
+    si->getStateSpace()->copyToReals(reals, tmp_state_a_);
+    return reals;
+  }
+
 private: 
   std::shared_ptr<Robot> robot_;
+  ob::StateSamplerPtr state_sampler_; 
   ob::State* tmp_state_a_;
   ob::State* tmp_state_b_;
 };
@@ -206,5 +219,6 @@ PYBIND11_MODULE(motionplanningutils, m)
 
   pybind11::class_<RobotHelper>(m, "RobotHelper")
       .def(pybind11::init<const std::string &>())
-      .def("distance", &RobotHelper::distance);
+      .def("distance", &RobotHelper::distance)
+      .def("sampleUniform", &RobotHelper::sampleUniform);
 }
