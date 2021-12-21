@@ -127,6 +127,16 @@ class SCP():
     stateDim = xprev.shape[1]
     actionDim = uprev.shape[1]
 
+    # DEBUG
+    if self.collisionChecker is not None:
+        for t in range(0, T):
+          # See 12a in "Convex optimization for proximity maneuvering of a spacecraft with a robotic manipulator"
+          # Also used in GuSTO
+          dist_tilde, p_obs, p_robot = self.collisionChecker.distance(
+              xprev[t])
+          if dist_tilde < 0:
+            print("Warning: initial solution distance violation at t={}".format(t))
+
     for _ in range(num_iterations):
       x = cp.Variable((T, stateDim))
       u = cp.Variable((T-1, actionDim))
@@ -217,26 +227,13 @@ class SCP():
         return X, U, float('inf')
 
       # DEBUG
-      xsol = numpy.array(x.value, dtype=np.float32)
       if self.collisionChecker is not None:
         for t in range(0, T):
           # See 12a in "Convex optimization for proximity maneuvering of a spacecraft with a robotic manipulator"
           # Also used in GuSTO
-          dist_tilde, p_obs, p_robot = self.collisionChecker.distance(xprev[t])
-          if dist_tilde > 0:
-            d_tilde = p_robot - p_obs
-          else:
-            d_tilde = p_obs - p_robot
-
-          norm_d_tilde = numpy.linalg.norm(d_tilde)
-          if norm_d_tilde > 0:
-            d_hat = d_tilde / norm_d_tilde
-            con = dist_tilde + d_hat[0:2].T @ (xsol[t, 0:2] - xprev[t, 0:2])
-            print(t, con)
-
-            # constraints.extend([
-            #   d_tilde + d_hat[0:2].T @ (x[t,0:2] - xprev[t,0:2]) >= 0.0
-            # ])
+          dist_tilde, p_obs, p_robot = self.collisionChecker.distance(x.value[t])
+          if dist_tilde < 0:
+            print("Warning: distance violation at t={} ({})".format(t, dist_tilde))
 
       xprev = numpy.array(x.value, dtype=np.float32)
       uprev = numpy.array(u.value, dtype=np.float32)

@@ -66,7 +66,7 @@ def run_scp(filename_env, filename_initial_guess, filename_result='result_scp.ya
 
 	# scp = SCP(robot)
 	scp = SCP(robot, cc)
-	X, U, val = scp.min_u(states, actions, x0, xf, iterations, trust_x=2*trust_x_est, trust_u=2*trust_u_est, verbose=True)
+	X, U, val = scp.min_u(states, actions, x0, xf, iterations, trust_x=2*trust_x_est, trust_u=2*trust_u_est, verbose=False)
 	# X, U, val = scp.min_u(states, actions, x0, xf, 3, trust_x=None, trust_u=None, verbose=True)
 
 	result = dict()
@@ -74,7 +74,7 @@ def run_scp(filename_env, filename_initial_guess, filename_result='result_scp.ya
 	with open(filename_result, 'w') as f:
 		yaml.dump(result, f)
 
-	if len(X) > 2:
+	if len(X) > 3:
 		return True
 	return False
 

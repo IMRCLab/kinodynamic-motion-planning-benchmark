@@ -195,6 +195,7 @@ public:
     robot.setTranslation(transform.translation());
     robot.setRotation(transform.rotation());
     fcl::DefaultDistanceData<float> distance_data;
+    distance_data.request.enable_signed_distance = true;
     env_->distance(&robot, &distance_data, fcl::DefaultDistanceFunction<float>);
 
     return std::make_tuple(

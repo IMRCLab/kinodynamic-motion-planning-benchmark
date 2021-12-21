@@ -91,10 +91,8 @@ def compute_motion_importance(filename_env, filename_motions, filename_result_db
 def run_dbastar(filename_env, prefix, motions_stats):
 
 	filename_motions = "motions_{}.yaml".format(prefix)
-	filename_result_dbastar = "result_dbastar_{}.yaml".format(prefix)
-	filename_result_scp = "result_scp_{}.yaml".format(prefix)
 	filename_stats = "stats_dbastar_{}.yaml".format(prefix)
-	timelimit = 60
+	timelimit = 120
 
 	with open(filename_env) as f:
 		env = yaml.safe_load(f)
@@ -132,11 +130,15 @@ def run_dbastar(filename_env, prefix, motions_stats):
 	initialDelta = delta
 
 	start = time.time()
+	sol = 0
 
 	with open(filename_stats, 'w') as stats:
 		stats.write("stats:\n")
 		while time.time() - start < timelimit:
 			print("delta", delta, "maxCost", maxCost)
+
+			filename_result_dbastar = "result_dbastar_{}_sol{}.yaml".format(prefix, sol)
+			filename_result_scp = "result_scp_{}_sol{}.yaml".format(prefix, sol)
 
 			# find_smallest_delta(filename_env, filename_motions, filename_result_dbastar, delta, maxCost)
 			# exit()
@@ -172,13 +174,13 @@ def run_dbastar(filename_env, prefix, motions_stats):
 					delta = median
 
 			else:
-				success = main_scp.run_scp(filename_env, filename_result_dbastar, filename_result_scp, iterations=2)
+				success = main_scp.run_scp(filename_env, filename_result_dbastar, filename_result_scp, iterations=3)
 				if not success:
 					print("Optimization failed; Reducing delta")
 					delta = delta * 0.9
 				else:
-					# ONLY FOR MOTION PRIMITIVE SELECTION
-					compute_motion_importance(filename_env, filename_motions, filename_result_dbastar, delta, maxCost, motions_stats)
+					# # ONLY FOR MOTION PRIMITIVE SELECTION
+					# compute_motion_importance(filename_env, filename_motions, filename_result_dbastar, delta, maxCost, motions_stats)
 					with open(filename_result_dbastar) as f:
 						result = yaml.safe_load(f)
 						cost = len(result["result"][0]["actions"])
@@ -187,6 +189,7 @@ def run_dbastar(filename_env, prefix, motions_stats):
 					print("success!", cost, t)
 					stats.write("  - t: {}\n    cost: {}\n".format(t, cost))
 					maxCost = cost * 0.99
+					sol += 1
 
 
 					# delta = initialDelta
@@ -198,7 +201,7 @@ def main():
 	args = parser.parse_args()
 
 	motions_stats = defaultdict(float)
-	for i in range(3):
+	for i in range(1):
 		run_dbastar(args.env, i, motions_stats)
 	print(sorted( ((v,k) for k,v in motions_stats.items()), reverse=True) )
 
