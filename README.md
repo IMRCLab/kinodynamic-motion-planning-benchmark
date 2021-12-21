@@ -12,6 +12,12 @@ make
 
 ## Planners
 
+### SBPL
+
+```
+python3 ../scripts/gen_sbpl_prim.py ../deps/sbpl/matlab/mprim/unicycle_noturninplace.mprim ../tuning/carFirstOrder/car_first_order_0.mprim ../tuning/carFirstOrder/car_first_order_0_mprim.yaml
+```
+
 ### main_ompl
 
 * Sampling-based using OMPL (main asymptotic optimal planner: SST)

@@ -173,18 +173,36 @@ int main(int argc, char* argv[]) {
   std::vector<int> solution_stateIDs_V;
   int bRet = planner->replan(allocated_time_secs, &solution_stateIDs_V);
   printf("done planning\n");
-  printf("size of solution=%d\n", (unsigned int)solution_stateIDs_V.size());
+  printf("size of solution (states)=%d\n", (unsigned int)solution_stateIDs_V.size());
 
   // write the continuous solution to file
   std::vector<sbpl_xy_theta_pt_t> xythetaPath;
   environment_navxythetalat.ConvertStateIDPathintoXYThetaPath(&solution_stateIDs_V, &xythetaPath);
+  printf("size of solution (cont. states)=%d\n", (unsigned int)xythetaPath.size());
+
+  // this function is buggy and misses the goal state
+  int x_d, y_d, theta_d;
+  int sourceID = solution_stateIDs_V.back();
+  environment_navxythetalat.GetCoordFromState(sourceID, x_d, y_d, theta_d);
+  double x_c, y_c, theta_c;
+  environment_navxythetalat.PoseDiscToCont(x_d, y_d, theta_d, x_c, y_c, theta_c);
+  sbpl_xy_theta_pt_t pt(x_c, y_c, theta_c);
+  xythetaPath.push_back(pt);
+
+  std::vector<EnvNAVXYTHETALATAction_t> actions;
+  environment_navxythetalat.GetActionsFromStateIDPath(&solution_stateIDs_V, &actions);
 
   std::ofstream out(outputFile);
   out << "result:" << std::endl;
   out << "  - states:" << std::endl;
   for (const auto &state : xythetaPath)
   {
-    out << "      - [" << state.x << "," << state.y << "," << state.theta << "]" << std::endl;
+    out << "      - [" << state.x << "," << state.y << "," << std::remainder(state.theta, 2 * M_PI) << "]" << std::endl;
+  }
+  out << "    actions_mprim:" << std::endl;
+  for (const auto &action : actions)
+  {
+    out << "      - [" << (int)action.starttheta << "," << (int)action.dX << "," << (int)action.dY << "," << (int)action.endtheta << "]" << std::endl;
   }
 
   return 0;

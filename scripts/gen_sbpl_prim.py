@@ -34,7 +34,8 @@ def gen(description):
 def main():
 	parser = argparse.ArgumentParser()
 	parser.add_argument("mprim", help="SBPL MPRIM File (to copy x0->xf pairs from)")
-	parser.add_argument("output", help="SBPL MPRIM File")
+	parser.add_argument("output_mprim", help="SBPL MPRIM File")
+	parser.add_argument("output_yaml", help="SBPL MPRIM File")
 	args = parser.parse_args()
 
 	# parse the input file
@@ -139,7 +140,7 @@ def main():
 	# # 				print(x,y, yaw)
 	# # 				motions.append(motion)
 
-	with open(args.output, 'w') as f:
+	with open(args.output_mprim, 'w') as f:
 		f.write("resolution_m: {}\n".format(resolution))
 		f.write("numberofangles: {}\n".format(num_angles))
 		f.write("totalnumberofprimitives: {}\n".format(len(motions)))
@@ -155,8 +156,8 @@ def main():
 			for s in m['states']:
 				f.write("{} {} {}\n".format(s[0], s[1], s[2]))
 
-
-	# 	yaml.dump(motions, file)
+	with open(args.output_yaml, 'w') as f:
+		yaml.dump(motions, f)
 
 
 if __name__ == '__main__':

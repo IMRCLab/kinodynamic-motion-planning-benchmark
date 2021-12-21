@@ -118,6 +118,7 @@ class SCP():
              trust_u=None,
              verbose=False):
 
+    assert(initial_x.shape[0] == initial_u.shape[0] + 1)
     X, U = [initial_x], [initial_u]
 
     xprev = initial_x
@@ -125,8 +126,6 @@ class SCP():
     T = xprev.shape[0]
     stateDim = xprev.shape[1]
     actionDim = uprev.shape[1]
-
-    print(initial_x)
 
     for _ in range(num_iterations):
       x = cp.Variable((T, stateDim))

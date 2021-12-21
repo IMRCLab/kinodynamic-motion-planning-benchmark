@@ -59,6 +59,7 @@ class Animation:
       T = 0
       for robot in self.result["result"]:
         T = max(T, len(robot["states"]))
+      print("T", T)
 
       self.robot_patches = []
       for robot in self.result["result"]:

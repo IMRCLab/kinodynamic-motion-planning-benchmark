@@ -58,9 +58,10 @@ def run_scp(filename_env, filename_initial_guess, filename_result='result_scp.ya
 		states = np.array(initial_guess["result"][0]["states"])
 		actions = np.array(initial_guess["result"][0]["actions"])
 
-	trust_x_est = np.max(np.abs(np.diff(states, axis=0)), axis=0)
-	trust_u_est = np.max(np.abs(np.diff(actions, axis=0)), axis=0)
-	# print(trust_x_est, trust_u_est)
+	eps = 0.1
+	trust_x_est = np.max(np.abs(np.diff(states, axis=0)), axis=0) + eps
+	trust_u_est = np.max(np.abs(np.diff(actions, axis=0)), axis=0) + eps
+	print(trust_x_est, trust_u_est)
 	# exit()
 
 	# scp = SCP(robot)
