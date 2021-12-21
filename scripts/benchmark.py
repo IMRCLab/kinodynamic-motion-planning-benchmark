@@ -22,11 +22,11 @@ def main():
 	results_path = Path("../results")
 	tuning_path = Path("../tuning")
 
-	# instances = ["carFirstOrder/bugtrap_0", "carFirstOrder/kink_0", "carFirstOrder/parallelpark_0"]
-	instances = ["carFirstOrder/parallelpark_0"]
+	instances = ["carFirstOrder/bugtrap_0", "carFirstOrder/kink_0", "carFirstOrder/parallelpark_0"]
+	# instances = ["carFirstOrder/parallelpark_0"]
 	# algs = ["sst", "sbpl", "dbAstar"]
-	algs = ["dbAstar"]
-	timelimit = 10
+	algs = ["sbpl"]
+	timelimit = 5 * 60
 
 	for instance in instances:
 		env = (benchmark_path / instance).with_suffix(".yaml")

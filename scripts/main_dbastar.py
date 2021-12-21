@@ -185,7 +185,7 @@ def run_dbastar(filename_env, folder, timelimit, motions_stats=None):
 						compute_motion_importance(filename_env, filename_motions, filename_result_dbastar, delta, maxCost, motions_stats)
 					with open(filename_result_dbastar) as f:
 						result = yaml.safe_load(f)
-						cost = len(result["result"][0]["actions"])
+						cost = len(result["result"][0]["actions"]) / 10
 					now = time.time()
 					t = now - start
 					print("success!", cost, t)

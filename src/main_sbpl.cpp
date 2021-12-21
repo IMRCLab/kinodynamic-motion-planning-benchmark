@@ -18,11 +18,13 @@ int main(int argc, char* argv[]) {
   po::options_description desc("Allowed options");
   std::string inputFile;
   std::string primitivesFile;
+  std::string statsFile;
   std::string outputFile;
   desc.add_options()
     ("help", "produce help message")
     ("input,i", po::value<std::string>(&inputFile)->required(), "input file (yaml)")
     ("primitives,p", po::value<std::string>(&primitivesFile)->required(), "primitive file (prim)")
+    ("stats", po::value<std::string>(&statsFile)->default_value("stats.yaml"), "output file (yaml)")
     ("output,o", po::value<std::string>(&outputFile)->required(), "output file (yaml)");
 
   try {
@@ -209,6 +211,21 @@ int main(int argc, char* argv[]) {
   for (const auto &action : actions)
   {
     out << "      - [" << (int)action.starttheta << "," << (int)action.dX << "," << (int)action.dY << "," << (int)action.endtheta << "]" << std::endl;
+  }
+
+  // create stats file
+  std::ofstream stats(statsFile);
+  stats << "stats:" << std::endl;
+
+  std::vector<PlannerStats> planner_stats;
+  planner->get_search_stats(&planner_stats);
+  double total_time = 0;
+  for (const auto& s : planner_stats) {
+    total_time += s.time;
+    stats << "  - t: " << total_time << std::endl;
+    stats << "    cost: " << s.cost / 10.0f << std::endl;
+    stats << "    eps: " << s.eps << std::endl;
+    stats << "    expands: " << s.expands << std::endl;
   }
 
   return 0;

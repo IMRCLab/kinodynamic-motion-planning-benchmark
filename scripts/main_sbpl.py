@@ -9,7 +9,9 @@ def run_sbpl(filename_env, folder):
 	result = subprocess.run(["./main_sbpl", 
 		"-i", filename_env,
 		"-o", "{}/result_sbpl.yaml".format(folder),
-		"-p", "../tuning/carFirstOrder/car_first_order_0.mprim"])
+		"-p", "../tuning/carFirstOrder/car_first_order_0.mprim",
+		"--stats", "{}/stats.yaml".format(folder),
+		])
 	if result.returncode != 0:
 		print("SBPL failed")
 	else:
