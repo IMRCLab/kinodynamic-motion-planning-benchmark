@@ -1,3 +1,4 @@
+import shutil
 import numpy as np
 from scp import SCP
 import robots
@@ -7,6 +8,7 @@ import subprocess
 import time
 import random
 import copy
+import shutil
 from collections import defaultdict
 
 import sys
@@ -88,11 +90,11 @@ def compute_motion_importance(filename_env, filename_motions, filename_result_db
 			motions_stats[name] += np.clip(1 - old_cost / new_cost, 0, 1)
 	return motions_stats
 
-def run_dbastar(filename_env, prefix, motions_stats):
+def run_dbastar(filename_env, folder, timelimit, motions_stats=None):
 
-	filename_motions = "motions_{}.yaml".format(prefix)
-	filename_stats = "stats_dbastar_{}.yaml".format(prefix)
-	timelimit = 120
+	sol = 0
+	filename_motions = "motions.yaml".format(folder, sol)
+	filename_stats = "{}/stats.yaml".format(folder)
 
 	with open(filename_env) as f:
 		env = yaml.safe_load(f)
@@ -130,15 +132,14 @@ def run_dbastar(filename_env, prefix, motions_stats):
 	initialDelta = delta
 
 	start = time.time()
-	sol = 0
 
 	with open(filename_stats, 'w') as stats:
 		stats.write("stats:\n")
 		while time.time() - start < timelimit:
 			print("delta", delta, "maxCost", maxCost)
 
-			filename_result_dbastar = "result_dbastar_{}_sol{}.yaml".format(prefix, sol)
-			filename_result_scp = "result_scp_{}_sol{}.yaml".format(prefix, sol)
+			filename_result_dbastar = "result_dbastar.yaml"
+			filename_result_scp = "result_scp.yaml"
 
 			# find_smallest_delta(filename_env, filename_motions, filename_result_dbastar, delta, maxCost)
 			# exit()
@@ -174,13 +175,14 @@ def run_dbastar(filename_env, prefix, motions_stats):
 					delta = median
 
 			else:
-				success = main_scp.run_scp(filename_env, filename_result_dbastar, filename_result_scp, iterations=3)
+				success = main_scp.run_scp(filename_env, filename_result_dbastar, filename_result_scp)#, iterations=3)
 				if not success:
 					print("Optimization failed; Reducing delta")
 					delta = delta * 0.9
 				else:
 					# # ONLY FOR MOTION PRIMITIVE SELECTION
-					# compute_motion_importance(filename_env, filename_motions, filename_result_dbastar, delta, maxCost, motions_stats)
+					if motions_stats is not None:
+						compute_motion_importance(filename_env, filename_motions, filename_result_dbastar, delta, maxCost, motions_stats)
 					with open(filename_result_dbastar) as f:
 						result = yaml.safe_load(f)
 						cost = len(result["result"][0]["actions"])
@@ -189,6 +191,11 @@ def run_dbastar(filename_env, prefix, motions_stats):
 					print("success!", cost, t)
 					stats.write("  - t: {}\n    cost: {}\n".format(t, cost))
 					maxCost = cost * 0.99
+
+					shutil.copyfile(filename_result_dbastar, "{}/result_dbastar_sol{}.yaml".format(folder, sol))
+					shutil.copyfile(filename_result_scp, "{}/result_scp_sol{}.yaml".format(folder, sol))
+					shutil.copyfile(filename_motions, "{}/motions_sol{}.yaml".format(folder, sol))
+
 					sol += 1
 
 

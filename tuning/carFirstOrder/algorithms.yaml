@@ -1,0 +1,13 @@
+sst:
+  default:
+    goal_epsilon: 0.1
+  parallelpark_0:
+    goal_epsilon: 0.05
+
+dbAstar:
+  default:
+    dummy: 0
+
+sbpl:
+  default:
+    dummy: 0

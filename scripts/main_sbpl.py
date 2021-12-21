@@ -3,17 +3,18 @@ import subprocess
 import yaml
 import main_scp
 
-def run_sbpl(filename_env, prefix=""):
+
+def run_sbpl(filename_env, folder):
 
 	result = subprocess.run(["./main_sbpl", 
 		"-i", filename_env,
-		"-o", "result_sbpl_{}.yaml".format(prefix),
+		"-o", "{}/result_sbpl.yaml".format(folder),
 		"-p", "../tuning/carFirstOrder/car_first_order_0.mprim"])
 	if result.returncode != 0:
 		print("SBPL failed")
 	else:
 		# extract the action sequence
-		with open("result_sbpl_{}.yaml".format(prefix)) as f:
+		with open("{}/result_sbpl.yaml".format(folder)) as f:
 				result = yaml.safe_load(f)
 
 		with open("../tuning/carFirstOrder/car_first_order_0_mprim.yaml") as f:
@@ -31,13 +32,14 @@ def run_sbpl(filename_env, prefix=""):
 				print("ERROR: couldn't find corresponding motion!", start_c, dX, dY, end_c)
 
 		result["result"][0]["actions"] = actions
-		with open("result_sbpl_{}.yaml".format(prefix), 'w') as f:
+		with open("{}/result_sbpl.yaml".format(folder), 'w') as f:
 			yaml.Dumper.ignore_aliases = lambda *args : True
 			yaml.dump(result, f)
 
 		print(len(actions), len(result["result"][0]["states"]))
 
-		success = main_scp.run_scp(filename_env, "result_sbpl_{}.yaml".format(prefix))
+		success = main_scp.run_scp(
+			filename_env, "{}/result_sbpl.yaml".format(folder), "{}/result_scp.yaml".format(folder))
 
 def main():
 	parser = argparse.ArgumentParser()

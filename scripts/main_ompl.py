@@ -2,20 +2,22 @@ import argparse
 import subprocess
 import main_scp
 
-def run_ompl(filename_env, prefix=""):
-
+def run_ompl(filename_env, folder, timelimit, cfg):
 	result = subprocess.run(["./main_ompl", 
 		"-i", filename_env,
-		"-o", "result_ompl_{}.yaml".format(prefix),
-		"--stats", "stats_ompl_{}.yaml".format(prefix),
-		"--timelimit", str(600),
+		"-o", "{}/result_ompl.yaml".format(folder),
+		"--stats", "{}/stats.yaml".format(folder),
+		"--timelimit", str(timelimit),
 		"-p", "sst",
-		"--goalregion", str(0.5)])
+		"--goalregion", str(cfg['goal_epsilon'])])
 	if result.returncode != 0:
 		print("OMPL failed")
 	else:
 		# pass
-		success = main_scp.run_scp(filename_env, "result_ompl_{}.yaml".format(prefix))
+		success = main_scp.run_scp(
+			filename_env,
+			"{}/result_ompl.yaml".format(folder),
+			"{}/result_scp.yaml".format(folder))
 
 def main():
 	parser = argparse.ArgumentParser()
