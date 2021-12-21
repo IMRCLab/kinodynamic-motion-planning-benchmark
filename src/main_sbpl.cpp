@@ -67,10 +67,6 @@ int main(int argc, char* argv[]) {
   bpcm_env->setup();
 
   // logic based on planxythetamlevlat in the offical SBPL test application
-  // std::string motPrimFilename = "/home/whoenig/projects/tuberlin/kinodynamic-motion-planning-benchmark/deps/sbpl/matlab/mprim/unicycle_noturninplace.mprim";
-  double initialEpsilon = 2.0;
-  bool bsearchuntilfirstsolution = true;
-  double allocated_time_secs = 10.0; // in seconds
 
   //set the perimeter of the robot (it is given with 0,0,0 robot ref. point for which planning is done)
   //this is for the default level - base level
@@ -136,8 +132,8 @@ int main(int argc, char* argv[]) {
       /*goaltol_x*/ 0, /*goaltol_y*/ 0, /*goaltol_theta*/ 0,
       perimeterptsV,
       cellsize_m,
-      /*nominalvel_mpersecs*/ 0.5,
-      /*timetoturn45degsinplace_secs*/ 0.5 * M_PI_2,
+      /*nominalvel_mpersecs*/ sqrt(0.5),
+      /*timetoturn45degsinplace_secs*/ sqrt(0.5 * M_PI_2),
       /*obsthresh*/ 100,
       primitivesFile.c_str());
 
@@ -146,7 +142,7 @@ int main(int argc, char* argv[]) {
     throw SBPL_Exception("ERROR: InitializeEnv failed");
   }
 
-  SBPLPlanner *planner = new ARAPlanner(&environment_navxythetalat, /*bforwardsearch*/ true);
+  ARAPlanner *planner = new ARAPlanner(&environment_navxythetalat, /*bforwardsearch*/ true);
 
   // set planner properties
   MDPConfig MDPCfg;
@@ -166,14 +162,24 @@ int main(int argc, char* argv[]) {
     printf("ERROR: failed to set goal state\n");
     throw SBPL_Exception("ERROR: failed to set goal state");
   }
-  planner->set_initialsolution_eps(initialEpsilon);
-  planner->set_search_mode(bsearchuntilfirstsolution);
 
   // plan
   std::vector<int> solution_stateIDs_V;
-  int bRet = planner->replan(allocated_time_secs, &solution_stateIDs_V);
-  printf("done planning\n");
+  int cost;
+  // ReplanParams params(allocated_time_secs);
+  // int bRet = planner->replan(&solution_stateIDs_V, params, &cost);
+  double initialEpsilon = 2.0;
+  bool bsearchuntilfirstsolution = false;
+  double allocated_time_secs = 10.0; // in seconds
+  planner->set_initialsolution_eps(initialEpsilon);
+  planner->set_search_mode(bsearchuntilfirstsolution);
+  int bRet = planner->replan(allocated_time_secs, &solution_stateIDs_V, &cost);
+  printf("done planning with cost %d (suboptimality is: %f, desired: %f)\n", 
+    cost,
+    planner->compute_suboptimality(),
+    planner->get_solution_eps());
   printf("size of solution (states)=%d\n", (unsigned int)solution_stateIDs_V.size());
+// }
 
   // write the continuous solution to file
   std::vector<sbpl_xy_theta_pt_t> xythetaPath;

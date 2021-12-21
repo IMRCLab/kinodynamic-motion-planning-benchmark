@@ -3,7 +3,7 @@
 	url = https://github.com/flexible-collision-library/fcl.git
 [submodule "deps/sbpl"]
 	path = deps/sbpl
-	url = https://github.com/sbpl/sbpl.git
+	url = https://github.com/IMRCLab/sbpl.git
 [submodule "deps/libMultiRobotPlanning"]
 	path = deps/libMultiRobotPlanning
 	url = https://github.com/whoenig/libMultiRobotPlanning.git
