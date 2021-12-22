@@ -33,6 +33,7 @@ include_directories(
   ${CMAKE_SOURCE_DIR}/deps/libMultiRobotPlanning/include
   ${CMAKE_SOURCE_DIR}/deps/ompl/src
   ${CMAKE_BINARY_DIR}/deps/ompl/src
+  ${CMAKE_SOURCE_DIR}/deps/rai/rai
 )
 
 add_library(motion_planning_common
