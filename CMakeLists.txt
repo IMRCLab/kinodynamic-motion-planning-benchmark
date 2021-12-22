@@ -18,6 +18,7 @@ set(CMAKE_CXX_FLAGS  "${CMAKE_CXX_FLAGS} -Wall -Wextra")
 add_subdirectory(deps/fcl EXCLUDE_FROM_ALL)
 add_subdirectory(deps/sbpl)# EXCLUDE_FROM_ALL)
 add_subdirectory(deps/ompl EXCLUDE_FROM_ALL)
+add_subdirectory(deps/rai EXCLUDE_FROM_ALL)
 
 # external projects
 # include(ExternalProject)
@@ -49,6 +50,18 @@ add_executable(main_ompl
   src/main_ompl.cpp
   src/AO_RRT.cpp
 )
+
+add_executable(main_rai
+  src/main_rai.cpp
+  # src/AO_RRT.cpp
+)
+
+
+target_link_libraries(main_rai
+  rai
+)
+
+
 target_link_libraries(main_ompl
   motion_planning_common
   ${Boost_LIBRARIES}
