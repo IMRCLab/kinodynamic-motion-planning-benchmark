@@ -5,7 +5,7 @@ project(kinodynamic-motion-planning-benchmark)
 find_package(Boost 1.58 REQUIRED COMPONENTS program_options)
 find_package(Eigen3 REQUIRED)
 find_package(PkgConfig)
-pkg_check_modules(YamlCpp yaml-cpp REQUIRED)
+pkg_check_modules(YamlCpp yaml-cpp fcl REQUIRED)
 # pkg_check_modules(OMPL ompl REQUIRED)
 
 # Enable C++17 and warnings
@@ -29,8 +29,6 @@ add_subdirectory(deps/rai EXCLUDE_FROM_ALL)
 
 include_directories(
   ${EIGEN3_INCLUDE_DIR}
-  ${CMAKE_BINARY_DIR}/deps/fcl/include
-  ${CMAKE_SOURCE_DIR}/deps/fcl/include
   ${CMAKE_SOURCE_DIR}/deps/sbpl/src/include
   ${CMAKE_SOURCE_DIR}/deps/libMultiRobotPlanning/include
   ${CMAKE_SOURCE_DIR}/deps/ompl/src
@@ -41,6 +39,10 @@ add_library(motion_planning_common
   src/robotCarFirstOrder.cpp
   src/robotCarSecondOrder.cpp
 )
+target_include_directories(motion_planning_common
+  PRIVATE ${CMAKE_BINARY_DIR}/deps/fcl/include
+  PRIVATE ${CMAKE_SOURCE_DIR}/deps/fcl/include
+)
 set_property(TARGET motion_planning_common PROPERTY POSITION_INDEPENDENT_CODE ON)
 
 # Applications
@@ -50,18 +52,10 @@ add_executable(main_ompl
   src/main_ompl.cpp
   src/AO_RRT.cpp
 )
-
-add_executable(main_rai
-  src/main_rai.cpp
-  # src/AO_RRT.cpp
+target_include_directories(main_ompl
+  PRIVATE ${CMAKE_BINARY_DIR}/deps/fcl/include
+  PRIVATE ${CMAKE_SOURCE_DIR}/deps/fcl/include
 )
-
-
-target_link_libraries(main_rai
-  rai
-)
-
-
 target_link_libraries(main_ompl
   motion_planning_common
   ${Boost_LIBRARIES}
@@ -75,6 +69,10 @@ target_link_libraries(main_ompl
 add_executable(test_fcl
   src/main_fcl.cpp
 )
+target_include_directories(test_fcl
+  PRIVATE ${CMAKE_BINARY_DIR}/deps/fcl/include
+  PRIVATE ${CMAKE_SOURCE_DIR}/deps/fcl/include
+)
 target_link_libraries(test_fcl
   ${Boost_LIBRARIES}
   fcl
@@ -84,6 +82,10 @@ target_link_libraries(test_fcl
 ## main_sbpl
 add_executable(main_sbpl
   src/main_sbpl.cpp
+)
+target_include_directories(main_sbpl
+  PRIVATE ${CMAKE_BINARY_DIR}/deps/fcl/include
+  PRIVATE ${CMAKE_SOURCE_DIR}/deps/fcl/include
 )
 target_link_libraries(main_sbpl
   ${Boost_LIBRARIES}
@@ -96,6 +98,10 @@ target_link_libraries(main_sbpl
 add_executable(dbastar
   src/main_dbastar.cpp
 )
+target_include_directories(dbastar
+  PRIVATE ${CMAKE_BINARY_DIR}/deps/fcl/include
+  PRIVATE ${CMAKE_SOURCE_DIR}/deps/fcl/include
+)
 target_link_libraries(dbastar
   motion_planning_common
   ${Boost_LIBRARIES}
@@ -104,11 +110,23 @@ target_link_libraries(dbastar
   yaml-cpp
 )
 
+## RAI
+add_executable(main_rai
+  src/main_rai.cpp
+)
+target_link_libraries(main_rai
+  rai
+)
+
 # Python bindings
 add_subdirectory(deps/pybind11 EXCLUDE_FROM_ALL)
 
 pybind11_add_module(motionplanningutils
   src/python_bindings.cpp
+)
+target_include_directories(motionplanningutils
+  PRIVATE ${CMAKE_BINARY_DIR}/deps/fcl/include
+  PRIVATE ${CMAKE_SOURCE_DIR}/deps/fcl/include
 )
 target_link_libraries(motionplanningutils PRIVATE
   motion_planning_common
