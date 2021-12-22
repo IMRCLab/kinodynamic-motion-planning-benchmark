@@ -13,3 +13,6 @@
 [submodule "deps/ompl"]
 	path = deps/ompl
 	url = https://github.com/IMRCLab/ompl.git
+[submodule "deps/rai"]
+	path = deps/rai
+	url = git@github.com:quimortiz/rai.git
