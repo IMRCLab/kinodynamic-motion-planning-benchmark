@@ -3,11 +3,28 @@ This repository aims to compare different motion planners for dynamical systems,
 
 ## Building
 
+Tested on Ubuntu 20.04.
+
 ```
 mkdir build
 cd build
-cmake ..
+cmake -DCMAKE_BUILD_TYPE=RelWithDebugInfo ..
 make
+```
+
+## Running
+
+The following will run all planners on all environments multiple times. Results are stored in the `results` folder
+```
+cd build
+python3 ../scripts/benchmark.py
+```
+
+The results can be visualized using
+
+```
+cd build
+python3 ../scripts/benchmark_stats.py
 ```
 
 ## Planners
