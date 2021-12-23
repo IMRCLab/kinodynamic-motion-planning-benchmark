@@ -115,9 +115,18 @@ target_link_libraries(dbastar
 add_executable(main_rai
   src/main_rai.cpp
 )
-target_link_libraries(main_rai
-  rai
-)
+
+add_executable(rai_dubins src/rai_dubins.cpp)
+
+add_executable(kinedit deps/rai/bin/src_kinEdit/main.cpp)
+
+target_link_libraries(kinedit rai)
+
+target_link_libraries(main_rai rai)
+
+target_link_libraries(rai_dubins rai)
+
+
 
 # Python bindings
 add_subdirectory(deps/pybind11 EXCLUDE_FROM_ALL)
