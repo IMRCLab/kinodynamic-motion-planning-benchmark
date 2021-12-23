@@ -39,6 +39,46 @@ python3 ../scripts/gen_sbpl_prim.py ../deps/sbpl/matlab/mprim/unicycle_noturninp
 
 * Sampling-based using OMPL (main asymptotic optimal planner: SST)
 
+### KOMO
+
+
+Optimize Trajectories
+
+```
+./rai_dubins -model  \"../benchmark/carFirstOrder/parallelpark_0.g\" -waypoints \"../benchmark/carFirstOrder/initGuess/result_dbastar_parallelpark.txt\"  -one_every 2 -di
+splay 1 -out out.txt -animate 0
+```
+
+```
+./rai_dubins -model  \" ../benchmark/carFirstOrder/parallelpark_0.g \" -waypoints \" ../benchmark/carFirstOrder/initGuess/result_dbastar_parallelpark.txt \"  -one_every 2
+ -display 1 -out out.txt -animate 0
+ ```
+
+```
+./rai_dubins -model  \"../benchmark/carFirstOrder/bugtrap_0.g \" -waypoints \"../benchmark/carFirstOrder/initGuess/result_dbastar_bugtrap.txt\"  -one_every 2 -display 0 -
+out out.txt -animate 0
+```
+
+Translate yaml environments to g
+
+```
+python3 translate_g.py --fin ../benchmark/carFirstOrder/parallelpark_0.yaml  --fout ../benchmark/carFirstOrder/parallelpark_0.g
+```
+
+```
+python3 translate_g.py --fin ../benchmark/carFirstOrder/kink_0.yaml  --fout ../benchmark/carFirstOrder/kink_0.g
+```
+
+```
+python3 translate_g.py --fin ../benchmark/carFirstOrder/bugtrap_0.yaml  --fout ../benchmark/carFirstOrder/bugtrap_0.g
+```
+
+Translate yaml initial guess to input for KOMO
+
+```
+python3 yaml_to_plain.py --fin ../benchmark/carFirstOrder/initGuess/result_dbastar_bugtrap.yaml --fout ../benchmark/carFirstOrder/initGuess/result_dbastar_bugtrap.txt 
+```
+
 ## Notes
 
 * can we find the best motions automatically using 
