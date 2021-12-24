@@ -22,23 +22,17 @@ def run_komo(filename_env, filename_initial_guess, filename_result):
 		yaml_to_plain.write(filename_initial_guess, filename_guess)
 
 		# Run KOMO
-		filename_out = p / "out.txt"
 		result = subprocess.run(["./rai_dubins",
 				"-model", "\""+str(filename_g)+"\"",
 				"-waypoints", "\""+str(filename_guess)+"\"",
 				"-one_every", "1",
 				"-display", str(0),
 				"-animate", str(0),
-				"-out", "\""+str(filename_out)+"\""])
+				"-out", "\""+str(filename_result)+"\""])
 		if result.returncode != 0:
 			print("KOMO failed")
 			return False
 		else:
-			# convert txt -> yaml
-			data = np.loadtxt(filename_out, ndmin=2)
-			result = {"result": [{"states": data.tolist()}]}
-			with open(filename_result, 'w') as f:
-				yaml.dump(result, f)
 			return True
 
 

@@ -137,7 +137,7 @@ int main(int argn, char **argv) {
   bool display = rai::getParameter<bool>("display", false);
   int animate = rai::getParameter<int>("animate", 0);
   rai::String out_file =
-      rai::getParameter<rai::String>("out", STRING("out.log"));
+      rai::getParameter<rai::String>("out", STRING("out.yaml"));
 
   arrA waypoints = load_waypoints(waypoints_file);
 
@@ -241,18 +241,11 @@ int main(int argn, char **argv) {
   // write the results.
   arrA results = komo.getPath_qAll();
   std::ofstream out(out_file);
-
-  for (auto &v : results) {
-    bool first = true;
-    for (auto &e : v) {
-      if (first) {
-        first = false;
-      } else {
-        out << " ";
-      }
-      out << e;
-    }
-    out << "\n";
+  out << "result:" << std::endl;
+  out << "  - states:" << std::endl;
+  for (auto &v : results)
+  {
+    out << "      - [" << v(0) << "," << v(1) << "," << std::remainder(v(2), 2 * M_PI) << "]" << std::endl;
   }
 
   return 0;
