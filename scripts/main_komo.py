@@ -7,7 +7,6 @@ import subprocess
 
 import robots
 import translate_g
-import yaml_to_plain
 
 def run_komo(filename_env, filename_initial_guess, filename_result):
 
@@ -17,14 +16,10 @@ def run_komo(filename_env, filename_initial_guess, filename_result):
 		filename_g = p / "env.g"
 		translate_g.write(filename_env, str(filename_g))
 
-		# convert initial guess yaml -> txt
-		filename_guess = p / "initial_guess.txt"
-		yaml_to_plain.write(filename_initial_guess, filename_guess)
-
 		# Run KOMO
 		result = subprocess.run(["./rai_dubins",
 				"-model", "\""+str(filename_g)+"\"",
-				"-waypoints", "\""+str(filename_guess)+"\"",
+				"-waypoints", "\""+str(filename_initial_guess)+"\"",
 				"-one_every", "1",
 				"-display", str(0),
 				"-animate", str(0),

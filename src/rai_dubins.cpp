@@ -7,6 +7,8 @@
 #include <cmath>
 #include <iostream>
 
+#include <yaml-cpp/yaml.h>
+
 /* xdot = V cos ( theta ) */
 /* ydot = V sin ( theta ) */
 /* theta_dot = u */
@@ -81,33 +83,18 @@ void Dubins2::phi2(arr &y, arr &J, const FrameL &F) {
 
 arrA load_waypoints(const char *filename) {
 
-  std::ifstream file(filename);
+  // load initial guess
+  YAML::Node env = YAML::LoadFile(filename);
 
-  if (!file.is_open()) {
-    throw std::runtime_error("file " + std::string(filename) + " not found");
-  }
-
-  std::string line;
-  std::vector<std::vector<double>> points;
-  while (std::getline(file, line)) {
-    std::istringstream iss(line);
-    std::string p_str;
-    std::vector<double> point;
-    while (std::getline(iss, p_str, ' ')) {
-      point.push_back(std::stod(p_str));
-    }
-    points.push_back(point);
-  }
-  // check that all points have the same dime
-  size_t dim = points.front().size();
-  for (auto &p : points) {
-    assert(p.size() == dim);
-  }
-
+  // load states
   arrA waypoints;
-
-  for (auto &v : points) {
-    waypoints.append(arr(v, false));
+  for (const auto &state : env["result"][0]["states"])
+  {
+    arr stateArray;
+    for (const auto& elem : state) {
+      stateArray.append(elem.as<double>());
+    }
+    waypoints.append(stateArray);
   }
   return waypoints;
 }
