@@ -33,7 +33,7 @@ void Dubins2::phi2(arr &y, arr &J, const FrameL &F) {
   }
 
   // p: position = [x,y,theta]
-  // v: velocity = [vx , vy , vtheta ]
+  // v: velocity = [vx,vy,vtheta]
   arr p, v, Jp, Jv;
   F_qItself().setOrder(0).eval(p, Jp, F[1].reshape(1, -1));
   F_qItself().setOrder(1).eval(v, Jv, F);
@@ -94,7 +94,6 @@ arrA load_waypoints(const char *filename) {
     std::string p_str;
     std::vector<double> point;
     while (std::getline(iss, p_str, ' ')) {
-      std::cout << p_str << std::endl;
       point.push_back(std::stod(p_str));
     }
     points.push_back(point);
@@ -171,22 +170,12 @@ int main(int argn, char **argv) {
       }
     }
   }
-  // exit(0);
-
-  // C.watch(true);
 
   // create optimization problem
   KOMO komo;
   komo.setModel(C, true);
   double duration_phase = waypoints.N * 0.1; // dt is 0.1 s
   komo.setTiming(1, waypoints.N, duration_phase, 2);
-
-  // // StringA obss{"obs0", "obs1", "obs2", "obs3", "obs4"};
-
-  // // this is not working here...
-  // for (auto &obs : obss) {
-  //   komo.addObjective({}, FS_distance, {"robot0", obs}, OT_ineq, {1e2});
-  // }
 
   komo.add_qControlObjective({}, 2, .1);
   komo.add_qControlObjective({}, 1, .1);
@@ -197,7 +186,6 @@ int main(int argn, char **argv) {
   for (auto &obs : obstacles) {
     komo.addObjective({}, FS_distance, {"robot0", obs}, OT_ineq, {1e2});
   }
-  //
 
   komo.run_prepare(0.1); // TODO: is this necessary?
   komo.initWithWaypoints(waypoints, waypoints.N);
@@ -207,7 +195,6 @@ int main(int argn, char **argv) {
     std::cout << "report before solve" << std::endl;
     auto sparse = komo.nlp_SparseNonFactored();
     arr phi;
-    // std::cout << "komo.x " << komo.x << std::endl;
     sparse->evaluate(phi, NoArr, komo.x);
 
     komo.reportProblem();
@@ -240,8 +227,8 @@ int main(int argn, char **argv) {
   double ineq = report.get<double>("ineq");
   double eq = report.get<double>("eq");
 
-  // komo.view(true);
   if (display) {
+    // komo.view(true);
     komo.view_play(true);
     // komo.view_play(false, .3, "z.vid/");
   }
