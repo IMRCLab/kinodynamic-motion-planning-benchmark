@@ -178,7 +178,7 @@ int main(int argn, char **argv) {
   // create optimization problem
   KOMO komo;
   komo.setModel(C, true);
-  double duration_phase = 10;
+  double duration_phase = waypoints.N * 0.1; // dt is 0.1 s
   komo.setTiming(1, waypoints.N, duration_phase, 2);
 
   // // StringA obss{"obs0", "obs1", "obs2", "obs3", "obs4"};
@@ -225,8 +225,9 @@ int main(int argn, char **argv) {
     std::cout << "done " << std::endl;
   }
 
-  if (animate)
+  if (animate) {
     komo.opt.animateOptimization = animate;
+  }
 
   komo.optimize(0.1);
 
@@ -235,11 +236,19 @@ int main(int argn, char **argv) {
 
   auto report = komo.getReport(display, 0, std::cout);
   std::cout << "report " << report << std::endl;
+  // std::cout << "ineq: " << report.getValuesOfType<double>("ineq") << std::endl;
+  double ineq = report.get<double>("ineq");
+  double eq = report.get<double>("eq");
 
   // komo.view(true);
   if (display) {
     komo.view_play(true);
     // komo.view_play(false, .3, "z.vid/");
+  }
+
+  if (ineq > 0.1 || eq > 0.1) {
+    // Optimization failed (constraint violations)
+    return 1;
   }
 
   // write the results.
@@ -258,4 +267,6 @@ int main(int argn, char **argv) {
     }
     out << "\n";
   }
+
+  return 0;
 }

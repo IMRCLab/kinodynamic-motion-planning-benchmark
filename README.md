@@ -45,18 +45,15 @@ python3 ../scripts/gen_sbpl_prim.py ../deps/sbpl/matlab/mprim/unicycle_noturninp
 Optimize Trajectories
 
 ```
-./rai_dubins -model  \"../benchmark/carFirstOrder/parallelpark_0.g\" -waypoints \"../benchmark/carFirstOrder/initGuess/result_dbastar_parallelpark.txt\"  -one_every 2 -di
-splay 1 -out out.txt -animate 0
+./rai_dubins -model  \"../benchmark/carFirstOrder/parallelpark_0.g\" -waypoints \"../benchmark/carFirstOrder/initGuess/result_dbastar_parallelpark.txt\"  -one_every 2 -display 1 -out out.txt -animate 0
 ```
 
 ```
-./rai_dubins -model  \" ../benchmark/carFirstOrder/parallelpark_0.g \" -waypoints \" ../benchmark/carFirstOrder/initGuess/result_dbastar_parallelpark.txt \"  -one_every 2
- -display 1 -out out.txt -animate 0
+./rai_dubins -model  \" ../benchmark/carFirstOrder/parallelpark_0.g \" -waypoints \" ../benchmark/carFirstOrder/initGuess/result_dbastar_parallelpark.txt \"  -one_every 2 -display 1 -out out.txt -animate 0
  ```
 
 ```
-./rai_dubins -model  \"../benchmark/carFirstOrder/bugtrap_0.g \" -waypoints \"../benchmark/carFirstOrder/initGuess/result_dbastar_bugtrap.txt\"  -one_every 2 -display 0 -
-out out.txt -animate 0
+./rai_dubins -model  \"../benchmark/carFirstOrder/bugtrap_0.g \" -waypoints \"../benchmark/carFirstOrder/initGuess/result_dbastar_bugtrap.txt\"  -one_every 2 -display 0 -out out.txt -animate 0
 ```
 
 Translate yaml environments to g
