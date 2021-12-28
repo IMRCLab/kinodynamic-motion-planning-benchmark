@@ -81,6 +81,52 @@ void Dubins2::phi2(arr &y, arr &J, const FrameL &F) {
   }
 }
 
+struct CarFirstOrderVelocity : Feature
+{
+  uint dim_phi2(const FrameL &)
+  {
+    return 1;
+  }
+
+  void phi2(arr &y, arr &J, const FrameL &F)
+  {
+    // implementation only for rai::JT_transXYPhi!
+    for (auto &f : F) {
+      assert(f->joint->type == rai::JT_transXYPhi);
+    }
+
+    // p: position = [x,y,theta]
+    // v: velocity = [vx,vy,vtheta]
+    arr p, v, Jp, Jv;
+    F_qItself().setOrder(0).eval(p, Jp, F[1].reshape(1, -1));
+    F_qItself().setOrder(1).eval(v, Jv, F);
+    double velocity = std::sqrt(v(0) * v(0) + v(1) * v(1)); // velocity
+
+    // feature is y
+    y.resize(1);
+    y(0) = velocity;
+
+    // compute Jacobian
+    if (!!J) {
+      double tol = 1e-6; // tolerance non differentiable point of sqrt()
+      arr Jl;
+      Jl.resize(1, 6); // ROWS = 1 equations ; COLUMNS= 3 position + 3 velocities
+      Jl.setZero();
+      if (velocity > tol)
+      {
+        // w.r.t vx
+        Jl(0, 3) = v(0) / velocity;
+        // w.r.t vy
+        Jl(0, 4) = v(1) / velocity;
+      }
+
+      arr JBlock;
+      JBlock.setBlockMatrix(Jp, Jv);
+      J = Jl * JBlock;
+    }
+  }
+};
+
 arrA load_waypoints(const char *filename) {
 
   // load initial guess
@@ -168,8 +214,17 @@ int main(int argn, char **argv) {
   komo.add_qControlObjective({}, 1, .1);
   // I assume names robot0 and goal0 in the .g file
   komo.addObjective({1., 1.}, FS_poseDiff, {"robot0", "goal0"}, OT_eq, {1e2});
+
+  // robot dynamics
   komo.addObjective({}, make_shared<Dubins2>(), {"robot0"}, OT_eq, {1e1}, {0},
                     1);
+  // angular velocity limit
+  komo.addObjective({}, FS_qItself, {"robot0"}, OT_ineq, {0, 0, 1}, {0, 0, 0.5 /*rad/s*/}, 1);
+  komo.addObjective({}, FS_qItself, {"robot0"}, OT_ineq, {0, 0, -1}, {0, 0, -0.5 /*rad/s*/}, 1);
+  // velocity limit
+  komo.addObjective({}, make_shared<CarFirstOrderVelocity>(), {"robot0"}, OT_ineq, {1}, {0.5 /*m/s*/}, 1);
+  komo.addObjective({}, make_shared<CarFirstOrderVelocity>(), {"robot0"}, OT_ineq, {-1}, {-0.5 /*m/s*/}, 1);
+
   for (auto &obs : obstacles) {
     komo.addObjective({}, FS_distance, {"robot0", obs}, OT_ineq, {1e2});
   }
@@ -230,9 +285,17 @@ int main(int argn, char **argv) {
   std::ofstream out(out_file);
   out << "result:" << std::endl;
   out << "  - states:" << std::endl;
-  for (auto &v : results)
-  {
+  for (auto &v : results) {
     out << "      - [" << v(0) << "," << v(1) << "," << std::remainder(v(2), 2 * M_PI) << "]" << std::endl;
+  }
+  out << "    actions:" << std::endl;
+  for (size_t t = 1; t < komo.T; ++t) {
+    arr delta = results(t) - results(t-1);
+    double distance = std::sqrt(delta(0) * delta(0) + delta(1) * delta(1)); // velocity
+    double velocity = distance / 0.1; // m/s
+    double angular_change = atan2(sin(delta(2)), cos(delta(2)));
+    double angular_velocity = angular_change / 0.1; // rad/s
+    out << "      - [" << velocity << "," << angular_velocity << "]" << std::endl;
   }
 
   return 0;
