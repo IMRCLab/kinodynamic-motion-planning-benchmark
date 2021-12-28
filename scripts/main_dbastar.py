@@ -16,8 +16,10 @@ import os
 sys.path.append(os.getcwd())
 
 import main_scp
+import main_komo
 import gen_motion_primitive
 from motionplanningutils import RobotHelper
+import checker
 
 # ./dbastar -i ../benchmark/dubins/kink_0.yaml -m motions.yaml -o output.yaml --delta 0.3
 
@@ -154,7 +156,7 @@ def run_dbastar(filename_env, folder, timelimit, motions_stats=None):
 				# print("dbA* failed; Generating more primitives")
 
 
-				print("dbA* failed; Using more primitives")
+				print("dbA* failed; Using more primitives", len(motions))
 				if len(all_motions) > 10:
 					motions.extend(all_motions[0:10])
 					del all_motions[0:10]
@@ -165,7 +167,6 @@ def run_dbastar(filename_env, folder, timelimit, motions_stats=None):
 						motion['distance'] = rh.distance(motion['x0'], motion['xf'])
 						motions.append(motion)
 
-
 				with open(filename_motions, 'w') as file:
 					yaml.dump(motions, file)
 
@@ -173,9 +174,15 @@ def run_dbastar(filename_env, folder, timelimit, motions_stats=None):
 				if delta > median:
 					print("Adjusting delta!", delta, median)
 					delta = median
+				# delta = delta * 0.95
 
 			else:
-				success = main_scp.run_scp(filename_env, filename_result_dbastar, filename_result_scp)#, iterations=3)
+				delta_achieved = checker.compute_delta(filename_env, filename_result_dbastar)
+				print("DELTA CHECK", delta_achieved, delta)
+				assert(delta_achieved <= delta)
+
+				# success = main_scp.run_scp(filename_env, filename_result_dbastar, filename_result_scp)#, iterations=3)
+				success = main_komo.run_komo(filename_env, filename_result_dbastar, filename_result_scp)#, iterations=3)
 				if not success:
 					print("Optimization failed; Reducing delta")
 					delta = delta * 0.9

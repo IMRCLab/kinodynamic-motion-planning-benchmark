@@ -199,8 +199,12 @@ float heuristic(std::shared_ptr<Robot> robot, const ob::State *s, const ob::Stat
   const auto current_pos = robot->getTransform(s).translation();
   const auto goal_pos = robot->getTransform(g).translation();
   float dist = (current_pos - goal_pos).norm();
-
-  return dist * 0.5;
+  const float max_vel = 0.5; // m/s
+  const float time = dist * max_vel;
+  const float time_per_timestep = 0.1; // s
+  return time / time_per_timestep; // timesteps
+  // return dist * max_vel;
+  // return 0;
 }
 
 int main(int argc, char* argv[]) {
@@ -386,9 +390,14 @@ int main(int argc, char* argv[]) {
   std::vector<Motion*> neighbors_m;
   std::vector<AStarNode*> neighbors_n;
 
+  float last_f_score = start_node->fScore;
+
   while (!open.empty())
   {
     AStarNode* current = open.top();
+    // std::cout << "fs " << current->fScore << " " << last_f_score << " " << current << std::endl;
+    assert(current->fScore >= last_f_score);
+    last_f_score = current->fScore;
     // std::cout << "current";
     // si->printState(current->state);
     if (si->distance(current->state, goalState) <= delta) {
@@ -414,15 +423,23 @@ int main(int argc, char* argv[]) {
         const auto node_state = result[i]->state;
         const fcl::Vector3f current_pos = robot->getTransform(node_state).translation();
         const auto &motion = motions.at(result[i+1]->used_motion);
+        out << "      # ";
+        printState(out, si, node_state);
+        out << std::endl;
+        out << "      # motion " << motion.name << " with cost " << motion.cost << std::endl;
         // skip last state each
-        for (size_t k = 0; k < motion.states.size() - 1; ++k)
+        for (size_t k = 0; k < motion.states.size(); ++k)
         {
           const auto state = motion.states[k];
           si->copyState(tmpState, state);
           const fcl::Vector3f relative_pos = robot->getTransform(state).translation();
           robot->setPosition(tmpState, current_pos + relative_pos);
 
-          out << "      - ";
+          if (k < motion.states.size() - 1) {
+            out << "      - ";
+          } else {
+            out << "      # ";
+          }
           printState(out, si, tmpState);
           out << std::endl;
         }
@@ -435,6 +452,7 @@ int main(int argc, char* argv[]) {
       for (size_t i = 0; i < result.size() - 1; ++i)
       {
         const auto &motion = motions[result[i+1]->used_motion];
+        out << "      # motion " << motion.name << " with cost " << motion.cost << std::endl;
         for (size_t k = 0; k < motion.actions.size(); ++k)
         {
           const auto& action = motion.actions[k];
@@ -468,11 +486,11 @@ int main(int argc, char* argv[]) {
     current->is_in_open = false;
     open.pop();
 
-    // find relevant motions (within delta of current state)
+    // find relevant motions (within delta/2 of current state)
     si->copyState(fakeMotion.states[0], current->state);
     robot->setPosition(fakeMotion.states[0], fcl::Vector3f(0,0,0));
 
-    T_m->nearestR(&fakeMotion, delta, neighbors_m);
+    T_m->nearestR(&fakeMotion, delta/2, neighbors_m);
     // std::cout << "found " << neighbors_m.size() << " motions" << std::endl;
     // Loop over all potential applicable motions
     for (const Motion* motion : neighbors_m) {
@@ -505,12 +523,12 @@ int main(int argc, char* argv[]) {
       if (!motionValid) {
         continue;
       }
-      // std::cout << "valid " << si->distance(current->state, tmpState) << std::endl;
+      // std::cout << "valid " <<  std::endl;
       // si->printState(tmpState);
 
-      // Check if we have this state (or any within delta) already
+      // Check if we have this state (or any within delta/2) already
       query_n->state = tmpState;
-      T_n->nearestR(query_n, delta, neighbors_n);
+      T_n->nearestR(query_n, delta/2, neighbors_n);
 
       // exclude state we came from (otherwise we never add motions that are less than delta away)
       // auto it = std::remove(neighbors_n.begin(), neighbors_n.end(), current);
@@ -520,8 +538,6 @@ int main(int argc, char* argv[]) {
 
       if (neighbors_n.size() == 0)
       {
-        // std::cout << "new state";
-
         // new state -> add it to open and T_n
         auto node = new AStarNode();
         node->state = si->cloneState(tmpState);
@@ -529,27 +545,36 @@ int main(int argc, char* argv[]) {
         node->fScore = tentative_gScore + heuristic(robot, node->state, goalState);
         node->came_from = current;
         node->used_motion = motion->idx;
-
+        node->is_in_open = true;
         auto handle = open.push(node);
         node->handle = handle;
         T_n->add(node);
+
+        // std::cout << "new state " << node->fScore << " " << node << std::endl;
       }
       else
       {
         // check if we have a better path now
         for (AStarNode* entry : neighbors_n) {
-          float delta = entry->gScore - tentative_gScore;
-          if (delta > 0) {
-            // std::cout << "improve score";
-            // si->printState(entry->state);
+          assert(si->distance(entry->state, tmpState) <= delta);
+          float delta_score = entry->gScore - tentative_gScore;
+          if (delta_score > 0) {
+
+            // if (motion->name == "m289") {
+            //   std::cout << "improve score " << delta_score << std::endl;
+            //   si->printState(entry->state);
+            //   si->printState(tmpState);
+            //   std::cout << si->distance(entry->state, tmpState) << std::endl;
+            // }
 
             entry->gScore = tentative_gScore;
-            entry->fScore -= delta;
+            entry->fScore -= delta_score;
             assert(entry->fScore >= 0);
             entry->came_from = current;
             entry->used_motion = motion->idx;
             if (entry->is_in_open) {
               open.increase(entry->handle);
+              // std::cout << "improve score " << entry->fScore << std::endl;
             }
           }
         }

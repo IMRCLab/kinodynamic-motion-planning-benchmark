@@ -57,9 +57,6 @@ def load_data(filename, T, dt):
     for d in stats["stats"]:
         idx = int(d["t"] / dt)
         costs[idx:] = d["cost"]
-        # TODO: hack
-        if "dbAstar" in str(filename):
-          costs[idx:] = d["cost"] / 10
   return costs
 
 

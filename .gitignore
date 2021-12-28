@@ -1,3 +1,5 @@
 build/
+buildDebug/
+buildRelease/
 results/
 *.pyc

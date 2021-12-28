@@ -19,9 +19,10 @@ def main():
 		report.add("{}".format(instance))
 		for alg in algs:
 			result_folder = results_path / instance / alg
-			stats_file = result_folder / "stats.yaml"
-			if stats_file.exists():
-				report.load_stat_files([stats_file], 5*60, 0.1, alg)
+			stat_files = [str(p) for p in result_folder.glob("**/stats.yaml")]
+			print(stat_files)
+			if len(stat_files) > 0:
+				report.load_stat_files(stat_files, 2 * 60, 0.1, alg)
 
 	report.close()
 

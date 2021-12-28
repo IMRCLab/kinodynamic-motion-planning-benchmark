@@ -1,16 +1,16 @@
 environment:
-  dimensions: [3.0, 1.0]
+  dimensions: [3.0, 1.2]
   obstacles:
     - type: box
-      center: [0.3, 0.2]
+      center: [0.3, 0.3]
       size: [0.5, 0.25]
     - type: box
-      center: [1.1, 0.2]
+      center: [1.1, 0.3]
       size: [0.5, 0.25]
     - type: box
-      center: [2.7, 0.2]
+      center: [2.7, 0.3]
       size: [0.5, 0.25]
 robots:
   - type: car_first_order_0
-    start: [0.7,0.7,0] # x,y,theta
-    goal: [1.9,0.2,0] # x,y,theta
+    start: [0.7,0.8,0] # x,y,theta
+    goal: [1.9,0.3,0] # x,y,theta
