@@ -4,7 +4,11 @@ sst:
   parallelpark_0:
     goal_epsilon: 0.05
 
-dbAstar:
+dbAstar-komo:
+  default:
+    dummy: 0
+
+dbAstar-scp:
   default:
     dummy: 0
 

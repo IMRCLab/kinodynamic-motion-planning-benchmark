@@ -331,7 +331,7 @@ int main(int argc, char* argv[]) {
     for (const auto& action : motion["actions"]) {
       m.actions.push_back(allocAndFillControl(si, action));
     }
-    m.cost = m.actions.size();
+    m.cost = m.actions.size() / 10.0f; // time in seconds
     m.idx = motions.size();
     m.name = motion["name"].as<std::string>();
     motions.push_back(m);
@@ -494,13 +494,23 @@ int main(int argc, char* argv[]) {
     // std::cout << "found " << neighbors_m.size() << " motions" << std::endl;
     // Loop over all potential applicable motions
     for (const Motion* motion : neighbors_m) {
-      // Compute intermediate states and check their validity
-      const auto current_pos = robot->getTransform(current->state).translation();
+      // compute estimated cost
       float tentative_gScore = current->gScore + motion->cost;
-      if (tentative_gScore > maxCost) {
+      // compute final state
+      si->copyState(tmpState, motion->states.back());
+      const auto current_pos = robot->getTransform(current->state).translation();
+      const auto relative_pos = robot->getTransform(tmpState).translation();
+      robot->setPosition(tmpState, current_pos + relative_pos);
+      // compute estimated fscore
+      float tentative_hScore = heuristic(robot, tmpState, goalState);
+      float tentative_fScore = tentative_gScore + tentative_hScore;
+
+      // skip motions that would exceed cost bound
+      if (tentative_fScore > maxCost) {
         continue;
       }
 
+      // Compute intermediate states and check their validity
       bool motionValid = true;
       for (const auto& state : motion->states)
       {
@@ -542,7 +552,7 @@ int main(int argc, char* argv[]) {
         auto node = new AStarNode();
         node->state = si->cloneState(tmpState);
         node->gScore = tentative_gScore;
-        node->fScore = tentative_gScore + heuristic(robot, node->state, goalState);
+        node->fScore = tentative_fScore;
         node->came_from = current;
         node->used_motion = motion->idx;
         node->is_in_open = true;
@@ -559,14 +569,6 @@ int main(int argc, char* argv[]) {
           assert(si->distance(entry->state, tmpState) <= delta);
           float delta_score = entry->gScore - tentative_gScore;
           if (delta_score > 0) {
-
-            // if (motion->name == "m289") {
-            //   std::cout << "improve score " << delta_score << std::endl;
-            //   si->printState(entry->state);
-            //   si->printState(tmpState);
-            //   std::cout << si->distance(entry->state, tmpState) << std::endl;
-            // }
-
             entry->gScore = tentative_gScore;
             entry->fScore -= delta_score;
             assert(entry->fScore >= 0);

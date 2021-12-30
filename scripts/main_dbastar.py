@@ -10,6 +10,8 @@ import random
 import copy
 import shutil
 from collections import defaultdict
+import tempfile
+from pathlib import Path
 
 import sys
 import os
@@ -92,122 +94,130 @@ def compute_motion_importance(filename_env, filename_motions, filename_result_db
 			motions_stats[name] += np.clip(1 - old_cost / new_cost, 0, 1)
 	return motions_stats
 
-def run_dbastar(filename_env, folder, timelimit, motions_stats=None):
+def run_dbastar(filename_env, folder, timelimit, opt_alg="scp", motions_stats=None):
 
-	sol = 0
-	filename_motions = "motions.yaml".format(folder, sol)
-	filename_stats = "{}/stats.yaml".format(folder)
+	with tempfile.TemporaryDirectory() as tmpdirname:
+		p = Path(tmpdirname)
+		filename_motions = p / "motions.yaml"
 
-	with open(filename_env) as f:
-		env = yaml.safe_load(f)
+		sol = 0
+		filename_stats = "{}/stats.yaml".format(folder)
 
-	robot_node = env["robots"][0]
-	robot_type = robot_node["type"]
-	robot = robots.create_robot(robot_type)
-	rh = RobotHelper(robot_type)
-	# initialize delta
-	x0 = np.array(robot_node["start"])
-	xf = np.array(robot_node["goal"])
+		with open(filename_env) as f:
+			env = yaml.safe_load(f)
 
-	delta = rh.distance(x0, xf) * 0.9
-	maxCost = 1e6
+		robot_node = env["robots"][0]
+		robot_type = robot_node["type"]
+		robot = robots.create_robot(robot_type)
+		rh = RobotHelper(robot_type)
+		# initialize delta
+		x0 = np.array(robot_node["start"])
+		xf = np.array(robot_node["goal"])
 
-
-	# load existing motions
-	with open('motions_{}.yaml'.format(robot_node["type"])) as f:
-		all_motions = yaml.safe_load(f)
-	random.shuffle(all_motions)
-	motions = all_motions[0:100]
-	del all_motions[0:100]
-	with open(filename_motions, 'w') as file:
-		yaml.dump(motions, file)
-
-	# print(len(motions))
-	# exit()
-	# motions = []
-
-	median = np.median([m['distance'] for m in motions])
-	if delta > median:
-		print("Adjusting delta!", delta, median)
-		delta = median
-
-	initialDelta = delta
-
-	start = time.time()
-
-	with open(filename_stats, 'w') as stats:
-		stats.write("stats:\n")
-		while time.time() - start < timelimit:
-			print("delta", delta, "maxCost", maxCost)
-
-			filename_result_dbastar = "result_dbastar.yaml"
-			filename_result_scp = "result_scp.yaml"
-
-			# find_smallest_delta(filename_env, filename_motions, filename_result_dbastar, delta, maxCost)
-			# exit()
-
-			result = subprocess.run(["./dbastar", 
-				"-i", filename_env,
-				"-m", filename_motions,
-				"-o", filename_result_dbastar,
-				"--delta", str(delta),
-				"--maxCost", str(maxCost)])
-			if result.returncode != 0:
-				# print("dbA* failed; Generating more primitives")
+		delta = rh.distance(x0, xf) * 0.9
+		maxCost = 1e6
 
 
-				print("dbA* failed; Using more primitives", len(motions))
-				if len(all_motions) > 10:
-					motions.extend(all_motions[0:10])
-					del all_motions[0:10]
+		# load existing motions
+		with open('motions_{}.yaml'.format(robot_node["type"])) as f:
+			all_motions = yaml.safe_load(f)
+		random.shuffle(all_motions)
+		motions = all_motions[0:100]
+		del all_motions[0:100]
+		with open(filename_motions, 'w') as file:
+			yaml.dump(motions, file)
+
+		# print(len(motions))
+		# exit()
+		# motions = []
+
+		median = np.median([m['distance'] for m in motions])
+		if delta > median:
+			print("Adjusting delta!", delta, median)
+			delta = median
+
+		initialDelta = delta
+
+		start = time.time()
+
+		with open(filename_stats, 'w') as stats:
+			stats.write("stats:\n")
+			while time.time() - start < timelimit:
+				print("delta", delta, "maxCost", maxCost)
+
+				filename_result_dbastar = p / "result_dbastar.yaml"
+				filename_result_scp = p / "result_scp.yaml"
+
+				# find_smallest_delta(filename_env, filename_motions, filename_result_dbastar, delta, maxCost)
+				# exit()
+
+				result = subprocess.run(["./dbastar", 
+					"-i", filename_env,
+					"-m", filename_motions,
+					"-o", filename_result_dbastar,
+					"--delta", str(delta),
+					"--maxCost", str(maxCost)])
+				if result.returncode != 0:
+					# print("dbA* failed; Generating more primitives")
+
+
+					print("dbA* failed; Using more primitives", len(motions))
+					if len(all_motions) > 10:
+						motions.extend(all_motions[0:10])
+						del all_motions[0:10]
+					else:
+						for _ in range(10):
+							print("gen motion", len(motions))
+							motion = gen_motion_primitive.gen_random_motion(robot_type)
+							motion['distance'] = rh.distance(motion['x0'], motion['xf'])
+							motions.append(motion)
+
+					with open(filename_motions, 'w') as file:
+						yaml.dump(motions, file)
+
+					median = np.median([m['distance'] for m in motions])
+					if delta > median:
+						print("Adjusting delta!", delta, median)
+						delta = median
+					# delta = delta * 0.95
+
 				else:
-					for _ in range(10):
-						print("gen motion", len(motions))
-						motion = gen_motion_primitive.gen_random_motion(robot_type)
-						motion['distance'] = rh.distance(motion['x0'], motion['xf'])
-						motions.append(motion)
+					delta_achieved = checker.compute_delta(filename_env, filename_result_dbastar)
+					print("DELTA CHECK", delta_achieved, delta)
+					assert(delta_achieved <= delta)
 
-				with open(filename_motions, 'w') as file:
-					yaml.dump(motions, file)
+					if opt_alg == "scp":
+						success = main_scp.run_scp(filename_env, filename_result_dbastar, filename_result_scp)
+					elif opt_alg == "komo":
+						success = main_komo.run_komo(filename_env, filename_result_dbastar, filename_result_scp)
+					else:
+						raise Exception("Unknown optimization algorithm {}!".format(opt_alg))
 
-				median = np.median([m['distance'] for m in motions])
-				if delta > median:
-					print("Adjusting delta!", delta, median)
-					delta = median
-				# delta = delta * 0.95
+					if not success:
+						print("Optimization failed; Reducing delta")
+						delta = delta * 0.9
+					else:
+						# # ONLY FOR MOTION PRIMITIVE SELECTION
+						if motions_stats is not None:
+							compute_motion_importance(filename_env, filename_motions, filename_result_dbastar, delta, maxCost, motions_stats)
+						with open(filename_result_dbastar) as f:
+							result = yaml.safe_load(f)
+							cost = len(result["result"][0]["actions"]) / 10
+						now = time.time()
+						t = now - start
+						print("success!", cost, t)
+						stats.write("  - t: {}\n    cost: {}\n".format(t, cost))
+						maxCost = cost * 0.99
 
-			else:
-				delta_achieved = checker.compute_delta(filename_env, filename_result_dbastar)
-				print("DELTA CHECK", delta_achieved, delta)
-				assert(delta_achieved <= delta)
+						shutil.copyfile(filename_result_dbastar, "{}/result_dbastar_sol{}.yaml".format(folder, sol))
+						shutil.copyfile(filename_result_scp, "{}/result_scp_sol{}.yaml".format(folder, sol))
+						shutil.copyfile(filename_motions, "{}/motions_sol{}.yaml".format(folder, sol))
 
-				# success = main_scp.run_scp(filename_env, filename_result_dbastar, filename_result_scp)#, iterations=3)
-				success = main_komo.run_komo(filename_env, filename_result_dbastar, filename_result_scp)#, iterations=3)
-				if not success:
-					print("Optimization failed; Reducing delta")
-					delta = delta * 0.9
-				else:
-					# # ONLY FOR MOTION PRIMITIVE SELECTION
-					if motions_stats is not None:
-						compute_motion_importance(filename_env, filename_motions, filename_result_dbastar, delta, maxCost, motions_stats)
-					with open(filename_result_dbastar) as f:
-						result = yaml.safe_load(f)
-						cost = len(result["result"][0]["actions"]) / 10
-					now = time.time()
-					t = now - start
-					print("success!", cost, t)
-					stats.write("  - t: {}\n    cost: {}\n".format(t, cost))
-					maxCost = cost * 0.99
-
-					shutil.copyfile(filename_result_dbastar, "{}/result_dbastar_sol{}.yaml".format(folder, sol))
-					shutil.copyfile(filename_result_scp, "{}/result_scp_sol{}.yaml".format(folder, sol))
-					shutil.copyfile(filename_motions, "{}/motions_sol{}.yaml".format(folder, sol))
-
-					sol += 1
+						sol += 1
 
 
-					# delta = initialDelta
-					# break
+						# delta = initialDelta
+						# break
 
 def main():
 	parser = argparse.ArgumentParser()
