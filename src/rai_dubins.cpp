@@ -266,8 +266,8 @@ int main(int argn, char **argv) {
   auto report = komo.getReport(display, 0, std::cout);
   std::cout << "report " << report << std::endl;
   // std::cout << "ineq: " << report.getValuesOfType<double>("ineq") << std::endl;
-  double ineq = report.get<double>("ineq");
-  double eq = report.get<double>("eq");
+  double ineq = report.get<double>("ineq") / komo.T;
+  double eq = report.get<double>("eq") / komo.T;
 
   if (display) {
     // komo.view(true);
@@ -275,7 +275,7 @@ int main(int argn, char **argv) {
     // komo.view_play(false, .3, "z.vid/");
   }
 
-  if (ineq > 0.1 || eq > 0.1) {
+  if (ineq > 0.01 || eq > 0.01) {
     // Optimization failed (constraint violations)
     return 1;
   }
