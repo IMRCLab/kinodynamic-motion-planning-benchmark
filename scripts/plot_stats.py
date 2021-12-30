@@ -53,7 +53,7 @@ def load_data(filename, T, dt):
     stats = yaml.safe_load(f)
 
   costs = np.zeros(int(T / dt)) * np.nan
-  if "stats" in stats and stats["stats"] is not None:
+  if stats is not None and "stats" in stats and stats["stats"] is not None:
     for d in stats["stats"]:
         idx = int(d["t"] / dt)
         costs[idx:] = d["cost"]

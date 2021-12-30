@@ -89,8 +89,7 @@ def compute_delta(filename_env: str, filename_result: str) -> float:
 	for t in range(T-1):
 		state_desired = robot.step(states[t], actions[t])
 		delta = rh.distance(state_desired, states[t+1])
-		# delta2 = rh.distance(states[t+1], state_desired)
-		# print(t, delta, delta2, states[t], actions[t], states[t+1], state_desired)
+		# print(t, delta, states[t], actions[t], states[t+1], state_desired)
 		deltas.append(delta)
 	deltas.append(rh.distance(xf, states[-1]))
 	# idx = np.argmax(deltas) + 1

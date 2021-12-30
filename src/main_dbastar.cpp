@@ -201,10 +201,7 @@ float heuristic(std::shared_ptr<Robot> robot, const ob::State *s, const ob::Stat
   float dist = (current_pos - goal_pos).norm();
   const float max_vel = 0.5; // m/s
   const float time = dist * max_vel;
-  const float time_per_timestep = 0.1; // s
-  return time / time_per_timestep; // timesteps
-  // return dist * max_vel;
-  // return 0;
+  return time;
 }
 
 int main(int argc, char* argv[]) {
