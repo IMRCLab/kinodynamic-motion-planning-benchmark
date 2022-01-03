@@ -133,10 +133,10 @@ def run_dbastar(filename_env, folder, timelimit, opt_alg="scp", motions_stats=No
 		# exit()
 		# motions = []
 
-		median = np.median([m['distance'] for m in motions])
-		if delta > median:
-			print("Adjusting delta!", delta, median)
-			delta = median
+		# median = np.median([m['distance'] for m in motions])
+		# if delta > median:
+		# 	print("Adjusting delta!", delta, median)
+		# 	delta = median
 
 		initialDelta = delta
 
@@ -178,11 +178,11 @@ def run_dbastar(filename_env, folder, timelimit, opt_alg="scp", motions_stats=No
 					with open(filename_motions, 'w') as file:
 						yaml.dump(motions, file)
 
-					median = np.median([m['distance'] for m in motions])
-					if delta > median:
-						print("Adjusting delta!", delta, median)
-						delta = median
-					# delta = delta * 0.95
+					# median = np.median([m['distance'] for m in motions])
+					# if delta > median:
+					# 	print("Adjusting delta!", delta, median)
+					# 	delta = median
+					# delta = initialDelta
 
 				else:
 					delta_achieved = checker.compute_delta(filename_env, filename_result_dbastar)
@@ -197,8 +197,25 @@ def run_dbastar(filename_env, folder, timelimit, opt_alg="scp", motions_stats=No
 						raise Exception("Unknown optimization algorithm {}!".format(opt_alg))
 
 					if not success:
-						print("Optimization failed; Reducing delta")
-						delta = delta * 0.9
+						# print("Optimization failed; Reducing delta")
+						# delta = delta * 0.9
+
+
+						print("Optimization failed; Using more primitives", len(motions))
+						if len(all_motions) > add_prims:
+								motions.extend(all_motions[0:add_prims])
+								del all_motions[0:add_prims]
+						else:
+							break
+							# for _ in range(add_prims):
+							# 	print("gen motion", len(motions))
+							# 	motion = gen_motion_primitive.gen_random_motion(robot_type)
+							# 	motion['distance'] = rh.distance(motion['x0'], motion['xf'])
+							# 	motions.append(motion)
+
+						with open(filename_motions, 'w') as file:
+							yaml.dump(motions, file)
+
 					else:
 						# # ONLY FOR MOTION PRIMITIVE SELECTION
 						if motions_stats is not None:

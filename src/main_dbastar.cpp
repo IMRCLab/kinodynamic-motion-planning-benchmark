@@ -120,7 +120,7 @@ struct AStarNode
   float gScore;
 
   const AStarNode* came_from;
-
+  fcl::Vector3f used_offset;
   size_t used_motion;
 
   open_t::handle_type handle;
@@ -334,6 +334,13 @@ int main(int argc, char* argv[]) {
     motions.push_back(m);
   }
 
+  auto rng = std::default_random_engine{};
+  std::shuffle(std::begin(motions), std::end(motions), rng);
+  for (size_t idx = 0; idx < motions.size(); ++idx) {
+    motions[idx].idx = idx;
+  }
+  std::uniform_real_distribution<> dis_angle(0, 2 * M_PI);
+
   // build kd-tree for motion primitives
   ompl::NearestNeighbors<Motion*>* T_m;
   if (si->getStateSpace()->isMetricSpace())
@@ -347,6 +354,35 @@ int main(int argc, char* argv[]) {
   for (auto& motion : motions) {
     T_m->add(&motion);
   }
+
+
+  //////////////////////////
+  if (true) {
+    Motion fakeMotion;
+    fakeMotion.idx = -1;
+    fakeMotion.states.push_back(si->allocState());
+    std::vector<Motion *> neighbors_m;
+    size_t num_desired_neighbors = 16;
+    size_t num_samples = 100;
+
+    auto state_sampler = si->allocStateSampler();
+    float sum_delta = 0.0;
+    for (size_t k = 0; k < num_samples; ++k) {
+      state_sampler->sampleUniform(fakeMotion.states[0]);
+      robot->setPosition(fakeMotion.states[0], fcl::Vector3f(0, 0, 0));
+
+      T_m->nearestK(&fakeMotion, num_desired_neighbors, neighbors_m);
+
+      float max_delta = si->distance(fakeMotion.states[0], neighbors_m.back()->states.front());
+      sum_delta += max_delta;
+    }
+    float adjusted_delta = (sum_delta / num_samples) * 2;
+    std::cout << "Adjusting delta to: " << adjusted_delta << " from " << delta << std::endl;
+    delta = adjusted_delta;
+
+  }
+
+  ////////////////////
 
   // db-A* search
   open_t open;
@@ -369,6 +405,7 @@ int main(int argc, char* argv[]) {
   start_node->gScore = 0;
   start_node->fScore = heuristic(robot, startState, goalState);
   start_node->came_from = nullptr;
+  start_node->used_offset = fcl::Vector3f(0,0,0);
   start_node->used_motion = -1;
 
   auto handle = open.push(start_node);
@@ -430,7 +467,7 @@ int main(int argc, char* argv[]) {
           const auto state = motion.states[k];
           si->copyState(tmpState, state);
           const fcl::Vector3f relative_pos = robot->getTransform(state).translation();
-          robot->setPosition(tmpState, current_pos + relative_pos);
+          robot->setPosition(tmpState, current_pos + result[i+1]->used_offset + relative_pos);
 
           if (k < motion.states.size() - 1) {
             out << "      - ";
@@ -488,22 +525,53 @@ int main(int argc, char* argv[]) {
     robot->setPosition(fakeMotion.states[0], fcl::Vector3f(0,0,0));
 
     T_m->nearestR(&fakeMotion, delta/2, neighbors_m);
+    // std::shuffle(std::begin(neighbors_m), std::end(neighbors_m), rng);
+
     // std::cout << "found " << neighbors_m.size() << " motions" << std::endl;
     // Loop over all potential applicable motions
     for (const Motion* motion : neighbors_m) {
+      float motion_dist = si->distance(fakeMotion.states[0], motion->states[0]);
+      float translation_slack = delta/2 - motion_dist;
+      assert(translation_slack >= 0);
+
+      // ideally, solve the following optimization problem
+      // min_translation fScore
+      //     s.t. ||translation|| <= translation_slack // i.e., stay within delta/2
+      //          no collisions
+
+      std::uniform_real_distribution<> dis_mag(0, translation_slack);
+      float angle = dis_angle(rng);
+      float mag = dis_mag(rng);
+      fcl::Vector3f computed_offset(mag * cos(angle), mag * sin(angle), 0);
+
+      #ifndef NDEBUG
+      {
+        // check that the computed starting state stays within delta/2
+        si->copyState(tmpState, motion->states.front());
+        const auto current_pos = robot->getTransform(current->state).translation();
+        const auto offset = current_pos + computed_offset;
+        const auto relative_pos = robot->getTransform(tmpState).translation();
+        robot->setPosition(tmpState, offset + relative_pos);
+        assert(si->distance(tmpState, current->state) <= delta/2);
+        std::cout << si->distance(tmpState, current->state)  << std::endl;
+      }
+      #endif
+
       // compute estimated cost
       float tentative_gScore = current->gScore + motion->cost;
       // compute final state
       si->copyState(tmpState, motion->states.back());
       const auto current_pos = robot->getTransform(current->state).translation();
+      const auto offset = current_pos + computed_offset;
       const auto relative_pos = robot->getTransform(tmpState).translation();
-      robot->setPosition(tmpState, current_pos + relative_pos);
+      robot->setPosition(tmpState, offset + relative_pos);
       // compute estimated fscore
       float tentative_hScore = heuristic(robot, tmpState, goalState);
       float tentative_fScore = tentative_gScore + tentative_hScore;
 
       // skip motions that would exceed cost bound
       if (tentative_fScore > maxCost) {
+        // std::cout << "skip " << tentative_fScore << " " << maxCost << std::endl;
         continue;
       }
 
@@ -514,7 +582,7 @@ int main(int argc, char* argv[]) {
         // const auto& state = motion->states.back();
         si->copyState(tmpState, state);
         const auto relative_pos = robot->getTransform(state).translation();
-        robot->setPosition(tmpState, current_pos + relative_pos);
+        robot->setPosition(tmpState, offset + relative_pos);
 
         // std::cout << "check";
         // si->printState(tmpState);
@@ -535,7 +603,12 @@ int main(int argc, char* argv[]) {
 
       // Check if we have this state (or any within delta/2) already
       query_n->state = tmpState;
-      T_n->nearestR(query_n, delta/2, neighbors_n);
+      // avoid considering this an old state for very short motions
+      // float motion_distance = si->distance(query_n->state, current->state);
+      // const float eps = 1e-6;
+      // float radius = std::min(delta/2, motion_distance-eps);
+      float radius = delta/2;
+      T_n->nearestR(query_n, radius, neighbors_n);
 
       // exclude state we came from (otherwise we never add motions that are less than delta away)
       // auto it = std::remove(neighbors_n.begin(), neighbors_n.end(), current);
@@ -552,6 +625,7 @@ int main(int argc, char* argv[]) {
         node->fScore = tentative_fScore;
         node->came_from = current;
         node->used_motion = motion->idx;
+        node->used_offset = computed_offset;
         node->is_in_open = true;
         auto handle = open.push(node);
         node->handle = handle;
@@ -571,6 +645,7 @@ int main(int argc, char* argv[]) {
             assert(entry->fScore >= 0);
             entry->came_from = current;
             entry->used_motion = motion->idx;
+            entry->used_offset = computed_offset;
             if (entry->is_in_open) {
               open.increase(entry->handle);
               // std::cout << "improve score " << entry->fScore << std::endl;

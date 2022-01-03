@@ -11,8 +11,11 @@ def main():
 	# instances = ["carFirstOrder/bugtrap_0", "carFirstOrder/kink_0", "carFirstOrder/parallelpark_0"]
 	# algs = ["sst", "sbpl", "dbAstar"]
 
-	instances = ["carFirstOrder/bugtrap_0", "carFirstOrder/kink_0", "carFirstOrder/parallelpark_0"]
-	algs = ["sst", "sbpl", "dbAstar-komo", "dbAstar-scp"]
+	# instances = ["carFirstOrder/bugtrap_0", "carFirstOrder/kink_0", "carFirstOrder/parallelpark_0"]
+	# algs = ["sst", "sbpl", "dbAstar-komo", "dbAstar-scp"]
+
+	instances = ["carSecondOrder/parallelpark_0", "carSecondOrder/kink_0", "carSecondOrder/bugtrap_0"]
+	algs = ["sst", "dbAstar-scp"]
 
 	report = plot_stats.Report(results_path / "stats.pdf")
 
@@ -23,7 +26,7 @@ def main():
 			stat_files = [str(p) for p in result_folder.glob("**/stats.yaml")]
 			print(stat_files)
 			if len(stat_files) > 0:
-				report.load_stat_files(stat_files, 100, 0.1, alg)
+				report.load_stat_files(stat_files, 5*60, 0.1, alg)
 
 	report.close()
 

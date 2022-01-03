@@ -59,6 +59,7 @@ class Animation:
       T = 0
       for robot in self.result["result"]:
         T = max(T, len(robot["states"]))
+        print("T", T)
 
       self.robot_patches = []
       for robot in self.result["result"]:
@@ -69,7 +70,7 @@ class Animation:
 
       self.anim = animation.FuncAnimation(self.fig, self.animate_func,
                                 frames=T,
-                                interval=10,
+                                interval=100,
                                 blit=True)
 
   def save(self, file_name, speed):
@@ -84,6 +85,7 @@ class Animation:
     plt.show()
 
   def animate_func(self, i):
+    print(i)
     for robot, patch in zip(self.result["result"], self.robot_patches):
       state = robot["states"][i]
       center = state[0:2]
@@ -95,9 +97,13 @@ class Animation:
       patch.set_transform(t + self.ax.transData)
     return self.robot_patches
 
-def visualize(filename_env, filename_result = None):
+
+def visualize(filename_env, filename_result=None, filename_video=None):
   anim = Animation(filename_env, filename_result)
-  anim.show()
+  if filename_video is not None:
+    anim.save(filename_video, 10)
+  else:
+    anim.show()
   # anim.save("bugtrap_0_rrt.mp4", 10)
   # with open(filename_env) as env_file:
   #   env = yaml.safe_load(env_file)
@@ -153,9 +159,10 @@ def main():
   parser = argparse.ArgumentParser()
   parser.add_argument("env", help="input file containing map")
   parser.add_argument("--result", help="output file containing solution")
+  parser.add_argument("--video", help="output file for video")
   args = parser.parse_args()
 
-  visualize(args.env, args.result)
+  visualize(args.env, args.result, args.video)
 
 if __name__ == "__main__":
   main()

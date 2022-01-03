@@ -88,14 +88,21 @@ def execute_task(task: ExecutionTask):
 def main():
 	parallel = True
 	# instances = ["carFirstOrder/bugtrap_0", "carFirstOrder/kink_0", "carFirstOrder/parallelpark_0"]
-	# algs = ["sst", "sbpl", "dbAstar"]
-	# trials = 3
-	# timelimit = 3 * 60
+	# algs = ["sst", "sbpl",  "dbAstar-komo", "dbAstar-scp"]
+	# trials = 5
+	# timelimit = 5 * 60
 
-	instances = ["carFirstOrder/bugtrap_0", "carFirstOrder/kink_0"]
-	algs = ["dbAstar-komo", "dbAstar-scp"]
-	trials = 3
-	timelimit = 100 #s3 * 60
+	# # instances = ["carFirstOrder/bugtrap_0"]
+	# instances = ["carFirstOrder/bugtrap_0", "carFirstOrder/kink_0", "carFirstOrder/parallelpark_0"]
+	# algs = ["dbAstar-komo", "dbAstar-scp"]
+	# trials = 5
+	# timelimit = 5 * 60
+
+	# instances = ["carFirstOrder/bugtrap_0"]
+	instances = ["carSecondOrder/parallelpark_0", "carSecondOrder/kink_0", "carSecondOrder/bugtrap_0"]
+	algs = ["sst", "dbAstar-scp"]
+	trials = 5
+	timelimit = 5 * 60
 
 	tasks = []
 	for instance in instances:
