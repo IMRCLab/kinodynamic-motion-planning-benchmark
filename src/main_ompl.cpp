@@ -15,7 +15,6 @@
 #include <ompl/control/planners/rrt/RRT.h>
 #include <ompl/control/planners/sst/SST.h>
 #include <ompl/base/objectives/ControlDurationObjective.h>
-#include "AO_RRT.h"
 
 #include "robotCarFirstOrder.h"
 #include "robotCarSecondOrder.h"
@@ -159,11 +158,8 @@ int main(int argc, char* argv[]) {
 
   // create a planner for the defined space
   std::shared_ptr<ob::Planner> planner;
-  if (plannerDesc == "rrt")
-  {
+  if (plannerDesc == "rrt") {
     planner.reset(new oc::RRT(si));
-  } else if (plannerDesc == "aorrt") {
-    planner.reset(new AO_RRT(si));
   } else if (plannerDesc == "sst") {
     planner.reset(new oc::SST(si));
   }

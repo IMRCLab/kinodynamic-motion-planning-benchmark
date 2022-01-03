@@ -51,7 +51,6 @@ set_property(TARGET motion_planning_common PROPERTY POSITION_INDEPENDENT_CODE ON
 ## ompl
 add_executable(main_ompl
   src/main_ompl.cpp
-  src/AO_RRT.cpp
 )
 target_include_directories(main_ompl
   PRIVATE ${CMAKE_BINARY_DIR}/deps/fcl/include
