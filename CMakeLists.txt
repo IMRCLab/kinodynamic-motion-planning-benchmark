@@ -65,6 +65,23 @@ target_link_libraries(main_ompl
   yaml-cpp
 )
 
+## main_ompl_geometric
+add_executable(main_ompl_geometric
+  src/main_ompl_geometric.cpp
+)
+target_include_directories(main_ompl_geometric
+  PRIVATE ${CMAKE_BINARY_DIR}/deps/fcl/include
+  PRIVATE ${CMAKE_SOURCE_DIR}/deps/fcl/include
+)
+target_link_libraries(main_ompl_geometric
+  motion_planning_common
+  ${Boost_LIBRARIES}
+  # ${OMPL_LIBRARIES}
+  ompl
+  fcl
+  yaml-cpp
+)
+
 ## test_fcl
 add_executable(test_fcl
   src/main_fcl.cpp

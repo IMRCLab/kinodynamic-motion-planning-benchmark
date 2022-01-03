@@ -11,11 +11,18 @@ def main():
 	# instances = ["carFirstOrder/bugtrap_0", "carFirstOrder/kink_0", "carFirstOrder/parallelpark_0"]
 	# algs = ["sst", "sbpl", "dbAstar"]
 
-	# instances = ["carFirstOrder/bugtrap_0", "carFirstOrder/kink_0", "carFirstOrder/parallelpark_0"]
-	# algs = ["sst", "sbpl", "dbAstar-komo", "dbAstar-scp"]
+	instances = [
+		"carFirstOrder/bugtrap_0",
+		"carFirstOrder/kink_0",
+		"carFirstOrder/parallelpark_0",
+		"carSecondOrder/parallelpark_0",
+		"carSecondOrder/kink_0",
+		"carSecondOrder/bugtrap_0"
+	]
+	algs = ["sst", "sbpl", "komo", "dbAstar-komo", "dbAstar-scp"]
 
-	instances = ["carSecondOrder/parallelpark_0", "carSecondOrder/kink_0", "carSecondOrder/bugtrap_0"]
-	algs = ["sst", "dbAstar-scp"]
+	# instances = ["carSecondOrder/parallelpark_0", "carSecondOrder/kink_0", "carSecondOrder/bugtrap_0"]
+	# algs = ["sst", "dbAstar-scp"]
 
 	report = plot_stats.Report(results_path / "stats.pdf")
 

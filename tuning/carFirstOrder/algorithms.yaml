@@ -15,3 +15,7 @@ dbAstar-scp:
 sbpl:
   default:
     dummy: 0
+
+komo:
+  default:
+    dummy: 0
