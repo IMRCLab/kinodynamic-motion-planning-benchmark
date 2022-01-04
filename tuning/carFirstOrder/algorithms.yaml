@@ -19,3 +19,7 @@ sbpl:
 komo:
   default:
     dummy: 0
+
+scp:
+  default:
+    dummy: 0

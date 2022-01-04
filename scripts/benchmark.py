@@ -5,6 +5,7 @@ from main_ompl import run_ompl
 from main_sbpl import run_sbpl
 from main_dbastar import run_dbastar
 from main_komo import run_komo_standalone
+from main_scp import run_scp_standalone
 from pathlib import Path
 import shutil
 import subprocess
@@ -80,6 +81,9 @@ def execute_task(task: ExecutionTask):
 	elif task.alg == "komo":
 		run_komo_standalone(str(env), str(result_folder), task.timelimit, mycfg)
 		visualize_files = [p.name for p in result_folder.glob('result_*')]
+	elif task.alg == "scp":
+		run_scp_standalone(str(env), str(result_folder), task.timelimit, mycfg)
+		visualize_files = [p.name for p in result_folder.glob('result_*')]
 	else:
 		raise Exception("Unknown algorithms {}".format(task.alg))
 
@@ -90,7 +94,7 @@ def execute_task(task: ExecutionTask):
 
 
 def main():
-	parallel = True
+	parallel = False
 	# instances = ["carFirstOrder/bugtrap_0", "carFirstOrder/kink_0", "carFirstOrder/parallelpark_0"]
 	# algs = ["sst", "sbpl",  "dbAstar-komo", "dbAstar-scp"]
 	# trials = 5
@@ -107,9 +111,9 @@ def main():
 	# trials = 5
 	# timelimit = 5 * 60
 
-	instances = ["carFirstOrder/bugtrap_0", "carFirstOrder/kink_0", "carFirstOrder/parallelpark_0"]
-	algs = ["komo"]
-	trials = 5
+	instances = ["carFirstOrder/kink_0"]
+	algs = ["scp"]
+	trials = 1
 	timelimit = 5 * 60
 
 

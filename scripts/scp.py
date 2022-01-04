@@ -11,7 +11,11 @@ class SCP():
     self.constructB = jit(jacfwd(robot.step, 1))
     self.step = jit(robot.step)
 
-  def min_xf(self, initial_x, initial_u, xf,
+  def min_xf(self,
+    initial_x,
+    initial_u,
+    x0,
+    xf,
     num_iterations=10, 
     trust_x = None,
     trust_u = None,
@@ -39,7 +43,7 @@ class SCP():
       # cp_objective = cp.Minimize(cp.norm(x[-1] - xf, "inf"))
 
       constraints = [
-        x[0] == initial_x[0], # initial state constraint
+        x[0] == x0, # initial state constraint
       ]
 
       # trust region
@@ -116,7 +120,8 @@ class SCP():
              num_iterations=10,
              trust_x=None,
              trust_u=None,
-             verbose=False):
+             verbose=False,
+             soft_xf=False):
 
     assert(initial_x.shape[0] == initial_u.shape[0] + 1)
     X, U = [initial_x], [initial_u]
@@ -145,12 +150,15 @@ class SCP():
       x.value = xprev
       u.value = uprev
 
-      cp_objective = cp.Minimize(cp.sum_squares(u))
-
       constraints = [
           x[0] == x0,  # initial state constraint
-          x[-1] == xf,  # final state constraint
       ]
+
+      if soft_xf:
+        cp_objective = cp.Minimize(cp.sum_squares(u) + 1e6 * cp.norm(x[-1] - xf, "inf"))
+      else:
+        cp_objective = cp.Minimize(cp.sum_squares(u))
+        constraints.append(x[-1] == xf)  # final state constraint
 
       # trust region
       if trust_x is not None:
@@ -224,7 +232,7 @@ class SCP():
         return X, U, float('inf')
 
       if 'optimal' not in prob.status:
-        return X, U, float('inf')
+        return X, U, prob.value
 
       # DEBUG
       if self.collisionChecker is not None:
@@ -240,4 +248,4 @@ class SCP():
       X.append(xprev)
       U.append(uprev)
 
-    return X, U, float('inf')
+    return X, U, prob.value
