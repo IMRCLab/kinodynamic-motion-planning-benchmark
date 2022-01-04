@@ -1,5 +1,8 @@
 import jax.numpy as np
 
+def normalize_angle(angle):
+	return (angle + np.pi) % (2 * np.pi) - np.pi
+
 class RobotCarFirstOrder:
 
 	def __init__(self, v_limit, w_limit):
@@ -53,11 +56,71 @@ class RobotCarSecondOrder:
 		state_next = np.array([x_next, y_next, yaw_next_norm, v_next, w_dot_next])
 		return state_next
 
+
+# LaValle book, Equation 13.19
+class RobotCarFirstOrderWithTrailers:
+
+	def __init__(self, v_limit, phi_limit, L, hitch_lengths):
+		self.action_desc = ["v [m/s]", "steering angle [rad]"]
+		self.min_u = np.array([-v_limit, -phi_limit])
+		self.max_u = np.array([v_limit, phi_limit])
+
+		self.state_desc = ["x [m]", "y [m]", "yaw [rad]"]
+		min_x = [-np.inf, -np.inf, -np.pi]
+		max_x = [np.inf, np.inf, np.pi]
+		for k in range(len(hitch_lengths)):
+			self.state_desc.append("trailer{} yaw [rad]".format(k+1))
+			min_x.append(-np.pi)
+			max_x.append(np.pi)
+		self.min_x = np.array(min_x)
+		self.max_x = np.array(max_x)
+
+		self.L = L
+		self.hitch_lengths = hitch_lengths
+
+	def step(self, state, action):
+		""""
+		x_dot = v * cos (theta_0)
+		y_dot = v * sin (theta_0)
+		theta_0_dot = v / L * tan(phi)
+		theta_1_dot = v / hitch_lengths[0] * sin(theta_0 - theta_1)
+		...
+		"""
+		dt = 0.1
+		x, y, yaw = state[0], state[1], state[2]
+		v, phi = action
+
+		x_next = x + v * np.cos(yaw) * dt
+		y_next = y + v * np.sin(yaw) * dt
+		yaw_next = yaw + v / self.L * np.tan(phi) * dt
+		# normalize yaw between -pi and pi
+		yaw_next_norm = normalize_angle(yaw_next)
+
+		state_next_list = [x_next, y_next, yaw_next_norm]
+
+		for i, d in enumerate(self.hitch_lengths):
+			theta_dot = v / d
+			for j in range(0, i):
+				theta_dot *= np.cos(state[2+j] - state[3+j])
+			theta_dot *= np.sin(state[2+i] - state[3+i])
+
+			theta = state[3+i]
+			theta_next = theta + theta_dot * dt
+			theta_next_norm = normalize_angle(theta_next)
+			state_next_list.append(theta_next_norm)
+
+		state_next = np.array(state_next_list)
+		return state_next
+
 def create_robot(robot_type):
 	if robot_type == "car_first_order_0":
 		return RobotCarFirstOrder(0.5, 0.5)
 	elif robot_type == "car_second_order_0":
 		return RobotCarSecondOrder(0.5, 0.5, 2, 2)
+	elif robot_type == "car_first_order_with_0_trailers_0":
+		return RobotCarFirstOrderWithTrailers(0.5, np.pi/3, 0.4, [])
+	elif robot_type == "car_first_order_with_1_trailers_0":
+		return RobotCarFirstOrderWithTrailers(0.5, np.pi/3, 0.4, [0.5])
 	else:
 		raise Exception("Unknown robot type {}!".format(robot_type))
 

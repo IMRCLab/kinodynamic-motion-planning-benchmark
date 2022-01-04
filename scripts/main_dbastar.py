@@ -96,7 +96,7 @@ def compute_motion_importance(filename_env, filename_motions, filename_result_db
 
 def run_dbastar(filename_env, folder, timelimit, opt_alg="scp", motions_stats=None):
 
-	add_prims = 100
+	add_prims = 1000
 
 	with tempfile.TemporaryDirectory() as tmpdirname:
 		p = Path(tmpdirname)
@@ -124,10 +124,10 @@ def run_dbastar(filename_env, folder, timelimit, opt_alg="scp", motions_stats=No
 		with open('motions_{}.yaml'.format(robot_node["type"])) as f:
 			all_motions = yaml.load(f, Loader=yaml.CSafeLoader)
 		random.shuffle(all_motions)
-		motions = all_motions[0:100]
-		del all_motions[0:100]
+		motions = all_motions[0:add_prims]
+		del all_motions[0:add_prims]
 		with open(filename_motions, 'w') as file:
-			yaml.dump(motions, file)
+			yaml.dump(motions, file, Dumper=yaml.CSafeDumper)
 
 		# print(len(motions))
 		# exit()
@@ -176,7 +176,7 @@ def run_dbastar(filename_env, folder, timelimit, opt_alg="scp", motions_stats=No
 						# 	motions.append(motion)
 
 					with open(filename_motions, 'w') as file:
-						yaml.dump(motions, file)
+						yaml.dump(motions, file, Dumper=yaml.CSafeDumper)
 
 					# median = np.median([m['distance'] for m in motions])
 					# if delta > median:
@@ -187,7 +187,7 @@ def run_dbastar(filename_env, folder, timelimit, opt_alg="scp", motions_stats=No
 				else:
 					delta_achieved = checker.compute_delta(filename_env, filename_result_dbastar)
 					print("DELTA CHECK", delta_achieved, delta)
-					assert(delta_achieved <= delta)
+					# assert(delta_achieved <= delta)
 
 					if opt_alg == "scp":
 						success = main_scp.run_scp(filename_env, filename_result_dbastar, filename_result_opt)
@@ -214,7 +214,7 @@ def run_dbastar(filename_env, folder, timelimit, opt_alg="scp", motions_stats=No
 							# 	motions.append(motion)
 
 						with open(filename_motions, 'w') as file:
-							yaml.dump(motions, file)
+							yaml.dump(motions, file, Dumper=yaml.CSafeDumper)
 
 					else:
 						# # ONLY FOR MOTION PRIMITIVE SELECTION

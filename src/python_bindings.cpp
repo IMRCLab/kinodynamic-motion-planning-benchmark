@@ -139,18 +139,24 @@ public:
     auto si = robot_->getSpaceInformation();
     si->getStateSpace()->copyFromReals(tmp_state_, state);
 
-    const auto &transform = robot_->getTransform(tmp_state_);
-    fcl::CollisionObjectf robot(robot_->getCollisionGeometry()); //, robot_->getTransform(state));
-    robot.setTranslation(transform.translation());
-    robot.setRotation(transform.rotation());
-    fcl::DefaultDistanceData<float> distance_data;
-    distance_data.request.enable_signed_distance = true;
-    env_->distance(&robot, &distance_data, fcl::DefaultDistanceFunction<float>);
+    std::vector<fcl::DefaultDistanceData<float>> distance_data(robot_->numParts());
+    size_t min_idx = 0;
+    for (size_t part = 0; part < robot_->numParts(); ++part) {
+      const auto &transform = robot_->getTransform(tmp_state_, part);
+      fcl::CollisionObjectf robot(robot_->getCollisionGeometry(part)); //, robot_->getTransform(state));
+      robot.setTranslation(transform.translation());
+      robot.setRotation(transform.rotation());
+      distance_data[part].request.enable_signed_distance = true;
+      env_->distance(&robot, &distance_data[part], fcl::DefaultDistanceFunction<float>);
+      if (distance_data[part].result.min_distance < distance_data[min_idx].result.min_distance) {
+        min_idx = part;
+      }
+    }
 
     return std::make_tuple(
-      distance_data.result.min_distance,
-      distance_data.result.nearest_points[0],
-      distance_data.result.nearest_points[1]);
+      distance_data[min_idx].result.min_distance,
+      distance_data[min_idx].result.nearest_points[0],
+      distance_data[min_idx].result.nearest_points[1]);
   }
 
 private:

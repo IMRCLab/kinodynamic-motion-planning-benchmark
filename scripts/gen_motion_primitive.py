@@ -28,7 +28,7 @@ def TPBVP_fixed_time(robot, x0, xf, T):
 	# actions = np.zeros((T-1, 2))
 	# states[1:] += np.random.normal(0, 0.001, states.shape)[1:]
 	# actions += np.random.normal(0, 0.001, actions.shape)
-	X, U, val = scp.min_xf(states, actions, xf, 10, trust_x=0.1, trust_u=0.1)
+	X, U, val = scp.min_xf(states, actions, x0, xf, 10, trust_x=0.1, trust_u=0.1)
 	if len(X) > 1:
 		return X[-1], U[-1], val
 

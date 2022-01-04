@@ -21,13 +21,19 @@ public:
     ompl::base::State *result) = 0;
 
   virtual fcl::Transform3f getTransform(
-    const ompl::base::State *state) = 0;
+    const ompl::base::State *state,
+    size_t part = 0) = 0;
 
   virtual void setPosition(ompl::base::State* state, const fcl::Vector3f position) = 0;
 
-  std::shared_ptr<fcl::CollisionGeometryf> getCollisionGeometry()
+  virtual size_t numParts()
   {
-    return geom_;
+    return 1;
+  }
+
+  std::shared_ptr<fcl::CollisionGeometryf> getCollisionGeometry(size_t part = 0)
+  {
+    return geom_[part];
   }
 
   std::shared_ptr<ompl::control::SpaceInformation> getSpaceInformation()
@@ -36,7 +42,7 @@ public:
   }
 
 protected:
-  std::shared_ptr<fcl::CollisionGeometryf> geom_;
+  std::vector<std::shared_ptr<fcl::CollisionGeometryf>> geom_;
   std::shared_ptr<ompl::control::SpaceInformation> si_;
 };
 

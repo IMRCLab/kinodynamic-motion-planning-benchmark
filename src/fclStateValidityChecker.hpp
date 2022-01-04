@@ -25,14 +25,19 @@ public:
       return false;
     }
 
-    const auto& transform = robot_->getTransform(state);
-    fcl::CollisionObjectf robot(robot_->getCollisionGeometry()); //, robot_->getTransform(state));
-    robot.setTranslation(transform.translation());
-    robot.setRotation(transform.rotation());
-    fcl::DefaultCollisionData<float> collision_data;
-    environment_->collide(&robot, &collision_data, fcl::DefaultCollisionFunction<float>);
+    for (size_t part = 0; part < robot_->numParts(); ++part) {
+      const auto& transform = robot_->getTransform(state, part);
+      fcl::CollisionObjectf robot(robot_->getCollisionGeometry(part)); //, robot_->getTransform(state));
+      robot.setTranslation(transform.translation());
+      robot.setRotation(transform.rotation());
+      fcl::DefaultCollisionData<float> collision_data;
+      environment_->collide(&robot, &collision_data, fcl::DefaultCollisionFunction<float>);
+      if (collision_data.result.isCollision()) {
+        return false;
+      }
+    }
 
-    return !collision_data.result.isCollision();
+    return true;
   }
 
 private:

@@ -12,12 +12,13 @@ def main():
 	# algs = ["sst", "sbpl", "dbAstar"]
 
 	instances = [
-		"carFirstOrder/bugtrap_0",
-		"carFirstOrder/kink_0",
-		"carFirstOrder/parallelpark_0",
-		"carSecondOrder/parallelpark_0",
-		"carSecondOrder/kink_0",
-		"carSecondOrder/bugtrap_0"
+		# "carFirstOrder/bugtrap_0",
+		# "carFirstOrder/kink_0",
+		# "carFirstOrder/parallelpark_0",
+		# "carSecondOrder/parallelpark_0",
+		# "carSecondOrder/kink_0",
+		# "carSecondOrder/bugtrap_0",
+		"carFirstOrderWithTrailers/parallelpark_0",
 	]
 	algs = ["sst", "sbpl", "komo", "dbAstar-komo", "dbAstar-scp"]
 
