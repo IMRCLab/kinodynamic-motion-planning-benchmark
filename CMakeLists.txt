@@ -37,8 +37,7 @@ include_directories(
 )
 
 add_library(motion_planning_common
-  src/robotCarFirstOrder.cpp
-  src/robotCarSecondOrder.cpp
+  src/robots.cpp
 )
 target_include_directories(motion_planning_common
   PRIVATE ${CMAKE_BINARY_DIR}/deps/fcl/include

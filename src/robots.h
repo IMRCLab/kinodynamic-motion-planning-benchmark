@@ -39,3 +39,8 @@ protected:
   std::shared_ptr<fcl::CollisionGeometryf> geom_;
   std::shared_ptr<ompl::control::SpaceInformation> si_;
 };
+
+// Factory Method
+std::shared_ptr<Robot> create_robot(
+  const std::string& robotType,
+  const ompl::base::RealVectorBounds& positionBounds);

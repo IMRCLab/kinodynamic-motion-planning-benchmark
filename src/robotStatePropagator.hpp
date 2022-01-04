@@ -1,7 +1,7 @@
 #pragma once
 
 #include "ompl/control/StatePropagator.h"
-#include "robot.h"
+#include "robots.h"
 
 class RobotStatePropagator : public ompl::control::StatePropagator
 {
