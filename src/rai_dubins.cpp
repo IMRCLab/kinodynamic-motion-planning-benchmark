@@ -81,15 +81,10 @@ void Dubins2::phi2(arr &y, arr &J, const FrameL &F) {
   }
 }
 
-struct CarFirstOrderVelocity : Feature
-{
-  uint dim_phi2(const FrameL &)
-  {
-    return 1;
-  }
+struct CarFirstOrderVelocity : Feature {
+  uint dim_phi2(const FrameL &) { return 1; }
 
-  void phi2(arr &y, arr &J, const FrameL &F)
-  {
+  void phi2(arr &y, arr &J, const FrameL &F) {
     // implementation only for rai::JT_transXYPhi!
     for (auto &f : F) {
       assert(f->joint->type == rai::JT_transXYPhi);
@@ -110,18 +105,71 @@ struct CarFirstOrderVelocity : Feature
     if (!!J) {
       double tol = 1e-6; // tolerance non differentiable point of sqrt()
       arr Jl;
-      Jl.resize(1, 6); // ROWS = 1 equations ; COLUMNS= 3 position + 3 velocities
+      // ROWS = 1 equations ; COLUMNS= 3 position + 3 velocities
+      Jl.resize(1, 6);
       Jl.setZero();
-      if (velocity > tol)
-      {
+      if (velocity > tol) {
         // w.r.t vx
         Jl(0, 3) = v(0) / velocity;
         // w.r.t vy
         Jl(0, 4) = v(1) / velocity;
+      } else {
+        Jl(0, 3) = 1;
+        Jl(0, 4) = 1;
+      }
+      arr JBlock;
+      JBlock.setBlockMatrix(Jp, Jv);
+      J = Jl * JBlock;
+    }
+  }
+};
+
+struct CarSecondOrderAcceleration : Feature {
+  uint dim_phi2(const FrameL &) { return 1; }
+
+  void phi2(arr &y, arr &J, const FrameL &F) {
+
+    if (order != 2)
+      throw std::runtime_error("error");
+
+    for (auto &f : F) {
+      assert(f->joint->type == rai::JT_transXYPhi);
+    }
+
+    arr v, vprev, Jvprev, Jv;
+
+    F_qItself().setOrder(1).eval(vprev, Jvprev, F({0, 1}));
+    F_qItself().setOrder(1).eval(v, Jv, F({1, 2}));
+
+    double velocity = std::sqrt(v(0) * v(0) + v(1) * v(1));
+    double velocity_prev = std::sqrt(vprev(0) * vprev(0) + vprev(1) * vprev(1));
+
+    y.resize(1);
+    y(0) = velocity - velocity_prev;
+
+    if (!!J) {
+      double tol = 1e-6; // tolerance non differentiable point of sqrt()
+      arr Jl;
+      // ROWS = 1 equations ; COLUMNS= 3 v + 3 vprev
+      Jl.resize(1, 6);
+      Jl.setZero();
+      if (velocity > tol) {
+        Jl(0, 0) = v(0) / velocity; // w.r.t vx
+        Jl(0, 1) = v(1) / velocity; // w.r.t vy
+      } else {
+        Jl(0, 0) = 1;
+        Jl(0, 1) = 1;
+      }
+      if (velocity_prev > tol) {
+        Jl(0, 3) = -vprev(0) / velocity_prev;
+        Jl(0, 4) = -vprev(1) / velocity_prev;
+      } else {
+        Jl(0, 3) = -1;
+        Jl(0, 4) = -1;
       }
 
       arr JBlock;
-      JBlock.setBlockMatrix(Jp, Jv);
+      JBlock.setBlockMatrix(Jv, Jvprev);
       J = Jl * JBlock;
     }
   }
@@ -134,10 +182,9 @@ arrA load_waypoints(const char *filename) {
 
   // load states
   arrA waypoints;
-  for (const auto &state : env["result"][0]["states"])
-  {
+  for (const auto &state : env["result"][0]["states"]) {
     arr stateArray;
-    for (const auto& elem : state) {
+    for (const auto &elem : state) {
       stateArray.append(elem.as<double>());
     }
     waypoints.append(stateArray);
@@ -204,10 +251,13 @@ int main(int argn, char **argv) {
     }
   }
 
+  std::cout << "waypoints" << std::endl;
+  std::cout << waypoints << std::endl;
   // create optimization problem
   KOMO komo;
   komo.setModel(C, true);
-  double duration_phase = waypoints.N * 0.1; // dt is 0.1 s
+  double dt = 0.1;
+  double duration_phase = waypoints.N * dt;
   komo.setTiming(1, waypoints.N, duration_phase, 2);
 
   komo.add_qControlObjective({}, 2, .1);
@@ -218,12 +268,45 @@ int main(int argn, char **argv) {
   // robot dynamics
   komo.addObjective({}, make_shared<Dubins2>(), {"robot0"}, OT_eq, {1e1}, {0},
                     1);
-  // angular velocity limit
-  komo.addObjective({}, FS_qItself, {"robot0"}, OT_ineq, {0, 0, 1}, {0, 0, 0.5 /*rad/s*/}, 1);
-  komo.addObjective({}, FS_qItself, {"robot0"}, OT_ineq, {0, 0, -1}, {0, 0, -0.5 /*rad/s*/}, 1);
-  // velocity limit
-  komo.addObjective({}, make_shared<CarFirstOrderVelocity>(), {"robot0"}, OT_ineq, {1}, {0.5 /*m/s*/}, 1);
-  komo.addObjective({}, make_shared<CarFirstOrderVelocity>(), {"robot0"}, OT_ineq, {-1}, {-0.5 /*m/s*/}, 1);
+  enum CAR_ORDER {
+    ZERO,
+    ONE,
+    TWO,
+  };
+  CAR_ORDER car_order = ZERO; // zero is no bounds
+  if (car_order == ONE) {
+    komo.addObjective({}, FS_qItself, {"robot0"}, OT_ineq, {0, 0, 1},
+                      {0, 0, 0.5 /*rad/s*/}, 1);
+    komo.addObjective({}, FS_qItself, {"robot0"}, OT_ineq, {0, 0, -1},
+                      {0, 0, -0.5 /*rad/s*/}, 1);
+    // velocity limit
+    komo.addObjective({}, make_shared<CarFirstOrderVelocity>(), {"robot0"},
+                      OT_ineq, {1}, {0.5 /*m/s*/}, 1);
+
+    komo.addObjective({}, make_shared<CarFirstOrderVelocity>(), {"robot0"},
+                      OT_ineq, {-1}, {-0.5 /*m/s*/}, 1);
+  }
+
+  else if (car_order == TWO) {
+    double max_acceleration = 30; // m s^-2
+    double max_wdot = 30;
+
+    // NOTE: CarSecondOrderAcceleration returns v - v'
+    // a = (v - v') / dt
+    // so use  amax * dt as limit
+
+    komo.addObjective({}, make_shared<CarSecondOrderAcceleration>(), {"robot0"},
+                      OT_ineq, {1}, {max_acceleration * dt /*m/s*/}, 2);
+
+    komo.addObjective({}, make_shared<CarSecondOrderAcceleration>(), {"robot0"},
+                      OT_ineq, {-1}, {-max_acceleration * dt /*m/s*/}, 2);
+
+    komo.addObjective({}, FS_qItself, {"robot0"}, OT_ineq, {0, 0, 1},
+                      {0, 0, max_wdot /*m/s*/}, 2);
+
+    komo.addObjective({}, FS_qItself, {"robot0"}, OT_ineq, {0, 0, -1},
+                      {0, 0, -max_wdot /*m/s*/}, 2);
+  }
 
   for (auto &obs : obstacles) {
     komo.addObjective({}, FS_distance, {"robot0", obs}, OT_ineq, {1e2});
@@ -265,7 +348,8 @@ int main(int argn, char **argv) {
 
   auto report = komo.getReport(display, 0, std::cout);
   std::cout << "report " << report << std::endl;
-  // std::cout << "ineq: " << report.getValuesOfType<double>("ineq") << std::endl;
+  // std::cout << "ineq: " << report.getValuesOfType<double>("ineq") <<
+  // std::endl;
   double ineq = report.get<double>("ineq") / komo.T;
   double eq = report.get<double>("eq") / komo.T;
 
@@ -286,16 +370,19 @@ int main(int argn, char **argv) {
   out << "result:" << std::endl;
   out << "  - states:" << std::endl;
   for (auto &v : results) {
-    out << "      - [" << v(0) << "," << v(1) << "," << std::remainder(v(2), 2 * M_PI) << "]" << std::endl;
+    out << "      - [" << v(0) << "," << v(1) << ","
+        << std::remainder(v(2), 2 * M_PI) << "]" << std::endl;
   }
   out << "    actions:" << std::endl;
   for (size_t t = 1; t < komo.T; ++t) {
-    arr delta = results(t) - results(t-1);
-    double distance = std::sqrt(delta(0) * delta(0) + delta(1) * delta(1)); // velocity
-    double velocity = distance / 0.1; // m/s
+    arr delta = results(t) - results(t - 1);
+    double distance =
+        std::sqrt(delta(0) * delta(0) + delta(1) * delta(1)); // velocity
+    double velocity = distance / dt;                          // m/s
     double angular_change = atan2(sin(delta(2)), cos(delta(2)));
-    double angular_velocity = angular_change / 0.1; // rad/s
-    out << "      - [" << velocity << "," << angular_velocity << "]" << std::endl;
+    double angular_velocity = angular_change / dt; // rad/s
+    out << "      - [" << velocity << "," << angular_velocity << "]"
+        << std::endl;
   }
 
   return 0;
