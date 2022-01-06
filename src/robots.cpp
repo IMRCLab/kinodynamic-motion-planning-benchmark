@@ -607,6 +607,10 @@ protected:
 
 ////////////////////////////////////////////////////////////////////////////////////////////////
 
+// See also https://github.com/ompl/omplapp/blob/main/src/omplapp/apps/QuadrotorPlanning.cpp
+// In the ompl.app example, the control seems to be force + moments
+// rather than raw motor forces
+
 class RobotQuadrotor : public Robot
 {
 public:
@@ -615,53 +619,67 @@ public:
       )
       : Robot()
   {
+    // Parameters based on Bitcraze Crazyflie 2.0
+    mass_ = 0.034;                  // kg
+    const float arm_length = 0.046; // m
+    const float arm = 0.707106781 * arm_length;
+    const float t2t = 0.006; // thrust-to-torque ratio
+    B0_ << 1, 1, 1, 1,
+        -arm, -arm, arm, arm,
+        -arm, arm, arm, -arm,
+        -t2t, t2t, -t2t, t2t;
+    g_ = 9.81; // gravity; not signed
+    J_ << 16.571710e-6, 16.655602e-6, 29.261652e-6;
+    inverseJ_ << 1 / J_(0), 1 / J_(1), 1 / J_(2);
+
     geom_.emplace_back(new fcl::Ellipsoidf(0.15, 0.15, 0.3)); // includes safety margins for downwash
+
 
     auto space(std::make_shared<StateSpace>());
     space->setPositionBounds(position_bounds);
 
     ob::RealVectorBounds vbounds(3);
-    vbounds.setLow(-3); // m/s
-    vbounds.setHigh(3); // m/s
+    // vbounds.setLow(-3); // m/s
+    // vbounds.setHigh(3); // m/s
 
-    // vbounds.setLow(-0.5); // m/s
-    // vbounds.setHigh(0.5); // m/s
+    vbounds.setLow(-0.5); // m/s
+    vbounds.setHigh(0.5); // m/s
 
     space->setVelocityBounds(vbounds);
 
     ob::RealVectorBounds wbounds(3);
-    wbounds.setLow(-35); // rad/s
-    wbounds.setHigh(35); // rad/s
+    // wbounds.setLow(-35); // rad/s
+    // wbounds.setHigh(35); // rad/s
 
-    // wbounds.setLow(-5); // rad/s
-    // wbounds.setHigh(5); // rad/s
+    wbounds.setLow(-5); // rad/s
+    wbounds.setHigh(5); // rad/s
     space->setAngularVelocityBounds(wbounds);
 
     // create a control space
     // R^4: forces of the 4 rotors
     auto cspace(std::make_shared<oc::RealVectorControlSpace>(space, 4));
+    // cspace->setControlSamplerAllocator(
+    //     [this](const oc::ControlSpace *space)
+    //     {
+    //       return std::make_shared<ControlSampler>(space, mass_ / 4.0 * g_, 0.5 / 1000.0 * g_);
+    //     });
 
     // set the bounds for the control space
     ob::RealVectorBounds cbounds(4);
+    // // version to control thrust + moments
+    // cbounds.setLow(-1e-5);
+    // cbounds.setHigh(1e-5);
+    // cbounds.setLow(0, 4.0 * 3.0 / 1000.0 * g_);
+    // cbounds.setHigh(0, 4.0 * 12.0 / 1000.0 * g_);
+
+    // version to control force
     cbounds.setLow(0);
-    cbounds.setHigh(12.0 / 1000.0 * 9.81);
+    cbounds.setHigh(12.0 / 1000.0 * g_);
+
     cspace->setBounds(cbounds);
 
     // construct an instance of  space information from this control space
     si_ = std::make_shared<oc::SpaceInformation>(space, cspace);
-
-    // Parameters based on Bitcraze Crazyflie 2.0
-    mass_ = 0.034; // kg
-    const float arm_length = 0.046; // m
-    const float arm = 0.707106781 * arm_length;
-    const float t2t = 0.006; // thrust-to-torque ratio
-    B0_ << 1, 1, 1, 1,
-           -arm, -arm, arm, arm,
-           -arm, arm, arm, -arm,
-           -t2t, t2t, -t2t, t2t;
-    g_ = 9.81; // gravity; not signed
-    J_ << 16.571710e-6, 16.655602e-6, 29.261652e-6;
-    inverseJ_ << 1 / J_(0), 1 / J_(1), 1 / J_(2);
   }
 
   void propagate(
@@ -671,13 +689,16 @@ public:
       ompl::base::State *result) override
   {
     const double *ctrl = control->as<ompl::control::RealVectorControlSpace::ControlType>()->values;
+
+    // Version where control is motor forces
     Eigen::Vector4f force(ctrl[0], ctrl[1], ctrl[2], ctrl[3]);
-    // Eigen::Vector4f force(ctrl[0], ctrl[0], ctrl[0], ctrl[0]);
-
     auto eta = B0_ * force;
-
     Eigen::Vector3f f_u(0,0, eta(0));
     Eigen::Vector3f tau_u(eta(1), eta(2), eta(3));
+
+    // // version where control is force + moments
+    // Eigen::Vector3f f_u(0,0, ctrl[0]);
+    // Eigen::Vector3f tau_u(ctrl[1], ctrl[2], ctrl[3]);
 
     // use simple Euler integration
     auto startTyped = start->as<StateSpace::StateType>();
@@ -723,6 +744,10 @@ public:
     resultTyped->angularVelocity()[0] = omega(0);
     resultTyped->angularVelocity()[1] = omega(1);
     resultTyped->angularVelocity()[2] = omega(2);
+
+    // std::cout << "=====================" << std::endl;
+    // si_->printState(resultTyped);
+    // std::cout << si_->satisfiesBounds(resultTyped) << std::endl;
   }
 
   virtual fcl::Transform3f getTransform(
@@ -780,32 +805,32 @@ protected:
 
       double getX() const
       {
-        return as<ob::SE3StateSpace::StateType>(0)->getX();
+        return as<ob::RealVectorStateSpace::StateType>(0)->values[0];
       }
 
       double getY() const
       {
-        return as<ob::SE3StateSpace::StateType>(0)->getY();
+        return as<ob::RealVectorStateSpace::StateType>(0)->values[1];
       }
 
       double getZ() const
       {
-        return as<ob::SE3StateSpace::StateType>(0)->getZ();
+        return as<ob::RealVectorStateSpace::StateType>(0)->values[2];
       }
 
       void setX(double x)
       {
-        as<ob::SE3StateSpace::StateType>(0)->setX(x);
+        as<ob::RealVectorStateSpace::StateType>(0)->values[0] = x;
       }
 
       void setY(double y)
       {
-        as<ob::SE3StateSpace::StateType>(0)->setY(y);
+        as<ob::RealVectorStateSpace::StateType>(0)->values[1] = y;
       }
 
       void setZ(double z)
       {
-        as<ob::SE3StateSpace::StateType>(0)->setZ(z);
+        as<ob::RealVectorStateSpace::StateType>(0)->values[2] = z;
       }
 
       // const double *position() const
@@ -820,32 +845,32 @@ protected:
 
       const ob::SO3StateSpace::StateType &rotation() const
       {
-        return as<ob::SE3StateSpace::StateType>(0)->rotation();
+        return *as<ob::SO3StateSpace::StateType>(1);
       }
 
       ob::SO3StateSpace::StateType &rotation()
       {
-        return as<ob::SE3StateSpace::StateType>(0)->rotation();
+        return *as<ob::SO3StateSpace::StateType>(1);
       }
 
       const double* velocity() const
       {
-        return as<ob::RealVectorStateSpace::StateType>(1)->values;
+        return as<ob::RealVectorStateSpace::StateType>(2)->values;
       }
 
       double *velocity()
       {
-        return as<ob::RealVectorStateSpace::StateType>(1)->values;
+        return as<ob::RealVectorStateSpace::StateType>(2)->values;
       }
 
       const double *angularVelocity() const
       {
-        return as<ob::RealVectorStateSpace::StateType>(2)->values;
+        return as<ob::RealVectorStateSpace::StateType>(3)->values;
       }
 
       double *angularVelocity()
       {
-        return as<ob::RealVectorStateSpace::StateType>(2)->values;
+        return as<ob::RealVectorStateSpace::StateType>(3)->values;
       }
     };
 
@@ -853,9 +878,11 @@ protected:
     {
       setName("Quadrotor" + getName());
       type_ = ob::STATE_SPACE_TYPE_COUNT + 2;
-      addSubspace(std::make_shared<ob::SE3StateSpace>(), 1.0);         // position + orientation
-      addSubspace(std::make_shared<ob::RealVectorStateSpace>(3), 0.1); // velocity
-      addSubspace(std::make_shared<ob::RealVectorStateSpace>(3), 0.1); // angular velocity
+      // addSubspace(std::make_shared<ob::SE3StateSpace>(), 1.0);         // position + orientation
+      addSubspace(std::make_shared<ob::RealVectorStateSpace>(3), 1.0);      // position
+      addSubspace(std::make_shared<ob::SO3StateSpace>(), 0.1);              // orientation
+      addSubspace(std::make_shared<ob::RealVectorStateSpace>(3), 0.01); // velocity
+      addSubspace(std::make_shared<ob::RealVectorStateSpace>(3), 0.01); // angular velocity
       lock();
     }
 
@@ -863,22 +890,22 @@ protected:
 
     void setPositionBounds(const ob::RealVectorBounds &bounds)
     {
-      as<ob::SE3StateSpace>(0)->setBounds(bounds);
+      as<ob::RealVectorStateSpace>(0)->setBounds(bounds);
     }
 
     void setVelocityBounds(const ob::RealVectorBounds &bounds)
     {
-      as<ob::RealVectorStateSpace>(1)->setBounds(bounds);
+      as<ob::RealVectorStateSpace>(2)->setBounds(bounds);
     }
 
     void setAngularVelocityBounds(const ob::RealVectorBounds &bounds)
     {
-      as<ob::RealVectorStateSpace>(2)->setBounds(bounds);
+      as<ob::RealVectorStateSpace>(3)->setBounds(bounds);
     }
 
     const ob::RealVectorBounds &getPositionBounds() const
     {
-      return as<ob::SE3StateSpace>(0)->getBounds();
+      return as<ob::RealVectorStateSpace>(0)->getBounds();
     }
 
     ob::State *allocState() const override
@@ -925,6 +952,43 @@ protected:
 
       registerDefaultProjection(std::make_shared<SE3DefaultProjection>(this));
     }
+  };
+
+protected:
+  class ControlSampler : public oc::ControlSampler
+  {
+  public:
+    ControlSampler(const oc::ControlSpace *space, double mean, double stddev) 
+      : oc::ControlSampler(space)
+      , mean_(mean)
+      , stddev_(stddev)
+    {
+    }
+
+    void sample(oc::Control *control) override
+    {
+      const unsigned int dim = space_->getDimension();
+      const ob::RealVectorBounds &bounds = static_cast<const oc::RealVectorControlSpace *>(space_)->getBounds();
+
+      auto *rcontrol = static_cast<oc::RealVectorControlSpace::ControlType *>(control);
+      for (unsigned int i = 0; i < dim; ++i) {
+        // rcontrol->values[i] = rng_.uniformReal(bounds.low[i], bounds.high[i]);
+        rcontrol->values[i] = clamp(rng_.gaussian(mean_, stddev_), bounds.low[i], bounds.high[i]);
+      }
+    }
+
+  protected:
+    double clamp(double val, double min, double max)
+    {
+      if (val < min) return min;
+      if (val > max) return max;
+      return val; 
+    }
+
+  protected:
+    double mean_;
+    double stddev_;
+
   };
 
 protected:

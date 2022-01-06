@@ -172,14 +172,14 @@ class Quadrotor:
 			"qx", "qy", "qz", "qw",
 			"vx [m/s]", "vy [m/s]", "vz [m/s]",
 			"w_x", "w_y", "w_z"]
-		min_x = [-np.inf, -np.inf, -np.inf
-				-3, -3, -3,
+		min_x = [-np.inf, -np.inf, -np.inf,
+				-0.5, -0.5, -0.5,
 				-1.001, -1.001, -1.001, -1.001,
-				-35, -35, -35]
+				-5, -5, -5]
 		max_x = [np.inf, np.inf, np.inf,
-				3, 3, 3,
+				0.5, 0.5, 0.5,
 				1.001, 1.001, 1.001, 1.001,
-				35, 35, 35]
+				5, 5, 5]
 		self.min_x = np.array(min_x)
 		self.max_x = np.array(max_x)
 
@@ -260,11 +260,16 @@ def create_robot(robot_type):
 if __name__ == '__main__':
 	r = create_robot("quadrotor_0")
 
-	state = np.array([1, 1, 0.999959, -0.00603708, 0.00740579, -
-	                 0.000374226, 0.999954, 0, 0, -0.00819401, -2.41403, 2.96305, - 0.149642])
-	action = np.array([0.0755318, 0.0915615, 0.0796134, 0.0853427])
+	# state = np.array([1, 1, 0.999959, -0.00603708, 0.00740579, -
+	#                  0.000374226, 0.999954, 0, 0, -0.00819401, -2.41403, 2.96305, - 0.149642])
+	# action = np.array([0.0755318, 0.0915615, 0.0796134, 0.0853427])
 
-	print(r.step(state, action))
+	eta = np.dot(r.B0, np.array([r.max_u[0], 0, r.max_u[0], 0]))
+
+	f_u = np.array([0, 0, eta[0]])
+	tau_u = np.array([eta[1], eta[2], eta[3]])
+
+	print(f_u, tau_u)
 
 # ==========================
 # Compound state [
