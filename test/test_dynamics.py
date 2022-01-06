@@ -17,8 +17,6 @@ def _test_dynamics(robot_type, dt):
         next_state_cpp = robot_cpp.step(state, control, dt)
         next_state_py = robot_py.step(state, control)
 
-        print(state, control, next_state_cpp, next_state_py)
-
         assert np.allclose(next_state_cpp, next_state_py)
 
 
@@ -37,9 +35,9 @@ def test_dynamics_car_first_order_with_0_trailers_0():
 def test_dynamics_car_first_order_with_1_trailers_0():
     _test_dynamics('car_first_order_with_1_trailers_0', 0.1)
 
-# def test_dynamics_quadrotor_0():
-#     _test_dynamics('quadrotor_0', 0.01)
-    
+
+def test_dynamics_quadrotor_0():
+    _test_dynamics('quadrotor_0', 0.01)
 
 
 

@@ -2,6 +2,8 @@
 
 #include <ompl/control/spaces/RealVectorControlSpace.h>
 #include <ompl/base/spaces/SE2StateSpace.h>
+#include <ompl/base/spaces/SE3StateSpace.h>
+#include <ompl/base/spaces/SO3StateSpace.h>
 #include <ompl/tools/config/MagicConstants.h>
 
 namespace ob = ompl::base;
@@ -605,6 +607,336 @@ protected:
 
 ////////////////////////////////////////////////////////////////////////////////////////////////
 
+class RobotQuadrotor : public Robot
+{
+public:
+  RobotQuadrotor(
+      const ompl::base::RealVectorBounds &position_bounds
+      )
+      : Robot()
+  {
+    geom_.emplace_back(new fcl::Ellipsoidf(0.15, 0.15, 0.3)); // includes safety margins for downwash
+
+    auto space(std::make_shared<StateSpace>());
+    space->setPositionBounds(position_bounds);
+
+    ob::RealVectorBounds vbounds(3);
+    vbounds.setLow(-3); // m/s
+    vbounds.setHigh(3); // m/s
+
+    // vbounds.setLow(-0.5); // m/s
+    // vbounds.setHigh(0.5); // m/s
+
+    space->setVelocityBounds(vbounds);
+
+    ob::RealVectorBounds wbounds(3);
+    wbounds.setLow(-35); // rad/s
+    wbounds.setHigh(35); // rad/s
+
+    // wbounds.setLow(-5); // rad/s
+    // wbounds.setHigh(5); // rad/s
+    space->setAngularVelocityBounds(wbounds);
+
+    // create a control space
+    // R^4: forces of the 4 rotors
+    auto cspace(std::make_shared<oc::RealVectorControlSpace>(space, 4));
+
+    // set the bounds for the control space
+    ob::RealVectorBounds cbounds(4);
+    cbounds.setLow(0);
+    cbounds.setHigh(12.0 / 1000.0 * 9.81);
+    cspace->setBounds(cbounds);
+
+    // construct an instance of  space information from this control space
+    si_ = std::make_shared<oc::SpaceInformation>(space, cspace);
+
+    // Parameters based on Bitcraze Crazyflie 2.0
+    mass_ = 0.034; // kg
+    const float arm_length = 0.046; // m
+    const float arm = 0.707106781 * arm_length;
+    const float t2t = 0.006; // thrust-to-torque ratio
+    B0_ << 1, 1, 1, 1,
+           -arm, -arm, arm, arm,
+           -arm, arm, arm, -arm,
+           -t2t, t2t, -t2t, t2t;
+    g_ = 9.81; // gravity; not signed
+    J_ << 16.571710e-6, 16.655602e-6, 29.261652e-6;
+    inverseJ_ << 1 / J_(0), 1 / J_(1), 1 / J_(2);
+  }
+
+  void propagate(
+      const ompl::base::State *start,
+      const ompl::control::Control *control,
+      const double duration,
+      ompl::base::State *result) override
+  {
+    const double *ctrl = control->as<ompl::control::RealVectorControlSpace::ControlType>()->values;
+    Eigen::Vector4f force(ctrl[0], ctrl[1], ctrl[2], ctrl[3]);
+    // Eigen::Vector4f force(ctrl[0], ctrl[0], ctrl[0], ctrl[0]);
+
+    auto eta = B0_ * force;
+
+    Eigen::Vector3f f_u(0,0, eta(0));
+    Eigen::Vector3f tau_u(eta(1), eta(2), eta(3));
+
+    // use simple Euler integration
+    auto startTyped = start->as<StateSpace::StateType>();
+    Eigen::Vector3f pos(startTyped->getX(), startTyped->getY(), startTyped->getZ());
+    Eigen::Quaternionf q(startTyped->rotation().w, startTyped->rotation().x, startTyped->rotation().y, startTyped->rotation().z);
+    Eigen::Vector3f vel(startTyped->velocity()[0], startTyped->velocity()[1], startTyped->velocity()[2]);
+    Eigen::Vector3f omega(startTyped->angularVelocity()[0], startTyped->angularVelocity()[1], startTyped->angularVelocity()[2]);
+
+    const Eigen::Vector3f gravity(0,0,-g_);
+    
+    float remaining_time = duration;
+    const float integration_dt = 0.01f;
+    do
+    {
+      float dt = std::min(remaining_time, integration_dt);
+
+      pos += vel * dt;
+
+      vel += (gravity + q._transformVector(f_u) / mass_) * dt;
+
+      q = qintegrate(q, omega, dt).normalized();
+
+      omega += inverseJ_.cwiseProduct(J_.cwiseProduct(omega).cross(omega) + tau_u) * dt;
+
+      remaining_time -= dt;
+    } while (remaining_time >= integration_dt);
+
+    // update result
+    auto resultTyped = result->as<StateSpace::StateType>();
+    resultTyped->setX(pos(0));
+    resultTyped->setY(pos(1));
+    resultTyped->setZ(pos(2));
+
+    resultTyped->rotation().w = q.w();
+    resultTyped->rotation().x = q.x();
+    resultTyped->rotation().y = q.y();
+    resultTyped->rotation().z = q.z();
+    
+    resultTyped->velocity()[0] = vel(0);
+    resultTyped->velocity()[1] = vel(1);
+    resultTyped->velocity()[2] = vel(2);
+
+    resultTyped->angularVelocity()[0] = omega(0);
+    resultTyped->angularVelocity()[1] = omega(1);
+    resultTyped->angularVelocity()[2] = omega(2);
+  }
+
+  virtual fcl::Transform3f getTransform(
+      const ompl::base::State *state,
+      size_t /*part*/) override
+  {
+    auto stateTyped = state->as<StateSpace::StateType>();
+
+    fcl::Transform3f result;
+
+    result = Eigen::Translation<float, 3>(fcl::Vector3f(stateTyped->getX(), stateTyped->getY(), stateTyped->getZ()));
+    result.rotate(Eigen::Quaternionf(stateTyped->rotation().w, stateTyped->rotation().x, stateTyped->rotation().y, stateTyped->rotation().z));
+    return result;
+  }
+
+  virtual void setPosition(ompl::base::State *state, const fcl::Vector3f position) override
+  {
+    auto stateTyped = state->as<StateSpace::StateType>();
+    stateTyped->setX(position(0));
+    stateTyped->setY(position(1));
+    stateTyped->setZ(position(2));
+  }
+
+protected:
+  // based on https://ignitionrobotics.org/api/math/6.9/Quaternion_8hh_source.html,
+  // which is based on http://physicsforgames.blogspot.com/2010/02/quaternions.html
+  Eigen::Quaternionf qintegrate(const Eigen::Quaternionf& q, const Eigen::Vector3f& omega, float dt)
+  {
+    Eigen::Quaternionf deltaQ;
+    auto theta = omega * dt * 0.5;
+    float thetaMagSq = theta.squaredNorm();
+    float s;
+    if (thetaMagSq * thetaMagSq / 24.0 < std::numeric_limits<float>::min()) {
+      deltaQ.w() = 1.0 - thetaMagSq / 2.0;
+      s = 1.0 - thetaMagSq / 6.0;
+    } else {
+      float thetaMag = sqrtf(thetaMagSq);
+      deltaQ.w() = cosf(thetaMag);
+      s = sinf(thetaMag) / thetaMag;
+    }
+    deltaQ.x() = theta.x() * s;
+    deltaQ.y() = theta.y() * s;
+    deltaQ.z() = theta.z() * s;
+    return deltaQ * q;
+  }
+
+protected:
+  class StateSpace : public ob::CompoundStateSpace
+  {
+  public:
+    class StateType : public ob::CompoundStateSpace::StateType
+    {
+    public:
+      StateType() = default;
+
+      double getX() const
+      {
+        return as<ob::SE3StateSpace::StateType>(0)->getX();
+      }
+
+      double getY() const
+      {
+        return as<ob::SE3StateSpace::StateType>(0)->getY();
+      }
+
+      double getZ() const
+      {
+        return as<ob::SE3StateSpace::StateType>(0)->getZ();
+      }
+
+      void setX(double x)
+      {
+        as<ob::SE3StateSpace::StateType>(0)->setX(x);
+      }
+
+      void setY(double y)
+      {
+        as<ob::SE3StateSpace::StateType>(0)->setY(y);
+      }
+
+      void setZ(double z)
+      {
+        as<ob::SE3StateSpace::StateType>(0)->setZ(z);
+      }
+
+      // const double *position() const
+      // {
+      //   return as<ob::SE3StateSpace::StateType>(0)->as<ob::RealVectorStateSpace::StateType>(0)->values;
+      // }
+
+      // double *position()
+      // {
+      //   return as<ob::SE3StateSpace::StateType>(0)->as<ob::RealVectorStateSpace::StateType>(0)->values;
+      // }
+
+      const ob::SO3StateSpace::StateType &rotation() const
+      {
+        return as<ob::SE3StateSpace::StateType>(0)->rotation();
+      }
+
+      ob::SO3StateSpace::StateType &rotation()
+      {
+        return as<ob::SE3StateSpace::StateType>(0)->rotation();
+      }
+
+      const double* velocity() const
+      {
+        return as<ob::RealVectorStateSpace::StateType>(1)->values;
+      }
+
+      double *velocity()
+      {
+        return as<ob::RealVectorStateSpace::StateType>(1)->values;
+      }
+
+      const double *angularVelocity() const
+      {
+        return as<ob::RealVectorStateSpace::StateType>(2)->values;
+      }
+
+      double *angularVelocity()
+      {
+        return as<ob::RealVectorStateSpace::StateType>(2)->values;
+      }
+    };
+
+    StateSpace()
+    {
+      setName("Quadrotor" + getName());
+      type_ = ob::STATE_SPACE_TYPE_COUNT + 2;
+      addSubspace(std::make_shared<ob::SE3StateSpace>(), 1.0);         // position + orientation
+      addSubspace(std::make_shared<ob::RealVectorStateSpace>(3), 0.1); // velocity
+      addSubspace(std::make_shared<ob::RealVectorStateSpace>(3), 0.1); // angular velocity
+      lock();
+    }
+
+    ~StateSpace() override = default;
+
+    void setPositionBounds(const ob::RealVectorBounds &bounds)
+    {
+      as<ob::SE3StateSpace>(0)->setBounds(bounds);
+    }
+
+    void setVelocityBounds(const ob::RealVectorBounds &bounds)
+    {
+      as<ob::RealVectorStateSpace>(1)->setBounds(bounds);
+    }
+
+    void setAngularVelocityBounds(const ob::RealVectorBounds &bounds)
+    {
+      as<ob::RealVectorStateSpace>(2)->setBounds(bounds);
+    }
+
+    const ob::RealVectorBounds &getPositionBounds() const
+    {
+      return as<ob::SE3StateSpace>(0)->getBounds();
+    }
+
+    ob::State *allocState() const override
+    {
+      auto *state = new StateType();
+      allocStateComponents(state);
+      return state;
+    }
+
+    void freeState(ob::State *state) const override
+    {
+      CompoundStateSpace::freeState(state);
+    }
+
+    void registerProjections()
+    {
+      class SE3DefaultProjection : public ob::ProjectionEvaluator
+      {
+      public:
+        SE3DefaultProjection(const StateSpace *space) : ob::ProjectionEvaluator(space)
+        {
+        }
+
+        unsigned int getDimension() const override
+        {
+          return 3;
+        }
+
+        void defaultCellSizes() override
+        {
+          cellSizes_.resize(3);
+          bounds_ = space_->as<StateSpace>()->getPositionBounds();
+          cellSizes_[0] = (bounds_.high[0] - bounds_.low[0]) / ompl::magic::PROJECTION_DIMENSION_SPLITS;
+          cellSizes_[1] = (bounds_.high[1] - bounds_.low[1]) / ompl::magic::PROJECTION_DIMENSION_SPLITS;
+          cellSizes_[2] = (bounds_.high[2] - bounds_.low[2]) / ompl::magic::PROJECTION_DIMENSION_SPLITS;
+        }
+
+        void project(const ob::State *state, Eigen::Ref<Eigen::VectorXd> projection) const override
+        {
+          projection = Eigen::Map<const Eigen::VectorXd>(
+              state->as<StateSpace::StateType>()->as<ob::RealVectorStateSpace::StateType>(0)->values, 3);
+        }
+      };
+
+      registerDefaultProjection(std::make_shared<SE3DefaultProjection>(this));
+    }
+  };
+
+protected:
+  float mass_;
+  float g_;
+  Eigen::Matrix<float, 4, 4> B0_;
+  Eigen::Vector3f J_; // only diagonal entries 
+  Eigen::Vector3f inverseJ_; // only diagonal entries 
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////
+
 std::shared_ptr<Robot> create_robot(
   const std::string &robotType,
   const ob::RealVectorBounds &positionBounds)
@@ -646,6 +978,11 @@ std::shared_ptr<Robot> create_robot(
         /*L*/ 0.4 /*m*/,
         /*hitch_lengths*/ {0.5} /*m*/
         ));
+  }
+  else if (robotType == "quadrotor_0")
+  {
+    robot.reset(new RobotQuadrotor(
+        positionBounds));
   }
   else
   {

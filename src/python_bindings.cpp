@@ -25,7 +25,12 @@ class RobotHelper
 public:
   RobotHelper(const std::string& robotType)
   {
-    ob::RealVectorBounds position_bounds(2);
+    size_t dim = 2;
+    if (robotType == "quadrotor_0") {
+      dim = 3;
+    }
+
+    ob::RealVectorBounds position_bounds(dim);
     position_bounds.setLow(-2);
     position_bounds.setHigh(2);
     robot_ = create_robot(robotType, position_bounds);
@@ -69,7 +74,6 @@ public:
   {
     control_sampler_->sample(tmp_control_);
     auto si = robot_->getSpaceInformation();
-    si->printControl(tmp_control_);
     const size_t dim = si->getControlSpace()->getDimension();
     std::vector<double> reals(dim);
     for (size_t d = 0; d < dim; ++d)

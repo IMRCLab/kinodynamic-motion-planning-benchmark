@@ -1,7 +1,54 @@
 import jax.numpy as np
+from jax import lax
 
 def normalize_angle(angle):
 	return (angle + np.pi) % (2 * np.pi) - np.pi
+
+# Quaternion routines adapted from rowan to use autograd
+
+
+def qmultiply(q1, q2):
+	return np.concatenate((
+		np.array([q1[0] * q2[0] - np.sum(q1[1:4]*q2[1:4])]),
+		q1[0] * q2[1:4] + q2[0] * q1[1:4] + np.cross(q1[1:4], q2[1:4])))
+
+
+def qconjugate(q):
+	return np.concatenate((q[0:1], -q[1:4]))
+
+
+def qrotate(q, v):
+	quat_v = np.concatenate((np.array([0]), v))
+	return qmultiply(q, qmultiply(quat_v, qconjugate(q)))[1:]
+
+
+def qexp_regular_norm(q):
+	e = np.exp(q[0])
+	norm = np.linalg.norm(q[1:4])
+	result_v = e * q[1:4] / norm * np.sin(norm)
+	result_w = e * np.cos(norm)
+	return np.concatenate((np.array([result_w]), result_v))
+
+
+def qexp_zero_norm(q):
+	e = np.exp(q[0])
+	result_v = np.zeros(3)
+	result_w = e
+	return np.concatenate((np.array([result_w]), result_v))
+
+
+def qexp(q):
+	return lax.cond(np.allclose(q[1:4], 0), q, qexp_zero_norm, q, qexp_regular_norm)
+
+
+def qintegrate(q, v, dt):
+	quat_v = np.concatenate((np.array([0]), v*dt/2))
+	return qmultiply(qexp(quat_v), q)
+
+
+def qnormalize(q):
+	return q / np.linalg.norm(q)
+
 
 class RobotCarFirstOrder:
 
@@ -112,6 +159,89 @@ class RobotCarFirstOrderWithTrailers:
 		state_next = np.array(state_next_list)
 		return state_next
 
+
+class Quadrotor:
+
+	def __init__(self):
+		self.action_desc = ["f1 [N]", "f2 [N]", "f3 [N]", "f4 [N]"]
+		self.min_u = np.zeros(4)
+		self.max_u = np.ones(4) * 12.0 / 1000.0 * 9.81
+
+		self.state_desc = [
+			"x [m]", "y [m]", "z [m]",
+			"qx", "qy", "qz", "qw",
+			"vx [m/s]", "vy [m/s]", "vz [m/s]",
+			"w_x", "w_y", "w_z"]
+		min_x = [-np.inf, -np.inf, -np.inf
+				-3, -3, -3,
+				-1.001, -1.001, -1.001, -1.001,
+				-35, -35, -35]
+		max_x = [np.inf, np.inf, np.inf,
+				3, 3, 3,
+				1.001, 1.001, 1.001, 1.001,
+				35, 35, 35]
+		self.min_x = np.array(min_x)
+		self.max_x = np.array(max_x)
+
+		# parameters (Crazyflie 2.0 quadrotor)
+		self.mass = 0.034  # kg
+		# self.J = np.array([
+		# 	[16.56,0.83,0.71],
+		# 	[0.83,16.66,1.8],
+		# 	[0.72,1.8,29.26]
+		# 	]) * 1e-6  # kg m^2
+		self.J = np.array([16.571710e-6, 16.655602e-6, 29.261652e-6])
+
+		# Note: we assume here that our control is forces
+		arm_length = 0.046  # m
+		arm = 0.707106781 * arm_length
+		t2t = 0.006  # thrust-to-torque ratio
+		self.B0 = np.array([
+                    [1, 1, 1, 1],
+                 			[-arm, -arm, arm, arm],
+                 			[-arm, arm, arm, -arm],
+                 			[-t2t, t2t, -t2t, t2t]
+                ])
+		self.g = 9.81  # not signed
+
+		if self.J.shape == (3, 3):
+			self.inv_J = np.linalg.pinv(self.J)  # full matrix -> pseudo inverse
+		else:
+			self.inv_J = 1 / self.J  # diagonal matrix -> division
+
+		self.dt = 0.01
+
+	def step(self, state, action):
+		# compute next state
+		state = np.asarray(state)
+		action = np.asarray(action)
+		q = np.concatenate((state[6:7], state[3:6]))
+		omega = state[10:]
+
+		eta = np.dot(self.B0, action)
+
+		f_u = np.array([0, 0, eta[0]])
+		tau_u = np.array([eta[1], eta[2], eta[3]])
+
+		# dynamics
+		# dot{p} = v
+		pos_next = state[0:3] + state[7:10] * self.dt
+		# mv = mg + R f_u
+		vel_next = state[7:10] + (np.array([0, 0, -self.g]) +
+		                         qrotate(q, f_u) / self.mass) * self.dt
+
+		# dot{R} = R S(w)
+		# to integrate the dynamics, see
+		# https://www.ashwinnarayan.com/post/how-to-integrate-quaternions/, and
+		# https://arxiv.org/pdf/1604.08139.pdf
+		q_next = qnormalize(qintegrate(q, omega, self.dt))
+
+		# mJ = Jw x w + tau_u
+		omega_next = state[10:] + (self.inv_J *
+		                           (np.cross(self.J * omega, omega) + tau_u)) * self.dt
+
+		return np.concatenate((pos_next, q_next[1:4], q_next[0:1], vel_next, omega_next))
+
 def create_robot(robot_type):
 	if robot_type == "car_first_order_0":
 		return RobotCarFirstOrder(0.5, 0.5)
@@ -121,12 +251,42 @@ def create_robot(robot_type):
 		return RobotCarFirstOrderWithTrailers(0.5, np.pi/3, 0.4, [])
 	elif robot_type == "car_first_order_with_1_trailers_0":
 		return RobotCarFirstOrderWithTrailers(0.5, np.pi/3, 0.4, [0.5])
+	elif robot_type == "quadrotor_0":
+		return Quadrotor()
 	else:
 		raise Exception("Unknown robot type {}!".format(robot_type))
 
 
 if __name__ == '__main__':
-	pass
+	r = create_robot("quadrotor_0")
+
+	state = np.array([1, 1, 0.999959, -0.00603708, 0.00740579, -
+	                 0.000374226, 0.999954, 0, 0, -0.00819401, -2.41403, 2.96305, - 0.149642])
+	action = np.array([0.0755318, 0.0915615, 0.0796134, 0.0853427])
+
+	print(r.step(state, action))
+
+# ==========================
+# Compound state [
+# Compound state [
+# RealVectorState [1 1 0.999959]
+# SO3State [-0.00603708 0.00740579 -0.000374226 0.999954]
+# ]
+# RealVectorState [0 0 -0.00819401]
+# RealVectorState [-2.41403 2.96305 -0.149642]
+# ]
+# RealVectorControl [0.0755318 0.0915615 0.0796134 0.0853427]
+#  apply for 0.01
+# Compound state [
+# Compound state [
+# RealVectorState [1 1 0.999877]
+# SO3State [-0.0181048 0.0222181 -0.00112223 0.999589]
+# ]
+# RealVectorState [0.0014469 0.00117859 -0.00865024]
+# RealVectorState [-2.45169 3.16259 -0.10482]
+# ]
+
+
 	# import matplotlib.pyplot as plt
 
 	# position = np.arange(-1.2, 0.6, 0.05)
