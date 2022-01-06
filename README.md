@@ -77,12 +77,11 @@ python3 translate_g.py --fin ../benchmark/carFirstOrder/kink_0.yaml  --fout ../b
 python3 translate_g.py --fin ../benchmark/carFirstOrder/bugtrap_0.yaml  --fout ../benchmark/carFirstOrder/bugtrap_0.g
 ```
 
-## Notes
+#### Issues
 
-* can we find the best motions automatically using 
-    a) statistical inference? (bayes learning?) -OR-
-    b) using dispersion optimization -OR-
-    c) graph theory (finding critical motions)
-      * find histogram of motions used
-      * remove one kind of motion (of the used ones) -> 1 - old cost/new cost is importance (if infeasible: new cost = inf -> importance =1; if no change in cost importance is 0)
-* 
+```
+cd build
+python3 ../scripts/translate_g.py --fin ../benchmark/carFirstOrder/parallelpark_0.yaml  --fout env.g
+./rai_dubins -model "env.g" -waypoints \"../benchmark/carSecondOrder/initGuess/result_dbastar_parallelpark.yaml\" -one_every 1 -display 0 -animate 0 -out "komo.yaml"
+python3 ../scripts/checker.py ../benchmark/carSecondOrder/parallelpark_0.yaml komo.yaml
+```

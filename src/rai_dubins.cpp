@@ -186,18 +186,55 @@ arrA load_waypoints(const char *filename) {
     arr stateArray;
     for (const auto &elem : state) {
       stateArray.append(elem.as<double>());
+      // We only care about pose, not higher-order derivatives
+      if (stateArray.N == 3) {
+        break;
+      }
     }
     waypoints.append(stateArray);
   }
   return waypoints;
 }
 
-// usage:
-// EXECUTABLE -model FILE_G -waypoints FILE_WAY -one_every ONE_EVERY_N -display
-// {0,1} -out OUT_FILE OUT_FILE -animate  {0,1,2}
+double velocity(const arrA& results, int t, double dt)
+{
+  arr delta = results(t) - results(t - 1);
+  double distance =
+      std::sqrt(delta(0) * delta(0) + delta(1) * delta(1)); // velocity
+  double velocity = distance / dt;                          // m/s
+  return velocity;
+}
 
-// OUT_FILE: Write down the trajectory
-// ONE_EVERY_N: take only one every N waypoints
+double acceleration(const arrA &results, int t, double dt)
+{
+  double vel_now = velocity(results, t, dt);
+  double vel_before = velocity(results, t - 1, dt);
+  double acc = (vel_now - vel_before) / dt;
+  return acc;
+}
+
+double angularVelocity(const arrA &results, int t, double dt)
+{
+  arr delta = results(t) - results(t - 1);
+  double angular_change = atan2(sin(delta(2)), cos(delta(2)));
+  double angular_velocity = angular_change / dt; // rad/s
+  return angular_velocity;
+}
+
+double angularAcceleration(const arrA &results, int t, double dt)
+{
+  double omega_now = angularVelocity(results, t, dt);
+  double omega_before = angularVelocity(results, t - 1, dt);
+  double omega_dot = (omega_now - omega_before) / dt;
+  return omega_dot;
+}
+
+    // usage:
+    // EXECUTABLE -model FILE_G -waypoints FILE_WAY -one_every ONE_EVERY_N -display
+    // {0,1} -out OUT_FILE OUT_FILE -animate  {0,1,2}
+
+    // OUT_FILE: Write down the trajectory
+    // ONE_EVERY_N: take only one every N waypoints
 
 int main(int argn, char **argv) {
 
@@ -269,43 +306,45 @@ int main(int argn, char **argv) {
   komo.addObjective({}, make_shared<Dubins2>(), {"robot0"}, OT_eq, {1e1}, {0},
                     1);
   enum CAR_ORDER {
-    ZERO,
-    ONE,
-    TWO,
+    ZERO = 0,
+    ONE = 1,
+    TWO = 2,
   };
-  CAR_ORDER car_order = ZERO; // zero is no bounds
-  if (car_order == ONE) {
+  CAR_ORDER car_order = ONE; // zero is no bounds
+  if (car_order >= ONE) {
+    const double max_velocity = 0.5; // m/s
+    const double max_omega = 0.5; // rad/s
+
     komo.addObjective({}, FS_qItself, {"robot0"}, OT_ineq, {0, 0, 1},
-                      {0, 0, 0.5 /*rad/s*/}, 1);
+                      {0, 0, max_omega}, 1);
     komo.addObjective({}, FS_qItself, {"robot0"}, OT_ineq, {0, 0, -1},
-                      {0, 0, -0.5 /*rad/s*/}, 1);
+                      {0, 0, -max_omega}, 1);
     // velocity limit
     komo.addObjective({}, make_shared<CarFirstOrderVelocity>(), {"robot0"},
-                      OT_ineq, {1}, {0.5 /*m/s*/}, 1);
+                      OT_ineq, {1}, {max_velocity}, 1);
 
     komo.addObjective({}, make_shared<CarFirstOrderVelocity>(), {"robot0"},
-                      OT_ineq, {-1}, {-0.5 /*m/s*/}, 1);
+                      OT_ineq, {-1}, {-max_velocity}, 1);
   }
-
-  else if (car_order == TWO) {
-    double max_acceleration = 30; // m s^-2
-    double max_wdot = 30;
+  if (car_order >= TWO) {
+    double max_acceleration = 2; // m s^-2
+    double max_wdot = 2;
 
     // NOTE: CarSecondOrderAcceleration returns v - v'
     // a = (v - v') / dt
     // so use  amax * dt as limit
 
     komo.addObjective({}, make_shared<CarSecondOrderAcceleration>(), {"robot0"},
-                      OT_ineq, {1}, {max_acceleration * dt /*m/s*/}, 2);
+                      OT_ineq, {1}, {max_acceleration * dt}, 2);
 
     komo.addObjective({}, make_shared<CarSecondOrderAcceleration>(), {"robot0"},
-                      OT_ineq, {-1}, {-max_acceleration * dt /*m/s*/}, 2);
+                      OT_ineq, {-1}, {-max_acceleration * dt}, 2);
 
     komo.addObjective({}, FS_qItself, {"robot0"}, OT_ineq, {0, 0, 1},
-                      {0, 0, max_wdot /*m/s*/}, 2);
+                      {0, 0, max_wdot}, 2);
 
     komo.addObjective({}, FS_qItself, {"robot0"}, OT_ineq, {0, 0, -1},
-                      {0, 0, -max_wdot /*m/s*/}, 2);
+                      {0, 0, -max_wdot}, 2);
   }
 
   for (auto &obs : obstacles) {
@@ -368,21 +407,35 @@ int main(int argn, char **argv) {
   arrA results = komo.getPath_qAll();
   std::ofstream out(out_file);
   out << "result:" << std::endl;
-  out << "  - states:" << std::endl;
-  for (auto &v : results) {
-    out << "      - [" << v(0) << "," << v(1) << ","
-        << std::remainder(v(2), 2 * M_PI) << "]" << std::endl;
-  }
-  out << "    actions:" << std::endl;
-  for (size_t t = 1; t < komo.T; ++t) {
-    arr delta = results(t) - results(t - 1);
-    double distance =
-        std::sqrt(delta(0) * delta(0) + delta(1) * delta(1)); // velocity
-    double velocity = distance / dt;                          // m/s
-    double angular_change = atan2(sin(delta(2)), cos(delta(2)));
-    double angular_velocity = angular_change / dt; // rad/s
-    out << "      - [" << velocity << "," << angular_velocity << "]"
-        << std::endl;
+  if (car_order == ONE) {
+    out << "  - states:" << std::endl;
+    for (auto &v : results) {
+      out << "      - [" << v(0) << "," << v(1) << ","
+          << std::remainder(v(2), 2 * M_PI) << "]" << std::endl;
+    }
+    out << "    actions:" << std::endl;
+    for (size_t t = 1; t < komo.T; ++t) {
+      out << "      - [" << velocity(results, t, dt) << "," 
+          << angularVelocity(results, t, dt) << "]"
+          << std::endl;
+    }
+  } else if (car_order == TWO) {
+    out << "  - states:" << std::endl;
+    for (size_t t = 0; t < komo.T; ++t)
+    {
+      const auto& v = results(t);
+      out << "      - [" << v(0) << "," << v(1) << ","
+          << std::remainder(v(2), 2 * M_PI) << ","
+          << velocity(results, t, dt) << "," << angularVelocity(results, t, dt)
+          << "]" << std::endl;
+    }
+    out << "    actions:" << std::endl;
+    for (size_t t = 1; t < komo.T; ++t)
+    {
+      out << "      - [" << acceleration(results, t, dt) << "," 
+          << angularAcceleration(results, t, dt) << "]"
+          << std::endl;
+    }
   }
 
   return 0;

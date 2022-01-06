@@ -89,7 +89,7 @@ def write(file_in: str, file_out: str) -> None:
             i += 1
     ID_robot = 0
     for robot in env["robots"]:
-        robots.append(Robot(robot["start"], robot["goal"], ID_robot))
+        robots.append(Robot(robot["start"][0:3], robot["goal"][0:3], ID_robot))
         ID_robot += 1
 
     with open(file_out, "w") as g_file:

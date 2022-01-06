@@ -42,7 +42,7 @@ def check(filename_env: str, filename_result: str) -> bool:
 	T = states.shape[0]
 	for t in range(T-1):
 		state_desired = robot.step(states[t], actions[t])
-		success &= check_array(states[t+1], state_desired, "dynamics at t={}".format(t))
+		success &= check_array(states[t+1], state_desired, "Wrong dynamics at t={}".format(t))
 	# state limits
 	for t in range(T):
 		if (states[t] > robot.max_x).any() or (states[t] < robot.min_x).any():
