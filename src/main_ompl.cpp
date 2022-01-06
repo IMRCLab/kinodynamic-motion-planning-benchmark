@@ -31,8 +31,8 @@ int main(int argc, char* argv[]) {
   std::string outputFile;
   std::string statsFile;
   std::string plannerDesc;
+  std::string cfgFile;
   int timelimit;
-  float goalRegion;
   desc.add_options()
     ("help", "produce help message")
     ("input,i", po::value<std::string>(&inputFile)->required(), "input file (yaml)")
@@ -40,7 +40,7 @@ int main(int argc, char* argv[]) {
     ("stats", po::value<std::string>(&statsFile)->default_value("ompl_stats.yaml"), "output file (yaml)")
     ("planner,p", po::value<std::string>(&plannerDesc)->default_value("rrt"), "Planner")
     ("timelimit", po::value<int>(&timelimit)->default_value(60), "Time limit for planner")
-    ("goalregion", po::value<float>(&goalRegion)->default_value(0.1), "radius around goal to count success");
+    ("cfg,c", po::value<std::string>(&cfgFile)->required(), "configuration file (yaml)");
 
   try {
     po::variables_map vm;
@@ -86,17 +86,23 @@ int main(int argc, char* argv[]) {
   const auto& robot_node = env["robots"][0];
   auto robotType = robot_node["type"].as<std::string>();
   const auto &dims = env["environment"]["dimensions"];
-  ob::RealVectorBounds position_bounds(2);
+  ob::RealVectorBounds position_bounds(dims.size());
   position_bounds.setLow(0);
-  position_bounds.setHigh(0, dims[0].as<double>());
-  position_bounds.setHigh(1, dims[1].as<double>());
+  for (size_t i = 0; i < dims.size(); ++i) {
+    position_bounds.setHigh(i, dims[i].as<double>());
+  }
   std::shared_ptr<Robot> robot = create_robot(robotType, position_bounds);
+
+  // load config file
+  YAML::Node cfg = YAML::LoadFile(cfgFile);
 
   auto si = robot->getSpaceInformation();
 
   // set number of control steps (use 0.1s as increment -> 0.1 to 1s per Steer function)
-  si->setPropagationStepSize(0.1);
-  si->setMinMaxControlDuration(1, 10);
+  si->setPropagationStepSize(cfg["propagation_step_size"].as<double>());
+  si->setMinMaxControlDuration(
+    cfg["control_duration"][0].as<int>(),
+    cfg["control_duration"][1].as<int>());
 
   // set state validity checking for this space
   auto stateValidityChecker(std::make_shared<fclStateValidityChecker>(si, bpcm_env, robot));
@@ -128,15 +134,21 @@ int main(int argc, char* argv[]) {
     reals.push_back(v.as<double>());
   }
   si->getStateSpace()->copyFromReals(goalState, reals);
-  pdef->setGoalState(goalState, goalRegion);
+  pdef->setGoalState(goalState, cfg["goal_epsilon"].as<double>());
   si->freeState(goalState);
 
   // create a planner for the defined space
   std::shared_ptr<ob::Planner> planner;
   if (plannerDesc == "rrt") {
-    planner.reset(new oc::RRT(si));
+    auto rrt = new oc::RRT(si);
+    rrt->setGoalBias(cfg["goal_bias"].as<double>());
+    planner.reset(rrt);
   } else if (plannerDesc == "sst") {
-    planner.reset(new oc::SST(si));
+    auto sst = new oc::SST(si);
+    sst->setGoalBias(cfg["goal_bias"].as<double>());
+    sst->setSelectionRadius(cfg["selection_radius"].as<double>());
+    sst->setPruningRadius(cfg["pruning_radius"].as<double>());
+    planner.reset(sst);
   }
   // rrt->setGoalBias(params["goalBias"].as<float>());
   // auto planner(rrt);
@@ -199,7 +211,7 @@ int main(int argc, char* argv[]) {
   auto path = pdef->getSolutionPath()->as<oc::PathControl>();
 
   // update propagation step size to get right interpolation resolution
-  si->setPropagationStepSize(0.1);
+  si->setPropagationStepSize(robot->dt());
   path->interpolate(); // normalize to a single control step
 
   std::cout << path->getStateCount() << "," << path->getControlCount() << std::endl;

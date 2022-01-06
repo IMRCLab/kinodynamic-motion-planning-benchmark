@@ -59,10 +59,10 @@ def execute_task(task: ExecutionTask):
 
 	# find cfg
 	mycfg = cfg[task.alg]
+	mycfg = mycfg['default']
 	if Path(task.instance).name in mycfg:
-		mycfg = mycfg[Path(task.instance).name]
-	else:
-		mycfg = mycfg['default']
+		mycfg_instance = mycfg[Path(task.instance).name]
+		mycfg = {**mycfg, **mycfg_instance} # merge two dictionaries
 
 	print("Using configurations ", mycfg)
 
@@ -94,7 +94,7 @@ def execute_task(task: ExecutionTask):
 
 
 def main():
-	parallel = True
+	parallel = False
 	# instances = ["carFirstOrder/bugtrap_0", "carFirstOrder/kink_0", "carFirstOrder/parallelpark_0"]
 	# algs = ["sst", "sbpl",  "dbAstar-komo", "dbAstar-scp"]
 	# trials = 5
@@ -107,15 +107,19 @@ def main():
 	# timelimit = 5 * 60
 
 	# instances = ["carSecondOrder/parallelpark_0", "carSecondOrder/kink_0", "carSecondOrder/bugtrap_0"]
-	# algs = ["sst", "dbAstar-scp"]
+	# algs = ["komo"]
 	# trials = 5
 	# timelimit = 5 * 60
 
-	instances = ["carFirstOrderWithTrailers/parallelpark_0"]
-	algs = ["dbAstar-scp"]
-	trials = 5
-	timelimit = 5 * 60
+	# instances = ["carFirstOrderWithTrailers/parallelpark_0"]
+	# algs = ["dbAstar-scp"]
+	# trials = 5
+	# timelimit = 5 * 60
 
+	instances = ["carFirstOrder/parallelpark_0"]
+	algs = ["sst"]
+	trials = 1
+	timelimit = 10
 
 	tasks = []
 	for instance in instances:

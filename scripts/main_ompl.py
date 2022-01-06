@@ -1,23 +1,33 @@
 import argparse
 import subprocess
 import main_scp
+import tempfile
+from pathlib import Path
+import yaml
 
 def run_ompl(filename_env, folder, timelimit, cfg):
-	result = subprocess.run(["./main_ompl", 
-		"-i", filename_env,
-		"-o", "{}/result_ompl.yaml".format(folder),
-		"--stats", "{}/stats.yaml".format(folder),
-		"--timelimit", str(timelimit),
-		"-p", "sst",
-		"--goalregion", str(cfg['goal_epsilon'])])
-	if result.returncode != 0:
-		print("OMPL failed")
-	else:
-		# pass
-		success = main_scp.run_scp(
-			filename_env,
-			"{}/result_ompl.yaml".format(folder),
-			"{}/result_scp.yaml".format(folder))
+
+	with tempfile.TemporaryDirectory() as tmpdirname:
+		p = Path(tmpdirname)
+		filename_cfg = p / "cfg.yaml"
+		with open(filename_cfg, 'w') as f:
+			yaml.dump(cfg, f, Dumper=yaml.CSafeDumper)
+
+		result = subprocess.run(["./main_ompl", 
+			"-i", filename_env,
+			"-o", "{}/result_ompl.yaml".format(folder),
+			"--stats", "{}/stats.yaml".format(folder),
+			"--timelimit", str(timelimit),
+			"-p", "sst",
+			"-c", str(filename_cfg)])
+		if result.returncode != 0:
+			print("OMPL failed")
+		else:
+			# pass
+			success = main_scp.run_scp(
+				filename_env,
+				"{}/result_ompl.yaml".format(folder),
+				"{}/result_scp.yaml".format(folder))
 
 def main():
 	parser = argparse.ArgumentParser()

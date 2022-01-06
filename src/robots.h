@@ -41,9 +41,15 @@ public:
     return si_;
   }
 
+  float dt() const
+  {
+    return dt_;
+  }
+
 protected:
   std::vector<std::shared_ptr<fcl::CollisionGeometryf>> geom_;
   std::shared_ptr<ompl::control::SpaceInformation> si_;
+  float dt_;
 };
 
 // Factory Method

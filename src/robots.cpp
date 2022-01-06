@@ -37,6 +37,8 @@ public:
 
     // construct an instance of  space information from this control space
     si_ = std::make_shared<oc::SpaceInformation>(space, cspace);
+
+    dt_ = 0.1;
   }
 
   void propagate(
@@ -55,17 +57,16 @@ public:
     float y = startTyped->getY();
     float yaw = startTyped->getYaw();
     float remaining_time = duration;
-    const float integration_dt = 0.1f;
     do
     {
-      float dt = std::min(remaining_time, integration_dt);
+      float dt = std::min(remaining_time, dt_);
 
       x += ctrl[0] * cosf(yaw) * dt;
       y += ctrl[0] * sinf(yaw) * dt;
       yaw += ctrl[1] * dt;
 
       remaining_time -= dt;
-    } while (remaining_time >= integration_dt);
+    } while (remaining_time >= dt_);
 
     // update result
 
@@ -141,6 +142,8 @@ public:
 
     // construct an instance of  space information from this control space
     si_ = std::make_shared<oc::SpaceInformation>(space, cspace);
+
+    dt_ = 0.1;
   }
 
   void propagate(
@@ -161,10 +164,9 @@ public:
     float v = startTyped->getVelocity();
     float w = startTyped->getAngularVelocity();
     float remaining_time = duration;
-    const float integration_dt = 0.1f;
     do
     {
-      float dt = std::min(remaining_time, integration_dt);
+      float dt = std::min(remaining_time, dt_);
 
       x += v * cosf(yaw) * dt;
       y += v * sinf(yaw) * dt;
@@ -173,7 +175,7 @@ public:
       w += ctrl[1] * dt;
 
       remaining_time -= dt;
-    } while (remaining_time >= integration_dt);
+    } while (remaining_time >= dt_);
 
     // update result
 
@@ -397,6 +399,8 @@ public:
 
     // construct an instance of  space information from this control space
     si_ = std::make_shared<oc::SpaceInformation>(space, cspace);
+
+    dt_ = 0.1;
   }
 
   virtual size_t numParts()
@@ -423,10 +427,9 @@ public:
       theta[i] = startTyped->getTheta(i);
     }
     float remaining_time = duration;
-    const float integration_dt = 0.1f;
     do
     {
-      float dt = std::min(remaining_time, integration_dt);
+      float dt = std::min(remaining_time, dt_);
 
       x += ctrl[0] * cosf(theta[0]) * dt;
       y += ctrl[0] * sinf(theta[0]) * dt;
@@ -443,7 +446,7 @@ public:
       theta[0] += ctrl[0] / L_ * tanf(ctrl[1]) * dt;
 
       remaining_time -= dt;
-    } while (remaining_time >= integration_dt);
+    } while (remaining_time >= dt_);
 
     // update result
     resultTyped->setX(x);
@@ -680,6 +683,8 @@ public:
 
     // construct an instance of  space information from this control space
     si_ = std::make_shared<oc::SpaceInformation>(space, cspace);
+
+    dt_ = 0.01;
   }
 
   void propagate(
@@ -710,10 +715,9 @@ public:
     const Eigen::Vector3f gravity(0,0,-g_);
     
     float remaining_time = duration;
-    const float integration_dt = 0.01f;
     do
     {
-      float dt = std::min(remaining_time, integration_dt);
+      float dt = std::min(remaining_time, dt_);
 
       pos += vel * dt;
 
@@ -724,7 +728,7 @@ public:
       omega += inverseJ_.cwiseProduct(J_.cwiseProduct(omega).cross(omega) + tau_u) * dt;
 
       remaining_time -= dt;
-    } while (remaining_time >= integration_dt);
+    } while (remaining_time >= dt_);
 
     // update result
     auto resultTyped = result->as<StateSpace::StateType>();
