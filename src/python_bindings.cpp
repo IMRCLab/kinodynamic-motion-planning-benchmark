@@ -33,9 +33,11 @@ public:
     auto si = robot_->getSpaceInformation();
     si->getStateSpace()->setup();
     state_sampler_ = si->allocStateSampler();
+    control_sampler_ = si->allocControlSampler();
 
     tmp_state_a_ = si->allocState();
     tmp_state_b_ = si->allocState();
+    tmp_control_ = si->allocControl();
   }
 
   ~RobotHelper()
@@ -43,6 +45,7 @@ public:
     auto si = robot_->getSpaceInformation();
     si->freeState(tmp_state_a_);
     si->freeState(tmp_state_b_);
+    si->freeControl(tmp_control_);
   }
 
   float distance(const std::vector<double> &stateA, const std::vector<double> &stateB)
@@ -53,7 +56,7 @@ public:
     return si->distance(tmp_state_a_, tmp_state_b_);
   }
 
-  std::vector<double> sampleUniform()
+  std::vector<double> sampleStateUniform()
   {
     state_sampler_->sampleUniform(tmp_state_a_);
     auto si = robot_->getSpaceInformation();
@@ -62,11 +65,49 @@ public:
     return reals;
   }
 
+  std::vector<double> sampleControlUniform()
+  {
+    control_sampler_->sample(tmp_control_);
+    auto si = robot_->getSpaceInformation();
+    si->printControl(tmp_control_);
+    const size_t dim = si->getControlSpace()->getDimension();
+    std::vector<double> reals(dim);
+    for (size_t d = 0; d < dim; ++d)
+    {
+      double *address = si->getControlSpace()->getValueAddressAtIndex(tmp_control_, d);
+      reals[d] = *address;
+    }
+    return reals;
+  }
+
+  std::vector<double> step(
+    const std::vector<double> &state,
+    const std::vector<double>& action,
+    double duration)
+  {
+    auto si = robot_->getSpaceInformation();
+    si->getStateSpace()->copyFromReals(tmp_state_a_, state);
+
+    const size_t dim = si->getControlSpace()->getDimension();
+    assert(dim == action.size());
+    for (size_t d = 0; d < dim; ++d) {
+      double *address = si->getControlSpace()->getValueAddressAtIndex(tmp_control_, d);
+      *address = action[d];
+    }
+    robot_->propagate(tmp_state_a_, tmp_control_, duration, tmp_state_b_);
+
+    std::vector<double> reals;
+    si->getStateSpace()->copyToReals(reals, tmp_state_b_);
+    return reals;
+  }
+
 private: 
   std::shared_ptr<Robot> robot_;
-  ob::StateSamplerPtr state_sampler_; 
+  ob::StateSamplerPtr state_sampler_;
+  oc::ControlSamplerPtr control_sampler_;
   ob::State* tmp_state_a_;
   ob::State* tmp_state_b_;
+  oc::Control* tmp_control_;
 };
 
 class CollisionChecker
@@ -176,5 +217,7 @@ PYBIND11_MODULE(motionplanningutils, m)
   pybind11::class_<RobotHelper>(m, "RobotHelper")
       .def(pybind11::init<const std::string &>())
       .def("distance", &RobotHelper::distance)
-      .def("sampleUniform", &RobotHelper::sampleUniform);
+      .def("sampleUniform", &RobotHelper::sampleStateUniform)
+      .def("sampleControlUniform", &RobotHelper::sampleControlUniform)
+      .def("step", &RobotHelper::step);
 }

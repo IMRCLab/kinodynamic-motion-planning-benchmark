@@ -12,6 +12,13 @@ cmake -DCMAKE_BUILD_TYPE=RelWithDebugInfo ..
 make
 ```
 
+## Tests
+
+```
+cd build
+pytest ../test
+```
+
 ## Running
 
 The following will run all planners on all environments multiple times. Results are stored in the `results` folder
