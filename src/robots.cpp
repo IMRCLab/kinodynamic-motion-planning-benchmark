@@ -428,7 +428,8 @@ public:
 
       x += ctrl[0] * cosf(theta[0]) * dt;
       y += ctrl[0] * sinf(theta[0]) * dt;
-      theta[0] += ctrl[0] / L_ * tanf(ctrl[1]) * dt;
+      // TODO: loop over this in reverse, to avoid changing dependenies
+      //       (for a single trailer it shouldn't matter)
       for (size_t i = 1; i < hitch_lengths_.size() + 1; ++i) {
         float theta_dot = ctrl[0] / hitch_lengths_[i-i];
         for (size_t j = 1; j < i; ++j) {
@@ -437,6 +438,7 @@ public:
         theta_dot *= sinf(theta[i-1] - theta[i]);
         theta[i] += theta_dot * dt;
       }
+      theta[0] += ctrl[0] / L_ * tanf(ctrl[1]) * dt;
 
       remaining_time -= dt;
     } while (remaining_time >= integration_dt);

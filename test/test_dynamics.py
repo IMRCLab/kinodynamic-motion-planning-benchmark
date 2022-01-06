@@ -30,12 +30,12 @@ def test_dynamics_car_second_order_0():
     _test_dynamics('car_second_order_0', 0.1)
 
 
-# def test_dynamics_car_first_order_with_0_trailers_0():
-#     _test_dynamics('car_first_order_with_0_trailers_0', 0.1)
+def test_dynamics_car_first_order_with_0_trailers_0():
+    _test_dynamics('car_first_order_with_0_trailers_0', 0.1)
 
 
-# def test_dynamics_car_first_order_with_1_trailers_0():
-#     _test_dynamics('car_first_order_with_1_trailers_0', 0.1)
+def test_dynamics_car_first_order_with_1_trailers_0():
+    _test_dynamics('car_first_order_with_1_trailers_0', 0.1)
 
 # def test_dynamics_quadrotor_0():
 #     _test_dynamics('quadrotor_0', 0.01)
