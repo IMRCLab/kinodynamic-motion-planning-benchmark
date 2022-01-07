@@ -303,6 +303,8 @@ int main(int argn, char **argv) {
   komo.setModel(C, true);
   int Nplus1 = waypoints.N;
   int N = Nplus1 - 1;
+  std::cout << "Nplus1 " << Nplus1 << std::endl;
+  std::cout << "N " << N << std::endl;
   double dt = 0.1;
   double duration_phase = N * dt;
   komo.setTiming(1,N, duration_phase, order);
@@ -457,7 +459,7 @@ int main(int argn, char **argv) {
   out << "result:" << std::endl;
   if (car_order == ZERO) {
     out << "  - states:" << std::endl;
-    for (size_t t = order - 1; t < komo.T; ++t) {
+    for (size_t t = order - 1; t < results.N; ++t) {
       auto&v = results(t);
       out << "      - [" << v(0) << "," << v(1) << ","
           << std::remainder(v(2), 2 * M_PI) << "]" << std::endl;
@@ -465,20 +467,20 @@ int main(int argn, char **argv) {
   }
   else if (car_order == ONE) {
     out << "  - states:" << std::endl;
-    for (size_t t = order - 1; t < komo.T; ++t) {
+    for (size_t t = order - 1; t < results.N; ++t) {
       auto&v = results(t);
       out << "      - [" << v(0) << "," << v(1) << ","
           << std::remainder(v(2), 2 * M_PI) << "]" << std::endl;
     }
     out << "    actions:" << std::endl;
-    for (size_t t = order; t < komo.T; ++t) {
+    for (size_t t = order; t < results.N; ++t) {
       out << "      - [" << velocity(results, t, dt) << "," 
           << angularVelocity(results, t, dt) << "]"
           << std::endl;
     }
   } else if (car_order == TWO) {
     out << "  - states:" << std::endl;
-    for (size_t t = order-1; t < komo.T; ++t)
+    for (size_t t = order-1; t < results.N; ++t)
     {
       const auto& v = results(t);
       out << "      - [" << v(0) << "," << v(1) << ","
@@ -487,7 +489,7 @@ int main(int argn, char **argv) {
           << "]" << std::endl;
     }
     out << "    actions:" << std::endl;
-    for (size_t t = order; t < komo.T; ++t)
+    for (size_t t = order; t < results.N; ++t)
     {
       out << "      - [" << acceleration(results, t, dt) << "," 
           << angularAcceleration(results, t, dt) << "]"
