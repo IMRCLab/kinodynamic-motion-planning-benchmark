@@ -237,7 +237,7 @@ arrA getPath_qAll_with_prefix(KOMO& komo, int order) {
 
     // usage:
     // EXECUTABLE -model FILE_G -waypoints FILE_WAY -one_every ONE_EVERY_N -display
-    // {0,1} -out OUT_FILE OUT_FILE -animate  {0,1,2}
+    // {0,1} -out OUT_FILE OUT_FILE -animate  {0,1,2} -order {0,1,2}
 
     // OUT_FILE: Write down the trajectory
     // ONE_EVERY_N: take only one every N waypoints
@@ -259,6 +259,7 @@ int main(int argn, char **argv) {
 
   bool display = rai::getParameter<bool>("display", false);
   int animate = rai::getParameter<int>("animate", 0);
+  int order = rai::getParameter<int>("order", 0);
   rai::String out_file =
       rai::getParameter<rai::String>("out", STRING("out.yaml"));
 
@@ -312,11 +313,13 @@ int main(int argn, char **argv) {
   komo.addObjective({}, make_shared<Dubins2>(), {"robot0"}, OT_eq, {1e1}, {0},
                     1);
   enum CAR_ORDER {
-    ZERO = 0,
-    ONE = 1,
-    TWO = 2,
+    ZERO = 0, // no bounds
+    ONE = 1, // bounds velocity
+    TWO = 2, // bound acceleration
   };
-  CAR_ORDER car_order = TWO; // zero is no bounds
+  CAR_ORDER car_order = static_cast<CAR_ORDER>(order);
+  std::cout << "Car order: " << order << std::endl;
+
   if (car_order >= ONE) {
     const double max_velocity = 0.5; // m/s
     const double max_omega = 0.5; // rad/s
@@ -351,6 +354,14 @@ int main(int argn, char **argv) {
 
     komo.addObjective({}, FS_qItself, {"robot0"}, OT_ineq, {0, 0, -1},
                       {0, 0, -max_wdot}, 2);
+
+    // contraints: zero velocity start and end
+    komo.addObjective({0,0}, FS_qItself, {"robot0"}, OT_eq, {},{},1);
+    komo.addObjective({1,1}, FS_qItself, {"robot0"}, OT_eq, {},{},1);
+
+    // Regularization: go slow at beginning and end
+    komo.addObjective({0,.1}, FS_qItself, {"robot0"}, OT_sos, {},{},1);
+    komo.addObjective({.9,1}, FS_qItself, {"robot0"}, OT_sos, {},{},1);
   }
 
   for (auto &obs : obstacles) {
@@ -378,6 +389,8 @@ int main(int argn, char **argv) {
   bool check_gradients = false;
   if (check_gradients) {
     std::cout << "checking gradients" << std::endl;
+    // TODO: to avoid singular points, I shoud add noise before 
+    // checking the gradients.
     komo.checkGradients();
     std::cout << "done " << std::endl;
   }
@@ -386,6 +399,8 @@ int main(int argn, char **argv) {
     komo.opt.animateOptimization = animate;
   }
 
+  // TODO: in final benchmark, check which is the optimal value of inital 
+  // noise.
   komo.optimize(0.1);
 
   std::cout << "report after solve" << std::endl;
@@ -420,7 +435,15 @@ int main(int argn, char **argv) {
 
   std::ofstream out(out_file);
   out << "result:" << std::endl;
-  if (car_order == ONE) {
+  if (car_order == ZERO) {
+    out << "  - states:" << std::endl;
+    for (size_t t = order_komo; t < komo.T; ++t) {
+      auto&v = results(t);
+      out << "      - [" << v(0) << "," << v(1) << ","
+          << std::remainder(v(2), 2 * M_PI) << "]" << std::endl;
+    }
+  }
+  else if (car_order == ONE) {
     out << "  - states:" << std::endl;
     for (size_t t = order_komo; t < komo.T; ++t) {
       auto&v = results(t);
