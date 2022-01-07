@@ -229,6 +229,12 @@ double angularAcceleration(const arrA &results, int t, double dt)
   return omega_dot;
 }
 
+arrA getPath_qAll_with_prefix(KOMO& komo, int order) {
+  arrA q(komo.T+order);
+  for(int t=-order; t<int(komo.T); t++) q(t) = komo.getConfiguration_qAll(t);
+  return q;
+}
+
     // usage:
     // EXECUTABLE -model FILE_G -waypoints FILE_WAY -one_every ONE_EVERY_N -display
     // {0,1} -out OUT_FILE OUT_FILE -animate  {0,1,2}
@@ -310,7 +316,7 @@ int main(int argn, char **argv) {
     ONE = 1,
     TWO = 2,
   };
-  CAR_ORDER car_order = ONE; // zero is no bounds
+  CAR_ORDER car_order = TWO; // zero is no bounds
   if (car_order >= ONE) {
     const double max_velocity = 0.5; // m/s
     const double max_omega = 0.5; // rad/s
@@ -403,25 +409,33 @@ int main(int argn, char **argv) {
     return 1;
   }
 
+
+
+
   // write the results.
-  arrA results = komo.getPath_qAll();
+  // arrA results = komo.getPath_qAll();
+
+  const int order_komo = 2;
+  arrA results = getPath_qAll_with_prefix(komo,order_komo); 
+
   std::ofstream out(out_file);
   out << "result:" << std::endl;
   if (car_order == ONE) {
     out << "  - states:" << std::endl;
-    for (auto &v : results) {
+    for (size_t t = order_komo; t < komo.T; ++t) {
+      auto&v = results(t);
       out << "      - [" << v(0) << "," << v(1) << ","
           << std::remainder(v(2), 2 * M_PI) << "]" << std::endl;
     }
     out << "    actions:" << std::endl;
-    for (size_t t = 1; t < komo.T; ++t) {
+    for (size_t t = order_komo; t < komo.T; ++t) {
       out << "      - [" << velocity(results, t, dt) << "," 
           << angularVelocity(results, t, dt) << "]"
           << std::endl;
     }
   } else if (car_order == TWO) {
     out << "  - states:" << std::endl;
-    for (size_t t = 0; t < komo.T; ++t)
+    for (size_t t = order_komo; t < komo.T; ++t)
     {
       const auto& v = results(t);
       out << "      - [" << v(0) << "," << v(1) << ","
@@ -430,7 +444,7 @@ int main(int argn, char **argv) {
           << "]" << std::endl;
     }
     out << "    actions:" << std::endl;
-    for (size_t t = 1; t < komo.T; ++t)
+    for (size_t t = order_komo; t < komo.T; ++t)
     {
       out << "      - [" << acceleration(results, t, dt) << "," 
           << angularAcceleration(results, t, dt) << "]"
