@@ -319,6 +319,7 @@ int main(int argn, char **argv) {
   }
 
   // I assume names robot0 and goal0 in the .g file
+  komo.addObjective({0., 0.}, FS_poseDiff, {"robot0", "start0"}, OT_eq, {1e2});
   komo.addObjective({1., 1.}, FS_poseDiff, {"robot0", "goal0"}, OT_eq, {1e2});
 
   // Note: if you want position constraints on the first variable.
@@ -447,6 +448,11 @@ int main(int argn, char **argv) {
   std::cout << "results: " << std::endl;
   std::cout << results << std::endl;
   std::cout << "(N,T): " << results.N << " " << komo.T << std::endl;
+
+
+  // write the results.
+  // arrA results = komo.getPath_qAll();
+
   std::ofstream out(out_file);
   out << "result:" << std::endl;
   if (car_order == ZERO) {
