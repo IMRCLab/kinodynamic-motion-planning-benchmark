@@ -307,6 +307,7 @@ int main(int argn, char **argv) {
   komo.add_qControlObjective({}, 2, .1);
   komo.add_qControlObjective({}, 1, .1);
   // I assume names robot0 and goal0 in the .g file
+  komo.addObjective({0., 0.}, FS_poseDiff, {"robot0", "start0"}, OT_eq, {1e2});
   komo.addObjective({1., 1.}, FS_poseDiff, {"robot0", "goal0"}, OT_eq, {1e2});
 
   // robot dynamics
@@ -430,14 +431,13 @@ int main(int argn, char **argv) {
   // write the results.
   // arrA results = komo.getPath_qAll();
 
-  const int order_komo = 2;
-  arrA results = getPath_qAll_with_prefix(komo,order_komo); 
+  arrA results = getPath_qAll_with_prefix(komo, komo.k_order);
 
   std::ofstream out(out_file);
   out << "result:" << std::endl;
   if (car_order == ZERO) {
     out << "  - states:" << std::endl;
-    for (size_t t = order_komo; t < komo.T; ++t) {
+    for (size_t t = komo.k_order; t < komo.T; ++t) {
       auto&v = results(t);
       out << "      - [" << v(0) << "," << v(1) << ","
           << std::remainder(v(2), 2 * M_PI) << "]" << std::endl;
@@ -445,20 +445,20 @@ int main(int argn, char **argv) {
   }
   else if (car_order == ONE) {
     out << "  - states:" << std::endl;
-    for (size_t t = order_komo; t < komo.T; ++t) {
+    for (size_t t = komo.k_order; t < komo.T; ++t) {
       auto&v = results(t);
       out << "      - [" << v(0) << "," << v(1) << ","
           << std::remainder(v(2), 2 * M_PI) << "]" << std::endl;
     }
     out << "    actions:" << std::endl;
-    for (size_t t = order_komo; t < komo.T; ++t) {
+    for (size_t t = komo.k_order; t < komo.T; ++t) {
       out << "      - [" << velocity(results, t, dt) << "," 
           << angularVelocity(results, t, dt) << "]"
           << std::endl;
     }
   } else if (car_order == TWO) {
     out << "  - states:" << std::endl;
-    for (size_t t = order_komo; t < komo.T; ++t)
+    for (size_t t = komo.k_order; t < komo.T; ++t)
     {
       const auto& v = results(t);
       out << "      - [" << v(0) << "," << v(1) << ","
@@ -467,7 +467,7 @@ int main(int argn, char **argv) {
           << "]" << std::endl;
     }
     out << "    actions:" << std::endl;
-    for (size_t t = order_komo; t < komo.T; ++t)
+    for (size_t t = komo.k_order; t < komo.T; ++t)
     {
       out << "      - [" << acceleration(results, t, dt) << "," 
           << angularAcceleration(results, t, dt) << "]"

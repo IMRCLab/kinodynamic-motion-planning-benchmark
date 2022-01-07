@@ -36,6 +36,16 @@ def check(filename_env: str, filename_result: str) -> bool:
 		return success
 
 	success = True
+	if states.shape[1] != len(robot.state_desc):
+		print("Wrong state dimension!")
+		success = False
+	if actions.shape[1] != len(robot.action_desc):
+		print("Wrong action dimension!")
+		success = False
+	if states.shape[0] != actions.shape[0] + 1:
+		print("number of actions not number of states - 1!")
+		success = False
+	
 	success &= check_array(states[0], x0, "start state")
 	success &= check_array(states[-1], xf, "end state")
 	# dynamics
