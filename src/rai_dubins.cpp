@@ -231,7 +231,7 @@ double angularAcceleration(const arrA &results, int t, double dt)
 
 arrA getPath_qAll_with_prefix(KOMO& komo, int order) {
   arrA q(komo.T+order);
-  for(int t=-order; t<int(komo.T); t++) q(t) = komo.getConfiguration_qAll(t);
+  for(int t=-order; t<int(komo.T); t++) q(t+order) = komo.getConfiguration_qAll(t);
   return q;
 }
 
@@ -295,19 +295,34 @@ int main(int argn, char **argv) {
     }
   }
 
-  std::cout << "waypoints" << std::endl;
+  std::cout << "Warning: we will skip the first waypoint" << std::endl;
+  std::cout << "waypoints are (including the first)" << std::endl;
   std::cout << waypoints << std::endl;
   // create optimization problem
   KOMO komo;
   komo.setModel(C, true);
+  int Nplus1 = waypoints.N;
+  int N = Nplus1 - 1;
   double dt = 0.1;
-  double duration_phase = waypoints.N * dt;
-  komo.setTiming(1, waypoints.N, duration_phase, 2);
+  double duration_phase = N * dt;
+  komo.setTiming(1,N, duration_phase, order);
 
-  komo.add_qControlObjective({}, 2, .1);
-  komo.add_qControlObjective({}, 1, .1);
+  if (order == 2)
+  {
+    komo.add_qControlObjective({}, 2, .1);
+    // NOTE: we could also add cost on the velocity
+  }
+
+  if (order==1)
+  {
+    komo.add_qControlObjective({}, 1, .1);
+  }
+
   // I assume names robot0 and goal0 in the .g file
   komo.addObjective({1., 1.}, FS_poseDiff, {"robot0", "goal0"}, OT_eq, {1e2});
+
+  // Note: if you want position constraints on the first variable.
+  // komo.addObjective({1./N, 1./N}, FS_poseDiff, {"robot0", "start0"}, OT_eq, {1e2});
 
   // robot dynamics
   komo.addObjective({}, make_shared<Dubins2>(), {"robot0"}, OT_eq, {1e1}, {0},
@@ -356,12 +371,15 @@ int main(int argn, char **argv) {
                       {0, 0, -max_wdot}, 2);
 
     // contraints: zero velocity start and end
-    komo.addObjective({0,0}, FS_qItself, {"robot0"}, OT_eq, {},{},1);
-    komo.addObjective({1,1}, FS_qItself, {"robot0"}, OT_eq, {},{},1);
+    // NOTE: {0,0} seems to be ok for velocity. 
+    // But why not {1/N,1/N},as in the position case?
+    // komo.addObjective({0,0}, FS_qItself, {"robot0"}, OT_eq, {10},{},1);
+    komo.addObjective({1./N,1./N}, FS_qItself, {"robot0"}, OT_eq, {10},{},1);
+    komo.addObjective({1,1}, FS_qItself, {"robot0"}, OT_eq, {10},{},1);
 
     // Regularization: go slow at beginning and end
-    komo.addObjective({0,.1}, FS_qItself, {"robot0"}, OT_sos, {},{},1);
-    komo.addObjective({.9,1}, FS_qItself, {"robot0"}, OT_sos, {},{},1);
+    // komo.addObjective({0,.1}, FS_qItself, {"robot0"}, OT_sos, {},{},1);
+    // komo.addObjective({.9,1}, FS_qItself, {"robot0"}, OT_sos, {},{},1);
   }
 
   for (auto &obs : obstacles) {
@@ -369,7 +387,7 @@ int main(int argn, char **argv) {
   }
 
   komo.run_prepare(0.1); // TODO: is this necessary?
-  komo.initWithWaypoints(waypoints, waypoints.N);
+  komo.initWithWaypoints(waypoints({1,-1}), N);
 
   bool report_before = true;
   if (report_before) {
@@ -424,20 +442,16 @@ int main(int argn, char **argv) {
     return 1;
   }
 
+  arrA results = getPath_qAll_with_prefix(komo,order); 
 
-
-
-  // write the results.
-  // arrA results = komo.getPath_qAll();
-
-  const int order_komo = 2;
-  arrA results = getPath_qAll_with_prefix(komo,order_komo); 
-
+  std::cout << "results: " << std::endl;
+  std::cout << results << std::endl;
+  std::cout << "(N,T): " << results.N << " " << komo.T << std::endl;
   std::ofstream out(out_file);
   out << "result:" << std::endl;
   if (car_order == ZERO) {
     out << "  - states:" << std::endl;
-    for (size_t t = order_komo; t < komo.T; ++t) {
+    for (size_t t = order - 1; t < komo.T; ++t) {
       auto&v = results(t);
       out << "      - [" << v(0) << "," << v(1) << ","
           << std::remainder(v(2), 2 * M_PI) << "]" << std::endl;
@@ -445,20 +459,20 @@ int main(int argn, char **argv) {
   }
   else if (car_order == ONE) {
     out << "  - states:" << std::endl;
-    for (size_t t = order_komo; t < komo.T; ++t) {
+    for (size_t t = order - 1; t < komo.T; ++t) {
       auto&v = results(t);
       out << "      - [" << v(0) << "," << v(1) << ","
           << std::remainder(v(2), 2 * M_PI) << "]" << std::endl;
     }
     out << "    actions:" << std::endl;
-    for (size_t t = order_komo; t < komo.T; ++t) {
+    for (size_t t = order; t < komo.T; ++t) {
       out << "      - [" << velocity(results, t, dt) << "," 
           << angularVelocity(results, t, dt) << "]"
           << std::endl;
     }
   } else if (car_order == TWO) {
     out << "  - states:" << std::endl;
-    for (size_t t = order_komo; t < komo.T; ++t)
+    for (size_t t = order-1; t < komo.T; ++t)
     {
       const auto& v = results(t);
       out << "      - [" << v(0) << "," << v(1) << ","
@@ -467,7 +481,7 @@ int main(int argn, char **argv) {
           << "]" << std::endl;
     }
     out << "    actions:" << std::endl;
-    for (size_t t = order_komo; t < komo.T; ++t)
+    for (size_t t = order; t < komo.T; ++t)
     {
       out << "      - [" << acceleration(results, t, dt) << "," 
           << angularAcceleration(results, t, dt) << "]"
