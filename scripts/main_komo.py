@@ -14,6 +14,15 @@ def run_komo(filename_env, filename_initial_guess, filename_result):
 
 	with tempfile.TemporaryDirectory() as tmpdirname:
 		p = Path(tmpdirname)
+
+		with open(filename_env) as f:
+			env = yaml.safe_load(f)
+		robot_type = env["robots"][0]["type"]
+		if "first_order" in robot_type:
+			order = 1
+		elif "second_order" in robot_type:
+			order = 2
+
 		# convert environment YAML -> g
 		filename_g = p / "env.g"
 		translate_g.write(filename_env, str(filename_g))
@@ -25,6 +34,7 @@ def run_komo(filename_env, filename_initial_guess, filename_result):
 				"-one_every", "1",
 				"-display", str(0),
 				"-animate", str(0),
+				"-order", str(order),
 				"-out", "\""+str(filename_result)+"\""])
 		if result.returncode != 0:
 			print("KOMO failed")
