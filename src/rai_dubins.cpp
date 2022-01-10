@@ -44,9 +44,13 @@ void Dubins2::phi2(arr &y, arr &J, const FrameL &F) {
 
   // feature is y
   y.resize(2);
-  y(0) = cos(theta) * velocity - v(0); // cos V - xdot = 0
-  y(1) = sin(theta) * velocity - v(1); // sin V - ydot = 0
+  double c_theta = cos(theta);
+  double s_theta = sin(theta);
 
+  y(0) = c_theta * velocity * sign(c_theta) * sign(v(0)) - v(0); // cos V - xdot = 0
+  y(1) = s_theta * velocity * sign(c_theta) * sign(v(0)) - v(1); // sin V - ydot = 0
+
+  // std::cout << p << " a " << velocity << "," << v(2) << " y " << y << std::endl;
   // compute Jacobian
   if (!!J) {
     double tol = 1e-6; // tolerance non differentiable point of sqrt()
@@ -55,14 +59,14 @@ void Dubins2::phi2(arr &y, arr &J, const FrameL &F) {
     Jl.setZero();
     if (velocity > tol) {
       // w.r.t theta
-      Jl(0, 2) = -std::sin(theta) * velocity;
-      Jl(1, 2) = std::cos(theta) * velocity;
+      Jl(0, 2) = -std::sin(theta) * velocity * sign(c_theta) * sign(v(0));
+      Jl(1, 2) = std::cos(theta) * velocity * sign(c_theta) * sign(v(0));
       // w.r.t vx
-      Jl(0, 3) = std::cos(theta) / velocity * v(0) - 1;
-      Jl(1, 3) = std::sin(theta) / velocity * v(0);
+      Jl(0, 3) = std::cos(theta) / velocity * v(0) * sign(c_theta) * sign(v(0)) - 1;
+      Jl(1, 3) = std::sin(theta) / velocity * v(0) * sign(c_theta) * sign(v(0));
       // w.r.t vy
-      Jl(0, 4) = std::cos(theta) / velocity * v(1);
-      Jl(1, 4) = std::sin(theta) / velocity * v(1) - 1;
+      Jl(0, 4) = std::cos(theta) / velocity * v(1) * sign(c_theta) * sign(v(0));
+      Jl(1, 4) = std::sin(theta) / velocity * v(1) * sign(c_theta) * sign(v(0)) - 1;
     } else {
       Jl(0, 2) = 0.0;
       Jl(1, 2) = 0.0;
@@ -394,7 +398,7 @@ int main(int argn, char **argv) {
     komo.addObjective({}, FS_distance, {"robot0", obs}, OT_ineq, {1e2});
   }
 
-  komo.run_prepare(0.1); // TODO: is this necessary?
+  komo.run_prepare(1.0); // TODO: is this necessary?
   komo.initWithWaypoints(waypoints({1,-1}), N);
 
   bool report_before = true;
@@ -411,8 +415,9 @@ int main(int argn, char **argv) {
       komo.view_play(true, 0.3);
     }
   }
+  // return 5;
 
-  bool check_gradients = false;
+  bool check_gradients = true;
   if (check_gradients) {
     std::cout << "checking gradients" << std::endl;
     // TODO: to avoid singular points, I shoud add noise before 
