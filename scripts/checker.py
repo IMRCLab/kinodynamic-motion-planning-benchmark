@@ -60,13 +60,13 @@ def check(filename_env: str, filename_result: str) -> bool:
 			success = False
 	# action limits
 	for t in range(T-1):
-		if (actions[t] > robot.max_u).any() or (actions[t] < robot.min_u).any():
+		if (actions[t] > robot.max_u + 1e-2).any() or (actions[t] < robot.min_u - 1e-2).any():
 			print("Action outside bounds at t={} ({})".format(t, actions[t]))
 			success = False
 	# collisions
 	for t in range(T):
 		dist, _, _ = cc.distance(states[t])
-		if dist < -1e-2:
+		if dist < -0.03: # allow up to 3cm violation
 			print("Collision at t={} ({})".format(t, dist))
 			success = False
 

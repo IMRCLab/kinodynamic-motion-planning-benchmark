@@ -305,6 +305,12 @@ int main(int argn, char **argv) {
   int N = Nplus1 - 1;
   std::cout << "Nplus1 " << Nplus1 << std::endl;
   std::cout << "N " << N << std::endl;
+
+  if (N==0) {
+    return 1;
+  }
+
+
   double dt = 0.1;
   double duration_phase = N * dt;
   komo.setTiming(1,N, duration_phase, order);
@@ -321,7 +327,6 @@ int main(int argn, char **argv) {
   }
 
   // I assume names robot0 and goal0 in the .g file
-  komo.addObjective({0., 0.}, FS_poseDiff, {"robot0", "start0"}, OT_eq, {1e2});
   komo.addObjective({1., 1.}, FS_poseDiff, {"robot0", "goal0"}, OT_eq, {1e2});
 
   // Note: if you want position constraints on the first variable.
@@ -440,21 +445,18 @@ int main(int argn, char **argv) {
     // komo.view_play(false, .3, "z.vid/");
   }
 
-  if (ineq > 0.01 || eq > 0.01) {
-    // Optimization failed (constraint violations)
-    return 1;
-  }
-
   arrA results = getPath_qAll_with_prefix(komo,order); 
 
   std::cout << "results: " << std::endl;
   std::cout << results << std::endl;
   std::cout << "(N,T): " << results.N << " " << komo.T << std::endl;
 
+  if (ineq > 0.01 || eq > 0.01) {
+    // Optimization failed (constraint violations)
+    return 1;
+  }
 
   // write the results.
-  // arrA results = komo.getPath_qAll();
-
   std::ofstream out(out_file);
   out << "result:" << std::endl;
   if (car_order == ZERO) {
