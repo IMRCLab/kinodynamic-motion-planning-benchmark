@@ -31,10 +31,19 @@ def test_car_first_order_0_bugtrap_0():
                "tmp.yaml")
 
 
-# def test_car_second_order_0():
-#     _run_check("../benchmark/carSecondOrder/parallelpark_0.yaml",
-#                "../benchmark/carSecondOrder/initGuess/result_dbastar_parallelpark.yaml",
-#                "tmp.yaml")
+def test_car_second_order_0_parallelpark_0():
+    _run_check("../benchmark/carSecondOrder/parallelpark_0.yaml",
+               "../test/carSecondOrder/guess_parallelpark_0_sol0.yaml",
+               "tmp.yaml")
 
 
+def test_car_second_order_0_kink_0():
+    _run_check("../benchmark/carSecondOrder/kink_0.yaml",
+               "../test/carSecondOrder/guess_kink_0_sol0.yaml",
+               "tmp.yaml")
 
+
+def test_car_second_order_0_bugtrap_0():
+    _run_check("../benchmark/carSecondOrder/bugtrap_0.yaml",
+               "../test/carSecondOrder/guess_bugtrap_0_sol0.yaml",
+               "tmp.yaml")

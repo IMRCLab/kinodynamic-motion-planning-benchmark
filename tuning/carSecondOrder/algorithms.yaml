@@ -2,8 +2,8 @@ sst:
   default:
     goal_epsilon: 0.1
     goal_bias: 0.05
-    selection_radius: 0.2
-    pruning_radius: 0.1
+    selection_radius: 0.2 # delta_BN in paper
+    pruning_radius: 0.1  # delta_s in paper
     propagation_step_size: 0.1 #s
     control_duration: [1, 10] # multiples of step size
   parallelpark_0:
@@ -11,11 +11,15 @@ sst:
 
 dbAstar-komo:
   default:
-    dummy: 0
+    add_primitives_per_iteration: 100
+    desired_branching_factor: 16
+    suboptimality_bound: 1.0
 
 dbAstar-scp:
   default:
-    dummy: 0
+    add_primitives_per_iteration: 100
+    desired_branching_factor: 16
+    suboptimality_bound: 1.0
 
 sbpl:
   default:
