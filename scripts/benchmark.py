@@ -13,6 +13,7 @@ from dataclasses import dataclass
 import multiprocessing as mp
 import tqdm
 import psutil
+import checker
 
 
 @dataclass
@@ -69,23 +70,32 @@ def execute_task(task: ExecutionTask):
 	if task.alg == "sst":
 		run_ompl(str(env), str(result_folder), task.timelimit, mycfg)
 		visualize_files = ["result_ompl.yaml", "result_scp.yaml"]
+		check_files = ["result_ompl.yaml", "result_scp.yaml"]
 	elif task.alg == "sbpl":
 		run_sbpl(str(env), str(result_folder))
 		visualize_files = ["result_sbpl.yaml", "result_scp.yaml"]
+		check_files = ["result_sbpl.yaml", "result_scp.yaml"]
 	elif task.alg == "dbAstar-komo":
-		run_dbastar(str(env), str(result_folder), task.timelimit, "komo")
+		run_dbastar(str(env), str(result_folder), task.timelimit, mycfg, "komo")
 		visualize_files = [p.name for p in result_folder.glob('result_*')]
+		check_files = [p.name for p in result_folder.glob('result_opt*')]
 	elif task.alg == "dbAstar-scp":
-		run_dbastar(str(env), str(result_folder), task.timelimit, "scp")
+		run_dbastar(str(env), str(result_folder), task.timelimit, mycfg, "scp")
 		visualize_files = [p.name for p in result_folder.glob('result_*')]
+		check_files = [p.name for p in result_folder.glob('result_opt*')]
 	elif task.alg == "komo":
 		run_komo_standalone(str(env), str(result_folder), task.timelimit, mycfg)
 		visualize_files = [p.name for p in result_folder.glob('result_*')]
+		check_files = [p.name for p in result_folder.glob('result_komo*')]
 	elif task.alg == "scp":
 		run_scp_standalone(str(env), str(result_folder), task.timelimit, mycfg)
 		visualize_files = [p.name for p in result_folder.glob('result_*')]
+		check_files = [p.name for p in result_folder.glob('result_*')]
 	else:
 		raise Exception("Unknown algorithms {}".format(task.alg))
+
+	for file in check_files:
+		print("CHECK: ", checker.check(str(env), str(result_folder / file)))
 
 	vis_script = (benchmark_path / task.instance).parent / "visualize.py"
 	for file in visualize_files:
@@ -94,32 +104,27 @@ def execute_task(task: ExecutionTask):
 
 
 def main():
-	parallel = False
-	# instances = ["carFirstOrder/bugtrap_0", "carFirstOrder/kink_0", "carFirstOrder/parallelpark_0"]
-	# algs = ["sst", "sbpl",  "dbAstar-komo", "dbAstar-scp"]
-	# trials = 5
+	parallel = True
+	instances = [
+		"carFirstOrder/bugtrap_0",
+		"carFirstOrder/kink_0",
+		"carFirstOrder/parallelpark_0",
+		# "carSecondOrder/parallelpark_0",
+		# "carSecondOrder/kink_0",
+		# "carSecondOrder/bugtrap_0",
+		# "carFirstOrderWithTrailers/parallelpark_0",
+		# "quadrotor/empty_0",
+	]
+	algs = [
+		# "sst",
+		# "sbpl",
+		# "komo",
+		"dbAstar-komo",
+		"dbAstar-scp",
+	]
+	trials = 5
 	# timelimit = 5 * 60
-
-	# # instances = ["carFirstOrder/bugtrap_0"]
-	# instances = ["carFirstOrder/bugtrap_0", "carFirstOrder/kink_0", "carFirstOrder/parallelpark_0"]
-	# algs = ["dbAstar-komo", "dbAstar-scp"]
-	# trials = 5
-	# timelimit = 5 * 60
-
-	# instances = ["carSecondOrder/parallelpark_0", "carSecondOrder/kink_0", "carSecondOrder/bugtrap_0"]
-	# algs = ["komo"]
-	# trials = 5
-	# timelimit = 5 * 60
-
-	# instances = ["carFirstOrderWithTrailers/parallelpark_0"]
-	# algs = ["dbAstar-scp"]
-	# trials = 5
-	# timelimit = 5 * 60
-
-	instances = ["carFirstOrder/parallelpark_0"]
-	algs = ["sst"]
-	trials = 1
-	timelimit = 10
+	timelimit = 5 * 60
 
 	tasks = []
 	for instance in instances:
@@ -127,7 +132,7 @@ def main():
 			for trial in range(trials):
 				tasks.append(ExecutionTask(instance, alg, trial, timelimit))
 
-	if parallel:
+	if parallel and len(tasks) > 1:
 		use_cpus = psutil.cpu_count(logical=False)-1
 		print("Using {} CPUs".format(use_cpus))
 		with mp.Pool(use_cpus) as p:

@@ -210,13 +210,15 @@ int main(int argc, char* argv[]) {
   std::string inputFile;
   std::string motionsFile;
   float delta;
+  float epsilon;
   float maxCost;
   std::string outputFile;
   desc.add_options()
     ("help", "produce help message")
     ("input,i", po::value<std::string>(&inputFile)->required(), "input file (yaml)")
     ("motions,m", po::value<std::string>(&motionsFile)->required(), "motions file (yaml)")
-    ("delta", po::value<float>(&delta)->default_value(0.01), "discontinuity bound")
+    ("delta", po::value<float>(&delta)->default_value(0.01), "discontinuity bound (negative to auto-compute with given k)")
+    ("epsilon", po::value<float>(&epsilon)->default_value(1.0), "suboptimality bound")
     ("maxCost", po::value<float>(&maxCost)->default_value(std::numeric_limits<float>::infinity()), "cost bound")
     ("output,o", po::value<std::string>(&outputFile)->required(), "output file (yaml)");
 
@@ -333,12 +335,12 @@ int main(int argc, char* argv[]) {
 
 
   //////////////////////////
-  if (true) {
+  if (delta < 0) {
     Motion fakeMotion;
     fakeMotion.idx = -1;
     fakeMotion.states.push_back(si->allocState());
     std::vector<Motion *> neighbors_m;
-    size_t num_desired_neighbors = 16;
+    size_t num_desired_neighbors = (size_t)-delta;
     size_t num_samples = 100;
 
     auto state_sampler = si->allocStateSampler();
@@ -353,12 +355,10 @@ int main(int argc, char* argv[]) {
       sum_delta += max_delta;
     }
     float adjusted_delta = (sum_delta / num_samples) * 2;
-    std::cout << "Adjusting delta to: " << adjusted_delta << " from " << delta << std::endl;
+    std::cout << "Automatically adjusting delta to: " << adjusted_delta << std::endl;
     delta = adjusted_delta;
 
   }
-
-  ////////////////////
 
   // db-A* search
   open_t open;
@@ -379,7 +379,7 @@ int main(int argc, char* argv[]) {
   auto start_node = new AStarNode();
   start_node->state = startState;
   start_node->gScore = 0;
-  start_node->fScore = heuristic(robot, startState, goalState);
+  start_node->fScore = epsilon * heuristic(robot, startState, goalState);
   start_node->came_from = nullptr;
   start_node->used_offset = fcl::Vector3f(0,0,0);
   start_node->used_motion = -1;
@@ -401,9 +401,17 @@ int main(int argc, char* argv[]) {
   std::vector<AStarNode*> neighbors_n;
 
   float last_f_score = start_node->fScore;
-
+  size_t expands = 0;
   while (!open.empty())
   {
+    ++expands;
+    if (expands % 1000 == 0) {
+      std::cout << "expanded: " << expands << " open: " << open.size() << " nodes: " << T_n->size() << std::endl;
+    }
+    // if (expands > 100000) {
+      // break;
+    // }
+
     AStarNode* current = open.top();
     // std::cout << "fs " << current->fScore << " " << last_f_score << " " << current << std::endl;
     assert(current->fScore >= last_f_score);
@@ -425,6 +433,8 @@ int main(int argc, char* argv[]) {
       std::reverse(result.begin(), result.end());
 
       std::ofstream out(outputFile);
+      out << "delta: " << delta << std::endl;
+      out << "epsilon: " << epsilon << std::endl;
       out << "result:" << std::endl;
       out << "  - states:" << std::endl;
       for (size_t i = 0; i < result.size() - 1; ++i)
@@ -489,6 +499,32 @@ int main(int argc, char* argv[]) {
         out << "      " << motions[kv.first].name << ": " << kv.second << std::endl;
       }
 
+      // {
+      //   T_n->list(neighbors_n);
+      //   std::ofstream out("states.txt");
+      //   for (AStarNode* entry : neighbors_n) {
+      //     std::vector<double> reals;
+      //     si->getStateSpace()->copyToReals(reals, entry->state);
+      //     for (size_t d = 0; d < reals.size(); ++d) {
+      //       out << reals[d];
+      //       if (d < reals.size() - 1) {
+      //         out << ",";
+      //       }
+      //     }
+      //     out << "\n";
+
+      //     std::vector<AStarNode*> nbhs;
+      //     T_n->nearestK(entry, 2, nbhs);
+      //     if (nbhs.size() > 1) {
+      //       float dist = si->distance(entry->state, nbhs.back()->state);
+      //       if (dist < delta / 2)
+      //       {
+      //         std::cout << "error?" << dist << " " << entry << " " << nbhs.back() << std::endl;
+      //       }
+      //     }
+      //   }
+      // }
+
       return 0;
       break;
     }
@@ -506,6 +542,10 @@ int main(int argc, char* argv[]) {
     // std::cout << "found " << neighbors_m.size() << " motions" << std::endl;
     // Loop over all potential applicable motions
     for (const Motion* motion : neighbors_m) {
+
+#if 0
+      fcl::Vector3f computed_offset(0, 0, 0);
+#else
       float motion_dist = si->distance(fakeMotion.states[0], motion->states[0]);
       float translation_slack = delta/2 - motion_dist;
       assert(translation_slack >= 0);
@@ -532,6 +572,7 @@ int main(int argc, char* argv[]) {
         std::cout << si->distance(tmpState, current->state)  << std::endl;
       }
       #endif
+#endif
 
       // compute estimated cost
       float tentative_gScore = current->gScore + motion->cost;
@@ -542,7 +583,7 @@ int main(int argc, char* argv[]) {
       const auto relative_pos = robot->getTransform(tmpState).translation();
       robot->setPosition(tmpState, offset + relative_pos);
       // compute estimated fscore
-      float tentative_hScore = heuristic(robot, tmpState, goalState);
+      float tentative_hScore = epsilon * heuristic(robot, tmpState, goalState);
       float tentative_fScore = tentative_gScore + tentative_hScore;
 
       // skip motions that would exceed cost bound
@@ -625,6 +666,11 @@ int main(int argc, char* argv[]) {
             if (entry->is_in_open) {
               open.increase(entry->handle);
               // std::cout << "improve score " << entry->fScore << std::endl;
+            } else {
+              // TODO: is this correct?
+              auto handle = open.push(entry);
+              entry->handle = handle;
+              entry->is_in_open = true;
             }
           }
         }

@@ -94,9 +94,12 @@ def compute_motion_importance(filename_env, filename_motions, filename_result_db
 			motions_stats[name] += np.clip(1 - old_cost / new_cost, 0, 1)
 	return motions_stats
 
-def run_dbastar(filename_env, folder, timelimit, opt_alg="scp", motions_stats=None):
+def run_dbastar(filename_env, folder, timelimit, cfg, opt_alg="scp", motions_stats=None):
+	print(cfg)
 
-	add_prims = 1000
+	add_prims = cfg["add_primitives_per_iteration"]
+	desired_branching_factor = cfg["desired_branching_factor"]
+	epsilon = cfg["suboptimality_bound"]
 
 	with tempfile.TemporaryDirectory() as tmpdirname:
 		p = Path(tmpdirname)
@@ -116,7 +119,7 @@ def run_dbastar(filename_env, folder, timelimit, opt_alg="scp", motions_stats=No
 		x0 = np.array(robot_node["start"])
 		xf = np.array(robot_node["goal"])
 
-		delta = rh.distance(x0, xf) * 0.9
+		# delta = rh.distance(x0, xf) * 0.9
 		maxCost = 1e6
 
 
@@ -138,14 +141,14 @@ def run_dbastar(filename_env, folder, timelimit, opt_alg="scp", motions_stats=No
 		# 	print("Adjusting delta!", delta, median)
 		# 	delta = median
 
-		initialDelta = delta
+		# initialDelta = delta
 
 		start = time.time()
 
 		with open(filename_stats, 'w') as stats:
 			stats.write("stats:\n")
 			while time.time() - start < timelimit:
-				print("delta", delta, "maxCost", maxCost)
+				print("maxCost", maxCost)
 
 				filename_result_dbastar = p / "result_dbastar.yaml"
 				filename_result_opt = p / "result_opt.yaml"
@@ -157,7 +160,8 @@ def run_dbastar(filename_env, folder, timelimit, opt_alg="scp", motions_stats=No
 					"-i", filename_env,
 					"-m", filename_motions,
 					"-o", filename_result_dbastar,
-					"--delta", str(delta),
+					"--delta", str(-desired_branching_factor),
+					"--epsilon", str(epsilon),
 					"--maxCost", str(maxCost)])
 				if result.returncode != 0:
 					# print("dbA* failed; Generating more primitives")
@@ -186,7 +190,7 @@ def run_dbastar(filename_env, folder, timelimit, opt_alg="scp", motions_stats=No
 
 				else:
 					delta_achieved = checker.compute_delta(filename_env, filename_result_dbastar)
-					print("DELTA CHECK", delta_achieved, delta)
+					print("DELTA CHECK", delta_achieved)
 					# assert(delta_achieved <= delta)
 
 					if opt_alg == "scp":
@@ -218,8 +222,8 @@ def run_dbastar(filename_env, folder, timelimit, opt_alg="scp", motions_stats=No
 
 					else:
 						# # ONLY FOR MOTION PRIMITIVE SELECTION
-						if motions_stats is not None:
-							compute_motion_importance(filename_env, filename_motions, filename_result_dbastar, delta, maxCost, motions_stats)
+						# if motions_stats is not None:
+							# compute_motion_importance(filename_env, filename_motions, filename_result_dbastar, delta, maxCost, motions_stats)
 						with open(filename_result_dbastar) as f:
 							result = yaml.safe_load(f)
 							cost = len(result["result"][0]["actions"]) / 10
