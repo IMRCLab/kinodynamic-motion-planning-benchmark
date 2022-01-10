@@ -206,7 +206,10 @@ double velocity(const arrA& results, int t, double dt)
   double distance =
       std::sqrt(delta(0) * delta(0) + delta(1) * delta(1)); // velocity
   double velocity = distance / dt;                          // m/s
-  return velocity;
+
+  double theta = results(t)(2);
+  double c_theta = cos(theta);
+  return velocity * sign(c_theta) * sign(delta(0));
 }
 
 double acceleration(const arrA &results, int t, double dt)
@@ -398,7 +401,8 @@ int main(int argn, char **argv) {
     komo.addObjective({}, FS_distance, {"robot0", obs}, OT_ineq, {1e2});
   }
 
-  komo.run_prepare(1.0); // TODO: is this necessary?
+  komo.run_prepare(0.1); // TODO: is this necessary?
+  // komo.checkGradients();
   komo.initWithWaypoints(waypoints({1,-1}), N);
 
   bool report_before = true;
@@ -417,7 +421,7 @@ int main(int argn, char **argv) {
   }
   // return 5;
 
-  bool check_gradients = true;
+  bool check_gradients = false;
   if (check_gradients) {
     std::cout << "checking gradients" << std::endl;
     // TODO: to avoid singular points, I shoud add noise before 
