@@ -29,6 +29,8 @@ struct Dubins2 : Feature {
 
 void Dubins2::phi2(arr &y, arr &J, const FrameL &F) {
 
+  const double tol = 1e-4; // tolerance to avoid division by zero
+
   // implementation only for rai::JT_transXYPhi!
   for (auto &f : F) {
     assert(f->joint->type == rai::JT_transXYPhi);
@@ -40,43 +42,49 @@ void Dubins2::phi2(arr &y, arr &J, const FrameL &F) {
   F_qItself().setOrder(0).eval(p, Jp, F[1].reshape(1, -1));
   F_qItself().setOrder(1).eval(v, Jv, F);
   double theta = p(2);
-  double velocity = std::sqrt(v(0) * v(0) + v(1) * v(1)); // velocity
+
+  double c_theta = cos(theta);
+  double s_theta = sin(theta);
+  double speed;
+  int mode;
+  if (fabs(c_theta) > tol) {
+    mode = 1;
+    speed = v(0) / c_theta;
+  } else {
+    mode = 2;
+    speed = v(1) / s_theta;
+  }
 
   // feature is y
   y.resize(2);
-  double c_theta = cos(theta);
-  double s_theta = sin(theta);
+  y(0) = c_theta * speed - v(0); // cos V - xdot = 0
+  y(1) = s_theta * speed - v(1); // sin V - ydot = 0
 
-  y(0) = c_theta * velocity * sign(c_theta) * sign(v(0)) - v(0); // cos V - xdot = 0
-  y(1) = s_theta * velocity * sign(c_theta) * sign(v(0)) - v(1); // sin V - ydot = 0
-
-  // std::cout << p << " a " << velocity << "," << v(2) << " y " << y << std::endl;
   // compute Jacobian
   if (!!J) {
-    double tol = 1e-6; // tolerance non differentiable point of sqrt()
     arr Jl;
     Jl.resize(2, 6); // ROWS = 2 equations ; COLUMNS= 3 position * 3 velocities
     Jl.setZero();
-    if (velocity > tol) {
+    if (mode == 1) {
       // w.r.t theta
-      Jl(0, 2) = -std::sin(theta) * velocity * sign(c_theta) * sign(v(0));
-      Jl(1, 2) = std::cos(theta) * velocity * sign(c_theta) * sign(v(0));
+      Jl(0, 2) = 0;
+      Jl(1, 2) = v(0) * 1 / c_theta * 1 / c_theta;
       // w.r.t vx
-      Jl(0, 3) = std::cos(theta) / velocity * v(0) * sign(c_theta) * sign(v(0)) - 1;
-      Jl(1, 3) = std::sin(theta) / velocity * v(0) * sign(c_theta) * sign(v(0));
+      Jl(0, 3) = 0;
+      Jl(1, 3) = s_theta / c_theta;
       // w.r.t vy
-      Jl(0, 4) = std::cos(theta) / velocity * v(1) * sign(c_theta) * sign(v(0));
-      Jl(1, 4) = std::sin(theta) / velocity * v(1) * sign(c_theta) * sign(v(0)) - 1;
-    } else {
-      Jl(0, 2) = 0.0;
-      Jl(1, 2) = 0.0;
-
-      // in non differentiable point, I take gradient of v > 0
-      Jl(0, 3) = std::cos(theta) - 1;
-      Jl(1, 3) = std::sin(theta);
-
-      Jl(0, 4) = std::cos(theta);
-      Jl(1, 4) = std::sin(theta) - 1;
+      Jl(0, 4) = 0;
+      Jl(1, 4) = -1;
+    } else if (mode == 2) {
+      // w.r.t theta
+      Jl(0, 2) = -v(1) * 1 / s_theta * 1 / s_theta;
+      Jl(1, 2) = 0;
+      // w.r.t vx
+      Jl(0, 3) = -1;
+      Jl(1, 3) = 0;
+      // w.r.t vy
+      Jl(0, 4) = c_theta / s_theta;
+      Jl(1, 4) = 0;
     }
 
     arr JBlock;
@@ -89,6 +97,8 @@ struct CarFirstOrderVelocity : Feature {
   uint dim_phi2(const FrameL &) { return 1; }
 
   void phi2(arr &y, arr &J, const FrameL &F) {
+    const double tol = 1e-4; // tolerance to avoid division by zero
+
     // implementation only for rai::JT_transXYPhi!
     for (auto &f : F) {
       assert(f->joint->type == rai::JT_transXYPhi);
@@ -99,27 +109,44 @@ struct CarFirstOrderVelocity : Feature {
     arr p, v, Jp, Jv;
     F_qItself().setOrder(0).eval(p, Jp, F[1].reshape(1, -1));
     F_qItself().setOrder(1).eval(v, Jv, F);
-    double velocity = std::sqrt(v(0) * v(0) + v(1) * v(1)); // velocity
+
+    double theta = p(2);
+    double c_theta = cos(theta);
+    double s_theta = sin(theta);
+    double speed;
+    int mode;
+    if (fabs(c_theta) > tol) {
+      mode = 1;
+      speed = v(0) / c_theta;
+    } else {
+      mode = 2;
+      speed = v(1) / s_theta;
+    }
 
     // feature is y
     y.resize(1);
-    y(0) = velocity;
+    y(0) = speed;
 
     // compute Jacobian
     if (!!J) {
-      double tol = 1e-6; // tolerance non differentiable point of sqrt()
       arr Jl;
       // ROWS = 1 equations ; COLUMNS= 3 position + 3 velocities
       Jl.resize(1, 6);
       Jl.setZero();
-      if (velocity > tol) {
+      if (mode == 1) {
+        // w.r.t theta
+        Jl(0, 2) = v(0) * s_theta / (c_theta * c_theta);
         // w.r.t vx
-        Jl(0, 3) = v(0) / velocity;
+        Jl(0, 3) = 1 / c_theta;
         // w.r.t vy
-        Jl(0, 4) = v(1) / velocity;
-      } else {
-        Jl(0, 3) = 1;
-        Jl(0, 4) = 1;
+        Jl(0, 4) = 0;
+      } else if (mode == 2) {
+        // w.r.t theta
+        Jl(0, 2) = -v(1) * c_theta / (s_theta * s_theta);
+        // w.r.t vx
+        Jl(0, 3) = 0;
+        // w.r.t vy
+        Jl(0, 4) = 1 / s_theta;
       }
       arr JBlock;
       JBlock.setBlockMatrix(Jp, Jv);
@@ -202,14 +229,22 @@ arrA load_waypoints(const char *filename) {
 
 double velocity(const arrA& results, int t, double dt)
 {
-  arr delta = results(t) - results(t - 1);
-  double distance =
-      std::sqrt(delta(0) * delta(0) + delta(1) * delta(1)); // velocity
-  double velocity = distance / dt;                          // m/s
+  const double tol = 1e-4; // tolerance to avoid division by zero
 
+  arr v = results(t) - results(t-1);
   double theta = results(t)(2);
+
   double c_theta = cos(theta);
-  return velocity * sign(c_theta) * sign(delta(0));
+  double s_theta = sin(theta);
+  double speed;
+  
+  if (fabs(c_theta) > tol) {
+    speed = v(0) / c_theta;
+  } else {
+    speed = v(1) / s_theta;
+  }
+
+  return speed / dt;
 }
 
 double acceleration(const arrA &results, int t, double dt)
