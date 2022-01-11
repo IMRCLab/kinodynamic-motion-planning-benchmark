@@ -10,7 +10,7 @@ import time
 import robots
 import translate_g
 
-def run_komo(filename_env, filename_initial_guess, filename_result):
+def run_komo(filename_env, filename_initial_guess, filename_result, cfg = ""):
 
 	with tempfile.TemporaryDirectory() as tmpdirname:
 		p = Path(tmpdirname)
@@ -27,6 +27,11 @@ def run_komo(filename_env, filename_initial_guess, filename_result):
 		filename_g = p / "env.g"
 		translate_g.write(filename_env, str(filename_g))
 
+		# write config file
+		filename_cfg = p / "rai.cfg"
+		with open(filename_cfg, 'w') as f:
+			f.write(cfg)
+
 		while True:
 			# Run KOMO
 			result = subprocess.run(["./rai_dubins",
@@ -36,6 +41,7 @@ def run_komo(filename_env, filename_initial_guess, filename_result):
 					"-display", str(0),
 					"-animate", str(0),
 					"-order", str(order),
+					"-cfg", "\""+str(filename_cfg)+"\"",
 					"-out", "\""+str(filename_result)+"\""])
 			# a negative returncode indicates an internal error -> repeat
 			if result.returncode >= 0:
@@ -47,7 +53,7 @@ def run_komo(filename_env, filename_initial_guess, filename_result):
 			return True
 
 
-def run_komo_standalone(filename_env, folder, timelimit, cfg):
+def run_komo_standalone(filename_env, folder, timelimit, cfg = ""):
 
 	# search = "linear"
 	search = "binarySearch"
@@ -68,6 +74,11 @@ def run_komo_standalone(filename_env, folder, timelimit, cfg):
 		# convert environment YAML -> g
 		filename_g = p / "env.g"
 		translate_g.write(filename_env, str(filename_g))
+
+		# write config file
+		filename_cfg = p / "rai.cfg"
+		with open(filename_cfg, 'w') as f:
+			f.write(cfg)
 
 		# compute initial guess via OMPL
 		filename_initial_guess = "{}/result_ompl.yaml".format(folder)
@@ -136,6 +147,7 @@ def run_komo_standalone(filename_env, folder, timelimit, cfg):
 									"-display", str(0),
 									"-animate", str(0),
 									"-order", str(order),
+									"-cfg", "\"" + str(filename_cfg)+"\"",
 									"-out", "\""+str(filename_temp_result)+"\""])#,
 									# stdout=subprocess.DEVNULL)
 					# a negative returncode indicates an internal error -> repeat

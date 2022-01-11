@@ -32,7 +32,7 @@ def check(filename_env: str, filename_result: str) -> bool:
 	def check_array(a, b, msg):
 		success = np.allclose(a, b, rtol=0.01, atol=1e-3)
 		if not success:
-			print(msg, a, b)
+			print("{} Is: {} Should: {} Delta: {}".format(msg, a, b, a-b))
 		return success
 
 	success = True
