@@ -9,7 +9,7 @@ from motionplanningutils import CollisionChecker, RobotHelper
 import robots
 
 
-def check(filename_env: str, filename_result: str) -> bool:
+def check(filename_env: str, filename_result: str, file = None) -> bool:
 
 	with open(filename_env) as f:
 		env = yaml.safe_load(f)
@@ -32,18 +32,18 @@ def check(filename_env: str, filename_result: str) -> bool:
 	def check_array(a, b, msg):
 		success = np.allclose(a, b, rtol=0.01, atol=1e-3)
 		if not success:
-			print("{} Is: {} Should: {} Delta: {}".format(msg, a, b, a-b))
+			print("{} Is: {} Should: {} Delta: {}".format(msg, a, b, a-b), file=file)
 		return success
 
 	success = True
 	if states.shape[1] != len(robot.state_desc):
-		print("Wrong state dimension!")
+		print("Wrong state dimension!", file=file)
 		success = False
 	if actions.shape[1] != len(robot.action_desc):
-		print("Wrong action dimension!")
+		print("Wrong action dimension!", file=file)
 		success = False
 	if states.shape[0] != actions.shape[0] + 1:
-		print("number of actions not number of states - 1!")
+		print("number of actions not number of states - 1!", file=file)
 		success = False
 	
 	success &= check_array(states[0], x0, "start state")
@@ -56,18 +56,18 @@ def check(filename_env: str, filename_result: str) -> bool:
 	# state limits
 	for t in range(T):
 		if (states[t] > robot.max_x).any() or (states[t] < robot.min_x).any():
-			print("State outside bounds at t={} ({})".format(t, states[t]))
+			print("State outside bounds at t={} ({})".format(t, states[t]), file=file)
 			success = False
 	# action limits
 	for t in range(T-1):
 		if (actions[t] > robot.max_u + 1e-2).any() or (actions[t] < robot.min_u - 1e-2).any():
-			print("Action outside bounds at t={} ({})".format(t, actions[t]))
+			print("Action outside bounds at t={} ({})".format(t, actions[t]), file=file)
 			success = False
 	# collisions
 	for t in range(T):
 		dist, _, _ = cc.distance(states[t])
 		if dist < -0.03: # allow up to 3cm violation
-			print("Collision at t={} ({})".format(t, dist))
+			print("Collision at t={} ({})".format(t, dist), file=file)
 			success = False
 
 	return success

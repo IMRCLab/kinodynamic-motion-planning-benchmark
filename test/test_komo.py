@@ -13,7 +13,7 @@ def _run_check(filename_env: str, filename_guess: str, filename_result: str):
     result = checker.check(filename_env, filename_result)
     assert result == True
 
-def test_car_first_order_0():
+def test_car_first_order_parallelpark_0():
     _run_check("../benchmark/carFirstOrder/parallelpark_0.yaml",
              "../test/carFirstOrder/guess_parallelpark_0_sol0.yaml",
              "tmp.yaml")

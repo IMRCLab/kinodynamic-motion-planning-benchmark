@@ -84,7 +84,7 @@ def execute_task(task: ExecutionTask):
 		visualize_files = [p.name for p in result_folder.glob('result_*')]
 		check_files = [p.name for p in result_folder.glob('result_opt*')]
 	elif task.alg == "komo":
-		run_komo_standalone(str(env), str(result_folder), task.timelimit, mycfg)
+		run_komo_standalone(str(env), str(result_folder), task.timelimit, mycfg["rai_cfg"])
 		visualize_files = [p.name for p in result_folder.glob('result_*')]
 		check_files = [p.name for p in result_folder.glob('result_komo*')]
 	elif task.alg == "scp":
@@ -94,8 +94,9 @@ def execute_task(task: ExecutionTask):
 	else:
 		raise Exception("Unknown algorithms {}".format(task.alg))
 
-	for file in check_files:
-		print("CHECK: ", checker.check(str(env), str(result_folder / file)))
+	for in_f in check_files:
+		with open((result_folder / in_f).with_suffix(".txt"), 'w') as out_f:
+			print("CHECK: ", checker.check(str(env), str(result_folder / in_f), out_f))
 
 	vis_script = (benchmark_path / task.instance).parent / "visualize.py"
 	for file in visualize_files:
@@ -106,9 +107,9 @@ def execute_task(task: ExecutionTask):
 def main():
 	parallel = True
 	instances = [
-		"carFirstOrder/bugtrap_0",
+		# "carFirstOrder/parallelpark_0",
 		"carFirstOrder/kink_0",
-		"carFirstOrder/parallelpark_0",
+		# "carFirstOrder/bugtrap_0",
 		# "carSecondOrder/parallelpark_0",
 		# "carSecondOrder/kink_0",
 		# "carSecondOrder/bugtrap_0",
@@ -118,11 +119,11 @@ def main():
 	algs = [
 		# "sst",
 		# "sbpl",
-		# "komo",
-		"dbAstar-komo",
-		"dbAstar-scp",
+		"komo",
+		# "dbAstar-komo",
+		# "dbAstar-scp",
 	]
-	trials = 5
+	trials = 1
 	# timelimit = 5 * 60
 	timelimit = 5 * 60
 
