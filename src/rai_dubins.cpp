@@ -29,7 +29,7 @@ struct Dubins2 : Feature {
 
 void Dubins2::phi2(arr &y, arr &J, const FrameL &F) {
 
-  const double tol = 1e-4; // tolerance to avoid division by zero
+  const double tol = 0.5; // tolerance to avoid division by zero
 
   // implementation only for rai::JT_transXYPhi!
   for (auto &f : F) {
@@ -97,7 +97,7 @@ struct CarFirstOrderVelocity : Feature {
   uint dim_phi2(const FrameL &) { return 1; }
 
   void phi2(arr &y, arr &J, const FrameL &F) {
-    const double tol = 1e-4; // tolerance to avoid division by zero
+    const double tol = 0.5; // tolerance to avoid division by zero
 
     // implementation only for rai::JT_transXYPhi!
     for (auto &f : F) {
@@ -175,7 +175,7 @@ struct CarSecondOrderAcceleration : Feature {
     F_qItself().setOrder(0).eval(pprev, Jpprev, F[1].reshape(1, -1));
     F_qItself().setOrder(1).eval(vprev, Jvprev, F({0, 1}));
 
-    const double tol = 1e-4; // tolerance to avoid division by zero
+    const double tol = 0.5; // tolerance to avoid division by zero
 
     double theta = p(2);
     double c_theta = cos(theta);
@@ -255,14 +255,19 @@ struct CarSecondOrderAcceleration : Feature {
         Jl(0, 4+6) = -1 / s_thetaprev;
       }
 
+      arr JBlock_a;
+      JBlock_a.setBlockMatrix(Jp, Jv);
+      arr JBlock_b;
+      JBlock_b.setBlockMatrix(Jpprev, Jvprev);
       arr JBlock;
+      JBlock.setBlockMatrix(JBlock_a, JBlock_b);
       // JBlock.setBlockMatrix(Jp, Jv, Jpprev, Jvprev);
       // std::cout << JBlock << std::endl;
-      JBlock.resize(Jp.d0 + Jv.d0 + Jpprev.d0 + Jvprev.d0, Jp.d1);
-      JBlock.setMatrixBlock(Jp, 0, 0);
-      JBlock.setMatrixBlock(Jv, Jp.d0, 0);
-      JBlock.setMatrixBlock(Jpprev, Jp.d0 + Jv.d0, 0);
-      JBlock.setMatrixBlock(Jvprev, Jp.d0 + Jv.d0 + Jpprev.d0, 0);
+      // JBlock.resize(Jp.d0 + Jv.d0 + Jpprev.d0 + Jvprev.d0, Jp.d1);
+      // JBlock.setMatrixBlock(Jp, 0, 0);
+      // JBlock.setMatrixBlock(Jv, Jp.d0, 0);
+      // JBlock.setMatrixBlock(Jpprev, Jp.d0 + Jv.d0, 0);
+      // JBlock.setMatrixBlock(Jvprev, Jp.d0 + Jv.d0 + Jpprev.d0, 0);
 
       J = Jl * JBlock;
     }
@@ -292,7 +297,7 @@ arrA load_waypoints(const char *filename) {
 
 double velocity(const arrA& results, int t, double dt)
 {
-  const double tol = 1e-4; // tolerance to avoid division by zero
+  const double tol = 0.5; // tolerance to avoid division by zero
 
   arr v = results(t) - results(t-1);
   double theta = results(t)(2);
@@ -500,7 +505,7 @@ int main(int argn, char **argv) {
   }
 
   komo.run_prepare(0.1); // TODO: is this necessary?
-  komo.checkGradients();
+  // komo.checkGradients();
   komo.initWithWaypoints(waypoints({1,-1}), N);
 
   bool report_before = true;
@@ -517,7 +522,7 @@ int main(int argn, char **argv) {
       komo.view_play(true, 0.3);
     }
   }
-  return 5;
+  // return 5;
 
   bool check_gradients = false;
   if (check_gradients) {
