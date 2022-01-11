@@ -167,40 +167,103 @@ struct CarSecondOrderAcceleration : Feature {
       assert(f->joint->type == rai::JT_transXYPhi);
     }
 
-    arr v, vprev, Jvprev, Jv;
+    arr p, v, Jp, Jv;
+    arr pprev, vprev, Jpprev, Jvprev;
 
-    F_qItself().setOrder(1).eval(vprev, Jvprev, F({0, 1}));
+    F_qItself().setOrder(0).eval(p, Jp, F[2].reshape(1, -1));
     F_qItself().setOrder(1).eval(v, Jv, F({1, 2}));
+    F_qItself().setOrder(0).eval(pprev, Jpprev, F[1].reshape(1, -1));
+    F_qItself().setOrder(1).eval(vprev, Jvprev, F({0, 1}));
 
-    double velocity = std::sqrt(v(0) * v(0) + v(1) * v(1));
-    double velocity_prev = std::sqrt(vprev(0) * vprev(0) + vprev(1) * vprev(1));
+    const double tol = 1e-4; // tolerance to avoid division by zero
+
+    double theta = p(2);
+    double c_theta = cos(theta);
+    double s_theta = sin(theta);
+    double speed;
+    int mode;
+    if (fabs(c_theta) > tol)
+    {
+      mode = 1;
+      speed = v(0) / c_theta;
+    }
+    else
+    {
+      mode = 2;
+      speed = v(1) / s_theta;
+    }
+
+    double thetaprev = pprev(2);
+    double c_thetaprev = cos(thetaprev);
+    double s_thetaprev = sin(thetaprev);
+    double speedprev;
+    int modeprev;
+    if (fabs(c_thetaprev) > tol)
+    {
+      modeprev = 1;
+      speedprev = vprev(0) / c_thetaprev;
+    }
+    else
+    {
+      modeprev = 2;
+      speedprev = vprev(1) / s_thetaprev;
+    }
 
     y.resize(1);
-    y(0) = velocity - velocity_prev;
+    y(0) = speed - speedprev;
 
     if (!!J) {
-      double tol = 1e-6; // tolerance non differentiable point of sqrt()
       arr Jl;
-      // ROWS = 1 equations ; COLUMNS= 3 v + 3 vprev
-      Jl.resize(1, 6);
+      // ROWS = 1 equations ; COLUMNS= 3 p + 3 v + 3 pprev + 3 vprev
+      Jl.resize(1, 12);
       Jl.setZero();
-      if (velocity > tol) {
-        Jl(0, 0) = v(0) / velocity; // w.r.t vx
-        Jl(0, 1) = v(1) / velocity; // w.r.t vy
-      } else {
-        Jl(0, 0) = 1;
-        Jl(0, 1) = 1;
+      if (mode == 1)
+      {
+        // w.r.t theta
+        Jl(0, 2) = v(0) * s_theta / (c_theta * c_theta);
+        // w.r.t vx
+        Jl(0, 3) = 1 / c_theta;
+        // w.r.t vy
+        Jl(0, 4) = 0;
       }
-      if (velocity_prev > tol) {
-        Jl(0, 3) = -vprev(0) / velocity_prev;
-        Jl(0, 4) = -vprev(1) / velocity_prev;
-      } else {
-        Jl(0, 3) = -1;
-        Jl(0, 4) = -1;
+      else if (mode == 2)
+      {
+        // w.r.t theta
+        Jl(0, 2) = -v(1) * c_theta / (s_theta * s_theta);
+        // w.r.t vx
+        Jl(0, 3) = 0;
+        // w.r.t vy
+        Jl(0, 4) = 1 / s_theta;
+      }
+
+      if (modeprev == 1)
+      {
+        // w.r.t theta
+        Jl(0, 2+6) = -vprev(0) * s_thetaprev / (c_thetaprev * c_thetaprev);
+        // w.r.t vx
+        Jl(0, 3+6) = -1 / c_thetaprev;
+        // w.r.t vy
+        Jl(0, 4+6) = -0;
+      }
+      else if (modeprev == 2)
+      {
+        // w.r.t theta
+        Jl(0, 2+6) = vprev(1) * c_thetaprev / (s_thetaprev * s_thetaprev);
+        // w.r.t vx
+        Jl(0, 3+6) = -0;
+        // w.r.t vy
+        Jl(0, 4+6) = -1 / s_thetaprev;
       }
 
       arr JBlock;
-      JBlock.setBlockMatrix(Jv, Jvprev);
+      // JBlock.setBlockMatrix(Jp, Jv, Jpprev, Jvprev);
+      // std::cout << JBlock << std::endl;
+      JBlock.resize(Jp.d0 + Jv.d0 + Jpprev.d0 + Jvprev.d0, Jp.d1);
+      JBlock.setMatrixBlock(Jp, 0, 0);
+      JBlock.setMatrixBlock(Jv, Jp.d0, 0);
+      JBlock.setMatrixBlock(Jpprev, Jp.d0 + Jv.d0, 0);
+      JBlock.setMatrixBlock(Jvprev, Jp.d0 + Jv.d0 + Jpprev.d0, 0);
+
       J = Jl * JBlock;
     }
   }
@@ -437,7 +500,7 @@ int main(int argn, char **argv) {
   }
 
   komo.run_prepare(0.1); // TODO: is this necessary?
-  // komo.checkGradients();
+  komo.checkGradients();
   komo.initWithWaypoints(waypoints({1,-1}), N);
 
   bool report_before = true;
@@ -454,7 +517,7 @@ int main(int argn, char **argv) {
       komo.view_play(true, 0.3);
     }
   }
-  // return 5;
+  return 5;
 
   bool check_gradients = false;
   if (check_gradients) {
