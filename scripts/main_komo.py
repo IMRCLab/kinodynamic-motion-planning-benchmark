@@ -155,7 +155,7 @@ def run_komo_standalone(filename_env, folder, timelimit, cfg = ""):
 						break
 				if result.returncode != 0:
 					print("KOMO failed with T", T, result.returncode)
-					min_T = T
+					min_T = T + 1
 
 					# return False
 				else:

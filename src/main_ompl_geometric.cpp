@@ -35,7 +35,7 @@ int main(int argc, char* argv[]) {
     ("input,i", po::value<std::string>(&inputFile)->required(), "input file (yaml)")
     ("output,o", po::value<std::string>(&outputFile)->required(), "output file (yaml)")
     ("planner,p", po::value<std::string>(&plannerDesc)->default_value("rrt"), "Planner")
-    ("timelimit", po::value<int>(&timelimit)->default_value(60), "Time limit for planner")
+    ("timelimit", po::value<int>(&timelimit)->default_value(10), "Time limit for planner")
     ("goalregion", po::value<float>(&goalRegion)->default_value(0.1), "radius around goal to count success");
 
   try {
@@ -80,7 +80,8 @@ int main(int argc, char* argv[]) {
   bpcm_env->setup();
 
   const auto& robot_node = env["robots"][0];
-  auto robotType = robot_node["type"].as<std::string>();
+  // auto robotType = robot_node["type"].as<std::string>();
+  auto robotType = "car_first_order_0";
   const auto &dims = env["environment"]["dimensions"];
   ob::RealVectorBounds position_bounds(2);
   position_bounds.setLow(0);
@@ -108,6 +109,7 @@ int main(int argc, char* argv[]) {
   std::vector<double> reals;
   for (const auto& v : robot_node["start"]) {
     reals.push_back(v.as<double>());
+    if (reals.size() == 3) break;
   }
   si->getStateSpace()->copyFromReals(startState, reals);
   pdef->addStartState(startState);
@@ -118,6 +120,7 @@ int main(int argc, char* argv[]) {
   reals.clear();
   for (const auto &v : robot_node["goal"]) {
     reals.push_back(v.as<double>());
+    if (reals.size() == 3) break;
   }
   si->getStateSpace()->copyFromReals(goalState, reals);
   pdef->setGoalState(goalState, goalRegion);
@@ -133,11 +136,29 @@ int main(int argc, char* argv[]) {
   // rrt->setGoalBias(params["goalBias"].as<float>());
   // auto planner(rrt);
 
+  // auto start = std::chrono::steady_clock::now();
+  bool has_solution = false;
+  std::chrono::steady_clock::time_point previous_solution;
+  pdef->setIntermediateSolutionCallback(
+      [&previous_solution, &has_solution](const ob::Planner *, const std::vector<const ob::State *> &, const ob::Cost cost)
+      {
+        // double t = std::chrono::duration_cast<std::chrono::milliseconds>(now - start).count();
+        // double dt = std::chrono::duration_cast<std::chrono::milliseconds>(now - previous_solution).count();
+        std::cout << "Intermediate solution! " << cost.value() << std::endl;
+        has_solution = true;
+        // last_solution_in_sec = dt / 1000.0f;
+        previous_solution = std::chrono::steady_clock::now();
+      });
+
   // set the problem we are trying to solve for the planner
   planner->setProblemDefinition(pdef);
 
   // perform setup steps for the planner
+  // (this will set the optimization objective)
   planner->setup();
+
+  // set a really high cost threshold, so that planner stops after first solution was found
+  // pdef->getOptimizationObjective()->setCostThreshold(ob::Cost(1e6));
 
   // print the settings for this space
   si->printSettings(std::cout);
@@ -148,7 +169,18 @@ int main(int argc, char* argv[]) {
   // attempt to solve the problem within timelimit
   ob::PlannerStatus solved;
 
-  solved = planner->ob::Planner::solve(timelimit);
+  // solved = planner->ob::Planner::solve(timelimit);
+  // terminate if no better solution is found within the timelimit
+  solved = planner->solve(
+    ob::PlannerTerminationCondition([&previous_solution, &has_solution]
+    {
+      if (!has_solution) {
+        return false;
+      }
+      auto now = std::chrono::steady_clock::now();
+      double dt = std::chrono::duration_cast<std::chrono::milliseconds>(now - previous_solution).count() / 1000.0f;
+      return dt > 1.0;
+    }));
   std::cout << solved << std::endl;
 
   if (solved)
