@@ -6,6 +6,7 @@
 #include <cassert>
 #include <cmath>
 #include <iostream>
+//#include <iomanip>
 
 #include <yaml-cpp/yaml.h>
 
@@ -29,7 +30,7 @@ struct Dubins2 : Feature {
 
 void Dubins2::phi2(arr &y, arr &J, const FrameL &F) {
 
-  const double tol = 0.5; // tolerance to avoid division by zero
+  const double tol = 0.1; // tolerance to avoid division by zero
 
   // implementation only for rai::JT_transXYPhi!
   for (auto &f : F) {
@@ -59,6 +60,8 @@ void Dubins2::phi2(arr &y, arr &J, const FrameL &F) {
   y.resize(2);
   y(0) = c_theta * speed - v(0); // cos V - xdot = 0
   y(1) = s_theta * speed - v(1); // sin V - ydot = 0
+
+  // std::cout  << p(0) << " " << p(1) << " " << p(2) << " " << speed << " " << v(2) << std::endl;
 
   // compute Jacobian
   if (!!J) {
@@ -97,7 +100,7 @@ struct CarFirstOrderVelocity : Feature {
   uint dim_phi2(const FrameL &) { return 1; }
 
   void phi2(arr &y, arr &J, const FrameL &F) {
-    const double tol = 0.5; // tolerance to avoid division by zero
+    const double tol = 0.1; // tolerance to avoid division by zero
 
     // implementation only for rai::JT_transXYPhi!
     for (auto &f : F) {
@@ -126,6 +129,8 @@ struct CarFirstOrderVelocity : Feature {
     // feature is y
     y.resize(1);
     y(0) = speed;
+
+    // std::cout << "v " << speed << std::endl;
 
     // compute Jacobian
     if (!!J) {
@@ -175,7 +180,7 @@ struct CarSecondOrderAcceleration : Feature {
     F_qItself().setOrder(0).eval(pprev, Jpprev, F[1].reshape(1, -1));
     F_qItself().setOrder(1).eval(vprev, Jvprev, F({0, 1}));
 
-    const double tol = 0.5; // tolerance to avoid division by zero
+    const double tol = 0.1; // tolerance to avoid division by zero
 
     double theta = p(2);
     double c_theta = cos(theta);
@@ -297,7 +302,7 @@ arrA load_waypoints(const char *filename) {
 
 double velocity(const arrA& results, int t, double dt)
 {
-  const double tol = 0.5; // tolerance to avoid division by zero
+  const double tol = 0.1; // tolerance to avoid division by zero
 
   arr v = results(t) - results(t-1);
   double theta = results(t)(2);
@@ -373,6 +378,15 @@ int main(int argn, char **argv) {
   rai::String out_file =
       rai::getParameter<rai::String>("out", STRING("out.yaml"));
 
+  enum CAR_ORDER
+  {
+    ZERO = 0, // no bounds
+    ONE = 1,  // bounds velocity
+    TWO = 2,  // bound acceleration
+  };
+  CAR_ORDER car_order = static_cast<CAR_ORDER>(order);
+  std::cout << "Car order: " << order << std::endl;
+
   arrA waypoints = load_waypoints(waypoints_file);
 
   // downsample
@@ -383,6 +397,17 @@ int main(int argn, char **argv) {
         waypointsS.append(waypoints(i));
       }
     }
+    waypoints = waypointsS;
+  }
+
+  if (car_order == TWO) {
+    arrA waypointsS;
+    // waypointsS.append(waypoints(0));
+    // waypointsS.append(waypoints(0));
+    for (size_t i = 0; i < waypoints.N; i++) {
+      waypointsS.append(waypoints(i));
+    }
+    waypointsS.append(waypoints(-1));
     waypoints = waypointsS;
   }
 
@@ -445,17 +470,10 @@ int main(int argn, char **argv) {
   // robot dynamics
   komo.addObjective({}, make_shared<Dubins2>(), {"robot0"}, OT_eq, {1e1}, {0},
                     1);
-  enum CAR_ORDER {
-    ZERO = 0, // no bounds
-    ONE = 1, // bounds velocity
-    TWO = 2, // bound acceleration
-  };
-  CAR_ORDER car_order = static_cast<CAR_ORDER>(order);
-  std::cout << "Car order: " << order << std::endl;
 
   if (car_order >= ONE) {
-    const double max_velocity = 0.5; // m/s
-    const double max_omega = 0.5; // rad/s
+    const double max_velocity = 0.5-0.01; // m/s
+    const double max_omega = 0.5-0.01; // rad/s
 
     komo.addObjective({}, FS_qItself, {"robot0"}, OT_ineq, {0, 0, 1},
                       {0, 0, max_omega}, 1);
@@ -570,6 +588,7 @@ int main(int argn, char **argv) {
 
   // write the results.
   std::ofstream out(out_file);
+  //out << std::setprecision(std::numeric_limits<double>::digits10 + 1);
   out << "result:" << std::endl;
   if (car_order == ZERO) {
     out << "  - states:" << std::endl;

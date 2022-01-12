@@ -28,7 +28,7 @@ public:
 
     // set the bounds for the control space
     ob::RealVectorBounds cbounds(2);
-    cbounds.setLow(0, 0.0);
+    cbounds.setLow(0, -v_limit);
     cbounds.setHigh(0, v_limit);
     cbounds.setLow(1, -w_limit);
     cbounds.setHigh(1, w_limit);
