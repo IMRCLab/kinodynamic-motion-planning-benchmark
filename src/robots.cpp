@@ -168,11 +168,12 @@ public:
     {
       float dt = std::min(remaining_time, dt_);
 
-      x += v * cosf(yaw) * dt;
-      y += v * sinf(yaw) * dt;
-      yaw += w * dt;
+      // For compatibility with KOMO, update v and yaw first
       v += ctrl[0] * dt;
       w += ctrl[1] * dt;
+      yaw += w * dt;
+      x += v * cosf(yaw) * dt;
+      y += v * sinf(yaw) * dt;
 
       remaining_time -= dt;
     } while (remaining_time >= dt_);

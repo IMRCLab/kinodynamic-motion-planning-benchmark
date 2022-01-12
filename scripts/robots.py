@@ -92,13 +92,18 @@ class RobotCarSecondOrder:
 		x, y, yaw, v, w = state
 		a, w_dot = action
 
-		x_next = x + v * np.cos(yaw) * dt
-		y_next = y + v * np.sin(yaw) * dt
-		yaw_next = yaw + w * dt
-		# normalize yaw between -pi and pi
-		yaw_next_norm = (yaw_next + np.pi) % (2 * np.pi) - np.pi
+		# For compatibility with KOMO, update v and yaw first
 		v_next = v + a * dt
 		w_dot_next = w + w_dot * dt
+		yaw_next = yaw + w_dot_next * dt
+		yaw_next_norm = (yaw_next + np.pi) % (2 * np.pi) - np.pi
+		x_next = x + v_next * np.cos(yaw_next) * dt
+		y_next = y + v_next * np.sin(yaw_next) * dt
+
+		# x_next = x + v * np.cos(yaw) * dt
+		# y_next = y + v * np.sin(yaw) * dt
+		# yaw_next = yaw + w * dt
+		# normalize yaw between -pi and pi
 
 		state_next = np.array([x_next, y_next, yaw_next_norm, v_next, w_dot_next])
 		return state_next

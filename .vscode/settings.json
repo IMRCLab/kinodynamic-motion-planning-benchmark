@@ -21,6 +21,16 @@
         "type_traits": "cpp",
         "valarray": "cpp",
         "variant": "cpp",
-        "chrono": "cpp"
+        "chrono": "cpp",
+        "hash_map": "cpp",
+        "hash_set": "cpp",
+        "deque": "cpp",
+        "forward_list": "cpp",
+        "list": "cpp",
+        "string": "cpp",
+        "vector": "cpp",
+        "dense_hash_map": "cpp",
+        "sparse_hash_map": "cpp",
+        "sparsetable": "cpp"
     }
 }
