@@ -108,22 +108,22 @@ def main():
 	parallel = True
 	instances = [
 		# "carFirstOrder/parallelpark_0",
-		"carFirstOrder/kink_0",
+		# "carFirstOrder/kink_0",
 		# "carFirstOrder/bugtrap_0",
-		# "carSecondOrder/parallelpark_0",
-		# "carSecondOrder/kink_0",
-		# "carSecondOrder/bugtrap_0",
+		"carSecondOrder/parallelpark_0",
+		"carSecondOrder/kink_0",
+		"carSecondOrder/bugtrap_0",
 		# "carFirstOrderWithTrailers/parallelpark_0",
 		# "quadrotor/empty_0",
 	]
 	algs = [
 		# "sst",
 		# "sbpl",
-		"komo",
-		# "dbAstar-komo",
-		# "dbAstar-scp",
+		# "komo",
+		"dbAstar-komo",
+		"dbAstar-scp",
 	]
-	trials = 1
+	trials = 5
 	# timelimit = 5 * 60
 	timelimit = 5 * 60
 

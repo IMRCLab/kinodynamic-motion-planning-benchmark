@@ -555,10 +555,14 @@ int main(int argc, char* argv[]) {
       //     s.t. ||translation|| <= translation_slack // i.e., stay within delta/2
       //          no collisions
 
-      std::uniform_real_distribution<> dis_mag(0, translation_slack);
-      float angle = dis_angle(rng);
-      float mag = dis_mag(rng);
-      fcl::Vector3f computed_offset(mag * cos(angle), mag * sin(angle), 0);
+      const auto current_pos2 = robot->getTransform(current->state).translation();
+      const auto goal_pos = robot->getTransform(goalState).translation();
+      fcl::Vector3f computed_offset = (goal_pos - current_pos2).normalized() * translation_slack;
+
+      // std::uniform_real_distribution<> dis_mag(0, translation_slack);
+      // float angle = dis_angle(rng);
+      // float mag = dis_mag(rng);
+      // fcl::Vector3f computed_offset(mag * cos(angle), mag * sin(angle), 0);
 
       #ifndef NDEBUG
       {

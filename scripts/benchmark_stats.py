@@ -12,18 +12,21 @@ def main():
 	# algs = ["sst", "sbpl", "dbAstar"]
 
 	instances = [
-		# "carFirstOrder/bugtrap_0",
-		# "carFirstOrder/kink_0",
 		# "carFirstOrder/parallelpark_0",
-		# "carSecondOrder/parallelpark_0",
-		# "carSecondOrder/kink_0",
-		# "carSecondOrder/bugtrap_0",
-		"carFirstOrderWithTrailers/parallelpark_0",
+		# "carFirstOrder/kink_0",
+		# "carFirstOrder/bugtrap_0",
+		"carSecondOrder/parallelpark_0",
+		"carSecondOrder/kink_0",
+		"carSecondOrder/bugtrap_0",
+		# "carFirstOrderWithTrailers/parallelpark_0",
 	]
-	algs = ["sst", "sbpl", "komo", "dbAstar-komo", "dbAstar-scp"]
-
-	# instances = ["carSecondOrder/parallelpark_0", "carSecondOrder/kink_0", "carSecondOrder/bugtrap_0"]
-	# algs = ["sst", "dbAstar-scp"]
+	algs = [
+		"sst",
+		# "sbpl",
+		"komo",
+		"dbAstar-komo",
+		"dbAstar-scp",
+	]
 
 	report = plot_stats.Report(results_path / "stats.pdf")
 
@@ -32,6 +35,7 @@ def main():
 		for alg in algs:
 			result_folder = results_path / instance / alg
 			stat_files = [str(p) for p in result_folder.glob("**/stats.yaml")]
+			# stat_files = [str(p) for p in result_folder.glob("000/stats.yaml")]
 			print(stat_files)
 			if len(stat_files) > 0:
 				report.load_stat_files(stat_files, 5*60, 0.1, alg)

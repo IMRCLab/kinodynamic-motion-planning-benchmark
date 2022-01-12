@@ -28,7 +28,7 @@ public:
 
     // set the bounds for the control space
     ob::RealVectorBounds cbounds(2);
-    cbounds.setLow(0, -v_limit);
+    cbounds.setLow(0, 0.0);
     cbounds.setHigh(0, v_limit);
     cbounds.setLow(1, -w_limit);
     cbounds.setHigh(1, w_limit);
@@ -676,8 +676,10 @@ public:
     // cbounds.setHigh(0, 4.0 * 12.0 / 1000.0 * g_);
 
     // version to control force
-    cbounds.setLow(0);
+    cbounds.setLow(3.0 / 1000.0 * g_);
     cbounds.setHigh(12.0 / 1000.0 * g_);
+    // const float t2w = 3.0; // thrust-to-weight
+    // cbounds.setHigh(t2w * mass_ / 4.0 * g_);
 
     cspace->setBounds(cbounds);
 
@@ -882,15 +884,29 @@ protected:
     {
       setName("Quadrotor" + getName());
       type_ = ob::STATE_SPACE_TYPE_COUNT + 2;
-      // addSubspace(std::make_shared<ob::SE3StateSpace>(), 1.0);         // position + orientation
       addSubspace(std::make_shared<ob::RealVectorStateSpace>(3), 1.0);      // position
-      addSubspace(std::make_shared<ob::SO3StateSpace>(), 0.1);              // orientation
-      addSubspace(std::make_shared<ob::RealVectorStateSpace>(3), 0.01); // velocity
-      addSubspace(std::make_shared<ob::RealVectorStateSpace>(3), 0.01); // angular velocity
+      addSubspace(std::make_shared<ob::SO3StateSpace>(), 1.0);              // orientation
+      addSubspace(std::make_shared<ob::RealVectorStateSpace>(3), 0.1); // velocity
+      addSubspace(std::make_shared<ob::RealVectorStateSpace>(3), 0.05); // angular velocity
       lock();
     }
 
     ~StateSpace() override = default;
+
+    // bool satisfiesBounds(const ob::State *state) const override
+    // {
+    //   bool result = ob::CompoundStateSpace::satisfiesBounds(state);
+    //   if (!result) {
+    //     return false;
+    //   }
+
+    //   auto stateTyped = state->as<StateType>();
+    //   Eigen::Vector3f up(0,0,1);
+    //   Eigen::Quaternionf q(stateTyped->rotation().w, stateTyped->rotation().x, stateTyped->rotation().y, stateTyped->rotation().z);
+    //   const auto& up_transformed = q._transformVector(up);
+    //   float angle = acosf(up.dot(up_transformed));
+    //   return fabs(angle) < M_PI / 6;
+    // }
 
     void setPositionBounds(const ob::RealVectorBounds &bounds)
     {
