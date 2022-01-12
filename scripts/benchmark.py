@@ -61,20 +61,20 @@ def execute_task(task: ExecutionTask):
 	# find cfg
 	mycfg = cfg[task.alg]
 	mycfg = mycfg['default']
-	if Path(task.instance).name in mycfg:
-		mycfg_instance = mycfg[Path(task.instance).name]
+	if Path(task.instance).name in cfg[task.alg]:
+		mycfg_instance = cfg[task.alg][Path(task.instance).name]
 		mycfg = {**mycfg, **mycfg_instance} # merge two dictionaries
 
 	print("Using configurations ", mycfg)
 
 	if task.alg == "sst":
 		run_ompl(str(env), str(result_folder), task.timelimit, mycfg)
-		visualize_files = ["result_ompl.yaml", "result_scp.yaml"]
-		check_files = ["result_ompl.yaml", "result_scp.yaml"]
+		visualize_files = [p.name for p in result_folder.glob('result_*')]
+		check_files = [p.name for p in result_folder.glob('result_*')]
 	elif task.alg == "sbpl":
 		run_sbpl(str(env), str(result_folder))
-		visualize_files = ["result_sbpl.yaml", "result_scp.yaml"]
-		check_files = ["result_sbpl.yaml", "result_scp.yaml"]
+		visualize_files = [p.name for p in result_folder.glob('result_*')]
+		check_files = [p.name for p in result_folder.glob('result_*')]
 	elif task.alg == "dbAstar-komo":
 		run_dbastar(str(env), str(result_folder), task.timelimit, mycfg, "komo")
 		visualize_files = [p.name for p in result_folder.glob('result_*')]
@@ -107,9 +107,9 @@ def execute_task(task: ExecutionTask):
 def main():
 	parallel = True
 	instances = [
-		# "carFirstOrder/parallelpark_0",
-		# "carFirstOrder/kink_0",
-		# "carFirstOrder/bugtrap_0",
+		"carFirstOrder/parallelpark_0",
+		"carFirstOrder/kink_0",
+		"carFirstOrder/bugtrap_0",
 		"carSecondOrder/parallelpark_0",
 		"carSecondOrder/kink_0",
 		"carSecondOrder/bugtrap_0",
@@ -117,19 +117,21 @@ def main():
 		# "quadrotor/empty_0",
 	]
 	algs = [
-		# "sst",
-		# "sbpl",
-		# "komo",
+		"sst",
+		"sbpl",
+		"komo",
 		"dbAstar-komo",
 		"dbAstar-scp",
 	]
 	trials = 5
-	# timelimit = 5 * 60
 	timelimit = 5 * 60
 
 	tasks = []
 	for instance in instances:
 		for alg in algs:
+			# SST only supports carFirstOrder
+			if alg == "sst" and "carFirstOrder" not in instance:
+				continue
 			for trial in range(trials):
 				tasks.append(ExecutionTask(instance, alg, trial, timelimit))
 

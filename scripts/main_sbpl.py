@@ -2,6 +2,8 @@ import argparse
 import subprocess
 import yaml
 import main_scp
+import main_komo
+
 
 
 def run_sbpl(filename_env, folder):
@@ -40,8 +42,14 @@ def run_sbpl(filename_env, folder):
 
 		print(len(actions), len(result["result"][0]["states"]))
 
-		success = main_scp.run_scp(
-			filename_env, "{}/result_sbpl.yaml".format(folder), "{}/result_scp.yaml".format(folder))
+		main_scp.run_scp(
+			filename_env,
+			"{}/result_sbpl.yaml".format(folder),
+			"{}/result_scp.yaml".format(folder))
+		main_komo.run_komo(
+			filename_env,
+			"{}/result_ompl.yaml".format(folder),
+			"{}/result_komo.yaml".format(folder))
 
 def main():
 	parser = argparse.ArgumentParser()

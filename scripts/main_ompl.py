@@ -1,6 +1,7 @@
 import argparse
 import subprocess
 import main_scp
+import main_komo
 import tempfile
 from pathlib import Path
 import yaml
@@ -24,10 +25,14 @@ def run_ompl(filename_env, folder, timelimit, cfg):
 			print("OMPL failed")
 		else:
 			# pass
-			success = main_scp.run_scp(
+			main_scp.run_scp(
 				filename_env,
 				"{}/result_ompl.yaml".format(folder),
 				"{}/result_scp.yaml".format(folder))
+			main_komo.run_komo(
+				filename_env,
+				"{}/result_ompl.yaml".format(folder),
+				"{}/result_komo.yaml".format(folder))
 
 def main():
 	parser = argparse.ArgumentParser()
