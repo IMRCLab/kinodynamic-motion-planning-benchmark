@@ -50,7 +50,7 @@ def qnormalize(q):
 	return q / np.linalg.norm(q)
 
 
-class RobotCarFirstOrder:
+class RobotUnicycleFirstOrder:
 
 	def __init__(self, v_limit, w_limit):
 		self.action_desc = ["v [m/s]", "w [rad/s]"]
@@ -76,7 +76,7 @@ class RobotCarFirstOrder:
 		return state_next
 
 
-class RobotCarSecondOrder:
+class RobotUnicycleSecondOrder:
 
 	def __init__(self, v_limit, w_limit, a_limit, w_dot_limit):
 		self.action_desc = ["a [m^2/s]", "w_dot [rad^2/s]"]
@@ -248,10 +248,10 @@ class Quadrotor:
 		return np.concatenate((pos_next, q_next[1:4], q_next[0:1], vel_next, omega_next))
 
 def create_robot(robot_type):
-	if robot_type == "car_first_order_0":
-		return RobotCarFirstOrder(0.5, 0.5)
-	elif robot_type == "car_second_order_0":
-		return RobotCarSecondOrder(0.5, 0.5, 2, 2)
+	if robot_type == "unicycle_first_order_0":
+		return RobotUnicycleFirstOrder(0.5, 0.5)
+	elif robot_type == "unicycle_second_order_0":
+		return RobotUnicycleSecondOrder(0.5, 0.5, 2, 2)
 	elif robot_type == "car_first_order_with_0_trailers_0":
 		return RobotCarFirstOrderWithTrailers(0.5, np.pi/3, 0.4, [])
 	elif robot_type == "car_first_order_with_1_trailers_0":

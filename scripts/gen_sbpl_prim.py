@@ -64,7 +64,7 @@ def main():
 				prims.append(prim)
 
 	# rh = RobotHelper("car_first_order_0")
-	robot = robots.create_robot("car_first_order_0")
+	robot = robots.create_robot("unicycle_first_order_0")
 
 	# angles = np.linspace(0, 2*np.pi, num_angles, endpoint=False)
 	d_angle = 2*np.pi / num_angles

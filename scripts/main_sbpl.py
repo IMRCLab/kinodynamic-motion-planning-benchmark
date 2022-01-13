@@ -11,7 +11,7 @@ def run_sbpl(filename_env, folder):
 	result = subprocess.run(["./main_sbpl", 
 		"-i", filename_env,
 		"-o", "{}/result_sbpl.yaml".format(folder),
-		"-p", "../tuning/carFirstOrder/car_first_order_0.mprim",
+		"-p", "../tuning/unicycleFirstOrder/unicycle_first_order_0.mprim",
 		"--stats", "{}/stats.yaml".format(folder),
 		])
 	if result.returncode != 0:
@@ -21,7 +21,7 @@ def run_sbpl(filename_env, folder):
 		with open("{}/result_sbpl.yaml".format(folder)) as f:
 				result = yaml.safe_load(f)
 
-		with open("../tuning/carFirstOrder/car_first_order_0_mprim.yaml") as f:
+		with open("../tuning/unicycleFirstOrder/unicycle_first_order_0_mprim.yaml") as f:
 				motions = yaml.safe_load(f)
 
 		actions = []
@@ -48,7 +48,7 @@ def run_sbpl(filename_env, folder):
 			"{}/result_scp.yaml".format(folder))
 		main_komo.run_komo(
 			filename_env,
-			"{}/result_ompl.yaml".format(folder),
+			"{}/result_sbpl.yaml".format(folder),
 			"{}/result_komo.yaml".format(folder))
 
 def main():

@@ -9,10 +9,10 @@
 namespace ob = ompl::base;
 namespace oc = ompl::control;
 
-class RobotCarFirstOrder : public Robot
+class RobotUnicycleFirstOrder : public Robot
 {
 public:
-  RobotCarFirstOrder(
+  RobotUnicycleFirstOrder(
     const ompl::base::RealVectorBounds& position_bounds,
     float v_limit,
     float w_limit)
@@ -102,10 +102,10 @@ public:
 
 ////////////////////////////////////////////////////////////////////////////////////////////////
 
-class RobotCarSecondOrder : public Robot
+class RobotUnicycleSecondOrder : public Robot
 {
 public:
-  RobotCarSecondOrder(
+  RobotUnicycleSecondOrder(
       const ompl::base::RealVectorBounds &position_bounds,
       float v_limit,      // max velocity in m/s
       float w_limit,      // max angular velocity in rad/s
@@ -1027,16 +1027,16 @@ std::shared_ptr<Robot> create_robot(
   const ob::RealVectorBounds &positionBounds)
 {
   std::shared_ptr<Robot> robot;
-  if (robotType == "car_first_order_0")
+  if (robotType == "unicycle_first_order_0")
   {
-    robot.reset(new RobotCarFirstOrder(
+    robot.reset(new RobotUnicycleFirstOrder(
         positionBounds,
         /*v_limit*/ 0.5 /* m/s*/,
         /*w_limit*/ 0.5 /*rad/s*/));
   }
-  else if (robotType == "car_second_order_0")
+  else if (robotType == "unicycle_second_order_0")
   {
-    robot.reset(new RobotCarSecondOrder(
+    robot.reset(new RobotUnicycleSecondOrder(
         positionBounds,
         /*v_limit*/ 0.5 /*m/s*/,
         /*w_limit*/ 0.5 /*rad/s*/,

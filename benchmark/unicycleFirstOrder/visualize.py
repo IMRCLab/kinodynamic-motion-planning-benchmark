@@ -43,7 +43,7 @@ class Animation:
         print("ERROR: unknown obstacle type")
 
     for robot in env["robots"]:
-      if robot["type"] in ["dubins_0", "car_first_order_0", "car_second_order_0"]:
+      if robot["type"] in ["unicycle_first_order_0"]:
         self.size = np.array([0.5, 0.25])
         draw_box_patch(self.ax, robot["start"][0:2], self.size,
                       robot["start"][2], facecolor='red')

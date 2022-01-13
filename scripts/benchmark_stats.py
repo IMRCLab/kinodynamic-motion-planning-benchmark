@@ -8,21 +8,18 @@ def main():
 	results_path = Path("../results")
 	tuning_path = Path("../tuning")
 
-	# instances = ["carFirstOrder/bugtrap_0", "carFirstOrder/kink_0", "carFirstOrder/parallelpark_0"]
-	# algs = ["sst", "sbpl", "dbAstar"]
-
 	instances = [
-		# "carFirstOrder/parallelpark_0",
-		# "carFirstOrder/kink_0",
-		# "carFirstOrder/bugtrap_0",
-		"carSecondOrder/parallelpark_0",
-		"carSecondOrder/kink_0",
-		"carSecondOrder/bugtrap_0",
+		"unicycleFirstOrder/parallelpark_0",
+		"unicycleFirstOrder/kink_0",
+		"unicycleFirstOrder/bugtrap_0",
+		"unicycleSecondOrder/parallelpark_0",
+		"unicycleSecondOrder/kink_0",
+		"unicycleSecondOrder/bugtrap_0",
 		# "carFirstOrderWithTrailers/parallelpark_0",
 	]
 	algs = [
 		"sst",
-		# "sbpl",
+		"sbpl",
 		"komo",
 		"dbAstar-komo",
 		"dbAstar-scp",

@@ -107,12 +107,12 @@ def execute_task(task: ExecutionTask):
 def main():
 	parallel = True
 	instances = [
-		"carFirstOrder/parallelpark_0",
-		"carFirstOrder/kink_0",
-		"carFirstOrder/bugtrap_0",
-		"carSecondOrder/parallelpark_0",
-		"carSecondOrder/kink_0",
-		"carSecondOrder/bugtrap_0",
+		"unicycleFirstOrder/parallelpark_0",
+		"unicycleFirstOrder/kink_0",
+		"unicycleFirstOrder/bugtrap_0",
+		"unicycleSecondOrder/parallelpark_0",
+		"unicycleSecondOrder/kink_0",
+		"unicycleSecondOrder/bugtrap_0",
 		# "carFirstOrderWithTrailers/parallelpark_0",
 		# "quadrotor/empty_0",
 	]
@@ -123,14 +123,14 @@ def main():
 		"dbAstar-komo",
 		"dbAstar-scp",
 	]
-	trials = 5
+	trials = 1
 	timelimit = 5 * 60
 
 	tasks = []
 	for instance in instances:
 		for alg in algs:
-			# SST only supports carFirstOrder
-			if alg == "sst" and "carFirstOrder" not in instance:
+			# sbpl only supports unicycleFirstOrder
+			if alg == "sbpl" and "unicycleFirstOrder" not in instance:
 				continue
 			for trial in range(trials):
 				tasks.append(ExecutionTask(instance, alg, trial, timelimit))

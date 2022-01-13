@@ -20,12 +20,12 @@ def _test_dynamics(robot_type, dt):
         assert np.allclose(next_state_cpp, next_state_py)
 
 
-def test_dynamics_car_first_order_0():
-    _test_dynamics('car_first_order_0', 0.1)
+def test_dynamics_unicycle_first_order_0():
+    _test_dynamics('unicycle_first_order_0', 0.1)
 
 
-def test_dynamics_car_second_order_0():
-    _test_dynamics('car_second_order_0', 0.1)
+def test_dynamics_unicycle_second_order_0():
+    _test_dynamics('unicycle_second_order_0', 0.1)
 
 
 def test_dynamics_car_first_order_with_0_trailers_0():

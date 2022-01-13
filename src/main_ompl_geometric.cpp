@@ -81,7 +81,7 @@ int main(int argc, char* argv[]) {
 
   const auto& robot_node = env["robots"][0];
   // auto robotType = robot_node["type"].as<std::string>();
-  auto robotType = "car_first_order_0";
+  auto robotType = "unicycle_first_order_0";
   const auto &dims = env["environment"]["dimensions"];
   ob::RealVectorBounds position_bounds(2);
   position_bounds.setLow(0);

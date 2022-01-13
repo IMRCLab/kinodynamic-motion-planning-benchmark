@@ -17,6 +17,6 @@ environment:
       center: [1.5, 2.0]
       size: [0.1, 1]
 robots:
-  - type: car_second_order_0
+  - type: unicycle_second_order_0
     start: [4,3,0,0,0] # x,y,theta,v,w
     goal: [5,3,0,0,0] # x,y,theta,v,w
