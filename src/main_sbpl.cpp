@@ -57,6 +57,7 @@ int main(int argc, char* argv[]) {
       const auto &center = obs["center"];
       auto co = new fcl::CollisionObjectf(geom);
       co->setTranslation(fcl::Vector3f(center[0].as<float>(), center[1].as<float>(), 0));
+      co->computeAABB();
       obstacles.push_back(co);
     }
     else
@@ -109,6 +110,7 @@ int main(int argc, char* argv[]) {
       float center_x = x * cellsize_m + cellsize_m / 2;
       float center_y = y * cellsize_m + cellsize_m / 2;
       co_robot->setTranslation(fcl::Vector3f(center_x, center_y, 0));
+      co_robot->computeAABB();
       fcl::DefaultCollisionData<float> collision_data;
       bpcm_env->collide(co_robot.get(), &collision_data, fcl::DefaultCollisionFunction<float>);
       if (collision_data.result.isCollision()) {

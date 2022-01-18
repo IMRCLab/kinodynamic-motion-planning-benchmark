@@ -151,6 +151,7 @@ public:
         const auto &center = obs["center"];
         auto co = new fcl::CollisionObjectf(geom);
         co->setTranslation(fcl::Vector3f(center[0].as<float>(), center[1].as<float>(), 0));
+        co->computeAABB();
         obstacles.push_back(co);
       }
       else
@@ -191,6 +192,7 @@ public:
       fcl::CollisionObjectf robot(robot_->getCollisionGeometry(part)); //, robot_->getTransform(state));
       robot.setTranslation(transform.translation());
       robot.setRotation(transform.rotation());
+      robot.computeAABB();
       distance_data[part].request.enable_signed_distance = true;
       env_->distance(&robot, &distance_data[part], fcl::DefaultDistanceFunction<float>);
       if (distance_data[part].result.min_distance < distance_data[min_idx].result.min_distance) {

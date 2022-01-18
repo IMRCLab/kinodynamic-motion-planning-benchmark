@@ -49,6 +49,7 @@ int main(int argc, char* argv[]) {
       const auto& center = obs["center"];
       auto co = new fcl::CollisionObjectf(geom);
       co->setTranslation(fcl::Vector3f(center[0].as<float>(), center[1].as<float>(), 0));
+      co->computeAABB();
       obstacles.push_back(co);
     } else {
       throw std::runtime_error("Unknown obstacle type!");
@@ -68,6 +69,7 @@ int main(int argc, char* argv[]) {
     geom.reset(new fcl::Boxf(0.5, 0.25, 1.0));
     co_robot.reset(new fcl::CollisionObjectf(geom));
     co_robot->setTranslation(fcl::Vector3f(3, 2, 0));
+    co_robot->computeAABB();
   } else {
     throw std::runtime_error("Unknown robot type!");
   }

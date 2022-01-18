@@ -1,6 +1,7 @@
 #include <fstream>
 #include <iostream>
 #include <algorithm>
+#include <chrono>
 
 #include <yaml-cpp/yaml.h>
 
@@ -20,6 +21,7 @@
 #include "robots.h"
 #include "robotStatePropagator.hpp"
 #include "fclStateValidityChecker.hpp"
+#include "fclHelper.hpp"
 
 namespace ob = ompl::base;
 namespace oc = ompl::control;
@@ -87,6 +89,9 @@ class Motion
 public:
   std::vector<ob::State*> states;
   std::vector<oc::Control*> actions;
+
+  std::shared_ptr<ShiftableDynamicAABBTreeCollisionManager<float>> collision_manager;
+  std::vector<fcl::CollisionObjectf *> collision_objects;
 
   float cost;
 
@@ -251,6 +256,7 @@ int main(int argc, char* argv[]) {
       const auto &center = obs["center"];
       auto co = new fcl::CollisionObjectf(geom);
       co->setTranslation(fcl::Vector3f(center[0].as<float>(), center[1].as<float>(), 0));
+      co->computeAABB();
       obstacles.push_back(co);
     }
     else
@@ -309,6 +315,21 @@ int main(int argc, char* argv[]) {
     m.cost = m.actions.size() / 10.0f; // time in seconds
     m.idx = motions.size();
     m.name = motion["name"].as<std::string>();
+
+    // generate collision objects and collision manager
+    for (const auto &state : m.states)
+    {
+      const auto &transform = robot->getTransform(state, 0);
+
+      auto co = new fcl::CollisionObjectf(robot->getCollisionGeometry(0));
+      co->setTranslation(transform.translation());
+      co->setRotation(transform.rotation());
+      co->computeAABB();
+      m.collision_objects.push_back(co);
+    }
+    m.collision_manager.reset(new ShiftableDynamicAABBTreeCollisionManager<float>());
+    m.collision_manager->registerObjects(m.collision_objects);
+
     motions.push_back(m);
   }
 
@@ -572,8 +593,8 @@ int main(int argc, char* argv[]) {
         const auto offset = current_pos + computed_offset;
         const auto relative_pos = robot->getTransform(tmpState).translation();
         robot->setPosition(tmpState, offset + relative_pos);
-        assert(si->distance(tmpState, current->state) <= delta/2);
         std::cout << si->distance(tmpState, current->state)  << std::endl;
+        assert(si->distance(tmpState, current->state) <= delta/2 + 1e-5);
       }
       #endif
 #endif
@@ -597,6 +618,9 @@ int main(int argc, char* argv[]) {
       }
 
       // Compute intermediate states and check their validity
+
+      // auto start = std::chrono::steady_clock::now();
+#if 0
       bool motionValid = true;
       for (const auto& state : motion->states)
       {
@@ -614,6 +638,30 @@ int main(int argc, char* argv[]) {
           break;
         }
       }
+      #else
+      motion->collision_manager->shift(offset);
+      fcl::DefaultCollisionData<float> collision_data;
+      motion->collision_manager->collide(bpcm_env.get(), &collision_data, fcl::DefaultCollisionFunction<float>);
+      bool motionValid = !collision_data.result.isCollision();
+      motion->collision_manager->shift(-offset);
+
+      // for (auto obj : motion->collision_objects) {
+      //   obj->setTranslation(obj->getTranslation() + offset);
+      // }
+      // motion->collision_manager->update(motion->collision_objects);
+
+      // fcl::DefaultCollisionData<float> collision_data;
+      // motion->collision_manager->collide(bpcm_env.get(), &collision_data, fcl::DefaultCollisionFunction<float>);
+      // bool motionValid = !collision_data.result.isCollision();
+
+      // for (auto obj : motion->collision_objects) {
+      //   obj->setTranslation(obj->getTranslation() - offset);
+      // }
+
+#endif
+      // auto end = std::chrono::steady_clock::now();
+      // size_t dt = std::chrono::duration_cast<std::chrono::nanoseconds>(end - start).count();
+      // std::cout << "cc: " << dt << " ns\n";
 
       // Skip this motion, if it isn't valid
       if (!motionValid) {

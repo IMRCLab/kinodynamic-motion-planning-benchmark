@@ -30,6 +30,7 @@ public:
       fcl::CollisionObjectf robot(robot_->getCollisionGeometry(part)); //, robot_->getTransform(state));
       robot.setTranslation(transform.translation());
       robot.setRotation(transform.rotation());
+      robot.computeAABB();
       fcl::DefaultCollisionData<float> collision_data;
       environment_->collide(&robot, &collision_data, fcl::DefaultCollisionFunction<float>);
       if (collision_data.result.isCollision()) {
