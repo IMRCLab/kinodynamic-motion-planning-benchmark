@@ -17,86 +17,92 @@
 /* V is car speed */
 /* u is change of angular rate */
 
-struct Dubins2 : Feature {
+struct UnicycleDynamics : Feature {
   // Model dubins with 2 non linear equations:
   // V cos(theta) - xdot = 0
   // V sin(theta) - ydot = 0
-  void phi2(arr &y, arr &J, const FrameL &F);
+  void phi2(arr &y, arr &J, const FrameL &F) {
+
+    const double tol = 0.1; // tolerance to avoid division by zero
+
+    // implementation only for rai::JT_transXYPhi!
+    for (auto &f : F)
+    {
+      assert(f->joint->type == rai::JT_transXYPhi);
+    }
+
+    // p: position = [x,y,theta]
+    // v: velocity = [vx,vy,vtheta]
+    arr p, v, Jp, Jv;
+    F_qItself().setOrder(0).eval(p, Jp, F[1].reshape(1, -1));
+    F_qItself().setOrder(1).eval(v, Jv, F);
+    double theta = p(2);
+
+    double c_theta = cos(theta);
+    double s_theta = sin(theta);
+    double speed;
+    int mode;
+    if (fabs(c_theta) > tol)
+    {
+      mode = 1;
+      speed = v(0) / c_theta;
+    }
+    else
+    {
+      mode = 2;
+      speed = v(1) / s_theta;
+    }
+
+    // feature is y
+    y.resize(2);
+    y(0) = c_theta * speed - v(0); // cos V - xdot = 0
+    y(1) = s_theta * speed - v(1); // sin V - ydot = 0
+
+    // std::cout  << p(0) << " " << p(1) << " " << p(2) << " " << speed << " " << v(2) << std::endl;
+
+    // compute Jacobian
+    if (!!J)
+    {
+      arr Jl;
+      Jl.resize(2, 6); // ROWS = 2 equations ; COLUMNS= 3 position * 3 velocities
+      Jl.setZero();
+      if (mode == 1)
+      {
+        // w.r.t theta
+        Jl(0, 2) = 0;
+        Jl(1, 2) = v(0) * 1 / c_theta * 1 / c_theta;
+        // w.r.t vx
+        Jl(0, 3) = 0;
+        Jl(1, 3) = s_theta / c_theta;
+        // w.r.t vy
+        Jl(0, 4) = 0;
+        Jl(1, 4) = -1;
+      }
+      else if (mode == 2)
+      {
+        // w.r.t theta
+        Jl(0, 2) = -v(1) * 1 / s_theta * 1 / s_theta;
+        Jl(1, 2) = 0;
+        // w.r.t vx
+        Jl(0, 3) = -1;
+        Jl(1, 3) = 0;
+        // w.r.t vy
+        Jl(0, 4) = c_theta / s_theta;
+        Jl(1, 4) = 0;
+      }
+
+      arr JBlock;
+      JBlock.setBlockMatrix(Jp, Jv);
+      J = Jl * JBlock;
+    }
+  }
   uint dim_phi2(const FrameL &F) {
     (void)F;
     return 2;
   }
 };
 
-void Dubins2::phi2(arr &y, arr &J, const FrameL &F) {
-
-  const double tol = 0.1; // tolerance to avoid division by zero
-
-  // implementation only for rai::JT_transXYPhi!
-  for (auto &f : F) {
-    assert(f->joint->type == rai::JT_transXYPhi);
-  }
-
-  // p: position = [x,y,theta]
-  // v: velocity = [vx,vy,vtheta]
-  arr p, v, Jp, Jv;
-  F_qItself().setOrder(0).eval(p, Jp, F[1].reshape(1, -1));
-  F_qItself().setOrder(1).eval(v, Jv, F);
-  double theta = p(2);
-
-  double c_theta = cos(theta);
-  double s_theta = sin(theta);
-  double speed;
-  int mode;
-  if (fabs(c_theta) > tol) {
-    mode = 1;
-    speed = v(0) / c_theta;
-  } else {
-    mode = 2;
-    speed = v(1) / s_theta;
-  }
-
-  // feature is y
-  y.resize(2);
-  y(0) = c_theta * speed - v(0); // cos V - xdot = 0
-  y(1) = s_theta * speed - v(1); // sin V - ydot = 0
-
-  // std::cout  << p(0) << " " << p(1) << " " << p(2) << " " << speed << " " << v(2) << std::endl;
-
-  // compute Jacobian
-  if (!!J) {
-    arr Jl;
-    Jl.resize(2, 6); // ROWS = 2 equations ; COLUMNS= 3 position * 3 velocities
-    Jl.setZero();
-    if (mode == 1) {
-      // w.r.t theta
-      Jl(0, 2) = 0;
-      Jl(1, 2) = v(0) * 1 / c_theta * 1 / c_theta;
-      // w.r.t vx
-      Jl(0, 3) = 0;
-      Jl(1, 3) = s_theta / c_theta;
-      // w.r.t vy
-      Jl(0, 4) = 0;
-      Jl(1, 4) = -1;
-    } else if (mode == 2) {
-      // w.r.t theta
-      Jl(0, 2) = -v(1) * 1 / s_theta * 1 / s_theta;
-      Jl(1, 2) = 0;
-      // w.r.t vx
-      Jl(0, 3) = -1;
-      Jl(1, 3) = 0;
-      // w.r.t vy
-      Jl(0, 4) = c_theta / s_theta;
-      Jl(1, 4) = 0;
-    }
-
-    arr JBlock;
-    JBlock.setBlockMatrix(Jp, Jv);
-    J = Jl * JBlock;
-  }
-}
-
-struct CarFirstOrderVelocity : Feature {
+struct UnicycleVelocity : Feature {
   uint dim_phi2(const FrameL &) { return 1; }
 
   void phi2(arr &y, arr &J, const FrameL &F) {
@@ -160,7 +166,7 @@ struct CarFirstOrderVelocity : Feature {
   }
 };
 
-struct CarSecondOrderAcceleration : Feature {
+struct UnicycleAcceleration : Feature {
   uint dim_phi2(const FrameL &) { return 1; }
 
   void phi2(arr &y, arr &J, const FrameL &F) {
@@ -482,7 +488,7 @@ int main(int argn, char **argv) {
   // komo.addObjective({1./N, 1./N}, FS_poseDiff, {"robot0", "start0"}, OT_eq, {1e2});
 
   // robot dynamics
-  komo.addObjective({}, make_shared<Dubins2>(), {"robot0"}, OT_eq, {1e1}, {0},
+  komo.addObjective({}, make_shared<UnicycleDynamics>(), {"robot0"}, OT_eq, {1e1}, {0},
                     1);
 
   if (car_order >= ONE) {
@@ -494,24 +500,24 @@ int main(int argn, char **argv) {
     komo.addObjective({}, FS_qItself, {"robot0"}, OT_ineq, {0, 0, -1},
                       {0, 0, -max_omega}, 1);
     // velocity limit
-    komo.addObjective({}, make_shared<CarFirstOrderVelocity>(), {"robot0"},
+    komo.addObjective({}, make_shared<UnicycleVelocity>(), {"robot0"},
                       OT_ineq, {1}, {max_velocity}, 1);
 
-    komo.addObjective({}, make_shared<CarFirstOrderVelocity>(), {"robot0"},
+    komo.addObjective({}, make_shared<UnicycleVelocity>(), {"robot0"},
                       OT_ineq, {-1}, {-max_velocity}, 1);
   }
   if (car_order >= TWO) {
     double max_acceleration = 2; // m s^-2
     double max_wdot = 2;
 
-    // NOTE: CarSecondOrderAcceleration returns v - v'
+    // NOTE: UnicycleAcceleration returns v - v'
     // a = (v - v') / dt
     // so use  amax * dt as limit
 
-    komo.addObjective({}, make_shared<CarSecondOrderAcceleration>(), {"robot0"},
+    komo.addObjective({}, make_shared<UnicycleAcceleration>(), {"robot0"},
                       OT_ineq, {1}, {max_acceleration * dt}, 2);
 
-    komo.addObjective({}, make_shared<CarSecondOrderAcceleration>(), {"robot0"},
+    komo.addObjective({}, make_shared<UnicycleAcceleration>(), {"robot0"},
                       OT_ineq, {-1}, {-max_acceleration * dt}, 2);
 
     komo.addObjective({}, FS_qItself, {"robot0"}, OT_ineq, {0, 0, 1},
