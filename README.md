@@ -52,15 +52,15 @@ python3 ../scripts/gen_sbpl_prim.py ../deps/sbpl/matlab/mprim/unicycle_noturninp
 Optimize Trajectories
 
 ```
-./rai_dubins -model  \"../benchmark/carFirstOrder/parallelpark_0.g\" -waypoints \"../benchmark/carFirstOrder/initGuess/result_dbastar_parallelpark.yaml\"  -one_every 2 -display 1 -out out.yaml -animate 0
+./main_rai -model  \"../benchmark/carFirstOrder/parallelpark_0.g\" -waypoints \"../benchmark/carFirstOrder/initGuess/result_dbastar_parallelpark.yaml\"  -one_every 2 -display 1 -out out.yaml -animate 0
 ```
 
 ```
-./rai_dubins -model  \" ../benchmark/carFirstOrder/parallelpark_0.g \" -waypoints \" ../benchmark/carFirstOrder/initGuess/result_dbastar_parallelpark.yaml \"  -one_every 2 -display 1 -out out.yaml -animate 0
+./main_rai -model  \" ../benchmark/carFirstOrder/parallelpark_0.g \" -waypoints \" ../benchmark/carFirstOrder/initGuess/result_dbastar_parallelpark.yaml \"  -one_every 2 -display 1 -out out.yaml -animate 0
  ```
 
 ```
-./rai_dubins -model  \"../benchmark/carFirstOrder/bugtrap_0.g \" -waypoints \"../benchmark/carFirstOrder/initGuess/result_dbastar_bugtrap.yaml\"  -one_every 2 -display 0 -out out.yaml -animate 0
+./main_rai -model  \"../benchmark/carFirstOrder/bugtrap_0.g \" -waypoints \"../benchmark/carFirstOrder/initGuess/result_dbastar_bugtrap.yaml\"  -one_every 2 -display 0 -out out.yaml -animate 0
 ```
 
 Translate yaml environments to g
@@ -82,6 +82,6 @@ python3 translate_g.py --fin ../benchmark/carFirstOrder/bugtrap_0.yaml  --fout .
 ```
 cd build
 python3 ../scripts/translate_g.py --fin ../benchmark/carFirstOrder/parallelpark_0.yaml  --fout env.g
-./rai_dubins -model "env.g" -waypoints \"../benchmark/carSecondOrder/initGuess/result_dbastar_parallelpark.yaml\" -one_every 1 -display 0 -animate 0 -out "komo.yaml"
+./main_rai -model "env.g" -waypoints \"../benchmark/carSecondOrder/initGuess/result_dbastar_parallelpark.yaml\" -one_every 1 -display 0 -animate 0 -out "komo.yaml"
 python3 ../scripts/checker.py ../benchmark/carSecondOrder/parallelpark_0.yaml komo.yaml
 ```

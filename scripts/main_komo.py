@@ -34,7 +34,7 @@ def run_komo(filename_env, filename_initial_guess, filename_result, cfg = ""):
 
 		while True:
 			# Run KOMO
-			result = subprocess.run(["./rai_dubins",
+			result = subprocess.run(["./main_rai",
 					"-model", "\""+str(filename_g)+"\"",
 					"-waypoints", "\""+str(filename_initial_guess)+"\"",
 					"-one_every", "1",
@@ -140,7 +140,7 @@ def run_komo_standalone(filename_env, folder, timelimit, cfg = ""):
 				# Run KOMO
 				filename_temp_result = p / "T_{}.yaml".format(T)
 				while True:
-					result = subprocess.run(["./rai_dubins",
+					result = subprocess.run(["./main_rai",
 									"-model", "\""+str(filename_g)+"\"",
 									"-waypoints", "\""+str(filename_modified_guess)+"\"",
 									"-one_every", "1",

@@ -132,14 +132,6 @@ add_executable(main_rai
 )
 target_link_libraries(main_rai
   rai
-)
-
-## rai_dubins
-add_executable(rai_dubins
-  src/rai_dubins.cpp
-)
-target_link_libraries(rai_dubins
-  rai
   yaml-cpp
 )
 
