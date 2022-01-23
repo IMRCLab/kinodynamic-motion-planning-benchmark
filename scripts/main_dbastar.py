@@ -193,6 +193,8 @@ def run_dbastar(filename_env, folder, timelimit, cfg, opt_alg="scp", motions_sta
 					print("DELTA CHECK", delta_achieved)
 					# assert(delta_achieved <= delta)
 
+					shutil.copyfile(filename_motions, "{}/motions_sol{}.yaml".format(folder, sol))
+
 					if opt_alg == "scp":
 						success = main_scp.run_scp(filename_env, filename_result_dbastar, filename_result_opt)
 					elif opt_alg == "komo":
@@ -234,11 +236,11 @@ def run_dbastar(filename_env, folder, timelimit, cfg, opt_alg="scp", motions_sta
 						stats.write("  - t: {}\n    cost: {}\n".format(t, cost))
 						maxCost = cost * 0.99
 
-						shutil.copyfile(filename_result_dbastar, "{}/result_dbastar_sol{}.yaml".format(folder, sol))
 						shutil.copyfile(filename_result_opt, "{}/result_opt_sol{}.yaml".format(folder, sol))
-						shutil.copyfile(filename_motions, "{}/motions_sol{}.yaml".format(folder, sol))
+						# shutil.copyfile(filename_motions, "{}/motions_sol{}.yaml".format(folder, sol))
+					shutil.copyfile(filename_result_dbastar, "{}/result_dbastar_sol{}.yaml".format(folder, sol))
 
-						sol += 1
+					sol += 1
 
 
 						# delta = initialDelta

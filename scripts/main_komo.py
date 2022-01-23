@@ -53,10 +53,12 @@ def run_komo(filename_env, filename_initial_guess, filename_result, cfg = ""):
 			return True
 
 
-def run_komo_standalone(filename_env, folder, timelimit, cfg = ""):
+def run_komo_standalone(filename_env, folder, timelimit, cfg = "",
+		search = "binarySearch",
+		initialguess = "ompl"):
 
 	# search = "linear"
-	search = "binarySearch"
+	# search = "binarySearch"
 
 	with tempfile.TemporaryDirectory() as tmpdirname:
 		p = Path(tmpdirname)

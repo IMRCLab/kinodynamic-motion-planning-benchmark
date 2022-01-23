@@ -85,3 +85,15 @@ python3 ../scripts/translate_g.py --fin ../benchmark/carFirstOrder/parallelpark_
 ./main_rai -model "env.g" -waypoints \"../benchmark/carSecondOrder/initGuess/result_dbastar_parallelpark.yaml\" -one_every 1 -display 0 -animate 0 -out "komo.yaml"
 python3 ../scripts/checker.py ../benchmark/carSecondOrder/parallelpark_0.yaml komo.yaml
 ```
+
+### Profiling
+
+```
+mkdir buildProfile
+cd buildProfile
+cmake -DCMAKE_BUILD_TYPE=RelWithDebInfo ..
+make
+cd ..
+perf record --call-graph dwarf <test application>
+perf report --no-inline
+```

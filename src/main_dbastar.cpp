@@ -97,6 +97,7 @@ public:
 
   size_t idx;
   std::string name;
+  bool disabled;
 };
 
 // forward declaration
@@ -330,6 +331,8 @@ int main(int argc, char* argv[]) {
     m.collision_manager.reset(new ShiftableDynamicAABBTreeCollisionManager<float>());
     m.collision_manager->registerObjects(m.collision_objects);
 
+    m.disabled = false;
+
     motions.push_back(m);
   }
 
@@ -380,6 +383,40 @@ int main(int argc, char* argv[]) {
     delta = adjusted_delta;
 
   }
+  //////////////////////////
+
+  {
+    size_t num_duplicates = 0;
+    Motion fakeMotion;
+    fakeMotion.idx = -1;
+    fakeMotion.states.push_back(si->allocState());
+    std::vector<Motion *> neighbors_m;
+    for (const auto& m : motions) {
+      if (m.disabled) {
+        continue;
+      }
+
+      si->copyState(fakeMotion.states[0], m.states[0]);
+      T_m->nearestR(&fakeMotion, delta/2, neighbors_m);
+
+      for (Motion* nm : neighbors_m) {
+        if (nm == &m || nm->disabled) {
+          continue;
+        }
+        float goal_delta = si->distance(m.states.back(), nm->states.back());
+        if (goal_delta < delta/2) {
+          // std::cout << nm->idx << " " << goal_delta << std::endl;
+          nm->disabled = true;
+          ++num_duplicates;
+        }
+      }
+    }
+    std::cout << "There are " << num_duplicates << " duplicate motions!" << std::endl;
+
+  }
+
+
+  //////////////////////////
 
   // db-A* search
   open_t open;
@@ -425,15 +462,15 @@ int main(int argc, char* argv[]) {
   size_t expands = 0;
   while (!open.empty())
   {
+    AStarNode* current = open.top();
     ++expands;
     if (expands % 1000 == 0) {
-      std::cout << "expanded: " << expands << " open: " << open.size() << " nodes: " << T_n->size() << std::endl;
+      std::cout << "expanded: " << expands << " open: " << open.size() << " nodes: " << T_n->size() << " f-score " << current->fScore << std::endl;
     }
     // if (expands > 100000) {
       // break;
     // }
 
-    AStarNode* current = open.top();
     // std::cout << "fs " << current->fScore << " " << last_f_score << " " << current << std::endl;
     assert(current->fScore >= last_f_score);
     last_f_score = current->fScore;
@@ -456,6 +493,7 @@ int main(int argc, char* argv[]) {
       std::ofstream out(outputFile);
       out << "delta: " << delta << std::endl;
       out << "epsilon: " << epsilon << std::endl;
+      out << "cost: " << current->gScore << std::endl;
       out << "result:" << std::endl;
       out << "  - states:" << std::endl;
       for (size_t i = 0; i < result.size() - 1; ++i)
@@ -563,8 +601,11 @@ int main(int argc, char* argv[]) {
     // std::cout << "found " << neighbors_m.size() << " motions" << std::endl;
     // Loop over all potential applicable motions
     for (const Motion* motion : neighbors_m) {
+      if (motion->disabled) {
+        continue;
+      }
 
-#if 0
+#if 1
       fcl::Vector3f computed_offset(0, 0, 0);
 #else
       float motion_dist = si->distance(fakeMotion.states[0], motion->states[0]);
@@ -611,8 +652,9 @@ int main(int argc, char* argv[]) {
       float tentative_hScore = epsilon * heuristic(robot, tmpState, goalState);
       float tentative_fScore = tentative_gScore + tentative_hScore;
 
-      // skip motions that would exceed cost bound
-      if (tentative_fScore > maxCost) {
+      // skip motions that would exceed cost bound, or that are invalid
+      if (tentative_fScore > maxCost || !si->satisfiesBounds(tmpState))
+      {
         // std::cout << "skip " << tentative_fScore << " " << maxCost << std::endl;
         continue;
       }
@@ -678,6 +720,8 @@ int main(int argc, char* argv[]) {
       // float radius = std::min(delta/2, motion_distance-eps);
       float radius = delta/2;
       T_n->nearestR(query_n, radius, neighbors_n);
+      // auto nearest = T_n->nearest(query_n);
+      // float nearest_distance = si->distance(nearest->state, tmpState);
 
       // exclude state we came from (otherwise we never add motions that are less than delta away)
       // auto it = std::remove(neighbors_n.begin(), neighbors_n.end(), current);
@@ -686,6 +730,7 @@ int main(int argc, char* argv[]) {
       // std::cout << neighbors_n.size() << std::endl;
 
       if (neighbors_n.size() == 0)
+      // if (nearest_distance > radius)
       {
         // new state -> add it to open and T_n
         auto node = new AStarNode();
@@ -704,8 +749,10 @@ int main(int argc, char* argv[]) {
       }
       else
       {
+        // T_n->nearestR(query_n, radius, neighbors_n);
         // check if we have a better path now
         for (AStarNode* entry : neighbors_n) {
+        // AStarNode* entry = nearest;
           assert(si->distance(entry->state, tmpState) <= delta);
           float delta_score = entry->gScore - tentative_gScore;
           if (delta_score > 0) {
