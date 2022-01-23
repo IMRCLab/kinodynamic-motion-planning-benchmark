@@ -9,6 +9,7 @@ import time
 
 import robots
 import translate_g
+from utils_optimization import UtilsSolutionFile
 
 def run_komo(filename_env, filename_initial_guess, filename_result, cfg = ""):
 
@@ -32,25 +33,37 @@ def run_komo(filename_env, filename_initial_guess, filename_result, cfg = ""):
 		with open(filename_cfg, 'w') as f:
 			f.write(cfg)
 
-		while True:
-			# Run KOMO
-			result = subprocess.run(["./main_rai",
-					"-model", "\""+str(filename_g)+"\"",
-					"-waypoints", "\""+str(filename_initial_guess)+"\"",
-					"-one_every", "1",
-					"-display", str(0),
-					"-animate", str(0),
-					"-order", str(order),
-					"-cfg", "\""+str(filename_cfg)+"\"",
-					"-out", "\""+str(filename_result)+"\""])
-			# a negative returncode indicates an internal error -> repeat
-			if result.returncode >= 0:
-				break
-		if result.returncode != 0:
-			print("KOMO failed")
-			return False
-		else:
-			return True
+		# hack
+		utils_sol_file = UtilsSolutionFile()
+		utils_sol_file.load(filename_initial_guess)
+		filename_modified_guess = p / "guess.yaml"
+
+		for factor in [0.9, 1.0, 1.1]:
+			T = int(utils_sol_file.T() * factor)
+			print("Trying T ", T)
+			# utils_sol_file.save_rescaled(filename_modified_guess, int(utils_sol_file.T() * 1.1))
+			utils_sol_file.save_rescaled(filename_modified_guess, T)
+
+			while True:
+				# Run KOMO
+				result = subprocess.run(["./main_rai",
+						"-model", "\""+str(filename_g)+"\"",
+						# "-waypoints", "\""+str(filename_initial_guess)+"\"",
+						"-waypoints", "\""+str(filename_modified_guess)+"\"",
+						"-one_every", "1",
+						"-display", str(0),
+						"-animate", str(0),
+						"-order", str(order),
+						"-cfg", "\""+str(filename_cfg)+"\"",
+						"-out", "\""+str(filename_result)+"\""])
+				# a negative returncode indicates an internal error -> repeat
+				if result.returncode >= 0:
+					break
+			if result.returncode != 0:
+				print("KOMO failed")
+				# return False
+			else:
+				return True
 
 
 def run_komo_standalone(filename_env, folder, timelimit, cfg = "",
@@ -91,11 +104,10 @@ def run_komo_standalone(filename_env, folder, timelimit, cfg = "",
 			"-p", "rrt*"
 			])
 
-		with open(filename_initial_guess) as f:
-			guess = yaml.safe_load(f)
+		utils_sol_file = UtilsSolutionFile()
+		utils_sol_file.load(filename_initial_guess)
 
-		states = np.array(guess['result'][0]['states'])
-		length = guess['result'][0]['pathlength']
+		length = utils_sol_file.file['result'][0]['pathlength']
 		max_speed = 0.5
 		min_T = int(length / max_speed)
 		max_T = None
@@ -130,14 +142,8 @@ def run_komo_standalone(filename_env, folder, timelimit, cfg = "",
 
 					print("TRYING ", T, min_T, max_T)
 
-				states_interp = np.empty((T, states.shape[1]))
-				for k in range(states.shape[1]):
-					states_interp[:,k] = np.interp(np.linspace(0,1,T), np.linspace(0, 1, states.shape[0]), states[:,k])
-
 				filename_modified_guess = p / "guess.yaml"
-				with open(filename_modified_guess, 'w') as f:
-					guess['result'][0]['states'] = states_interp.tolist()
-					yaml.dump(guess, f)
+				utils_sol_file.save_rescaled(filename_modified_guess, T)
 
 				# Run KOMO
 				filename_temp_result = p / "T_{}.yaml".format(T)

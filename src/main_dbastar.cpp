@@ -149,55 +149,6 @@ bool compareAStarNode::operator()(const AStarNode *a, const AStarNode *b) const
   }
 }
 
-// struct AStarOpenNode
-// {
-//   AStarOpenNode(const AStarNode* node)
-//       : node(node)
-//   {
-//   }
-
-//   bool operator<(const AStarOpenNode &other) const
-//   {
-//     // Sort order
-//     // 1. lowest fScore
-//     // 2. highest gScore
-
-//     // Our heap is a maximum heap, so we invert the comperator function here
-//     if (node->fScore != other.node->fScore)
-//     {
-//       return node->fScore > other.node->fScore;
-//     }
-//     else
-//     {
-//       return node->gScore < other.node->gScore;
-//     }
-//   }
-
-//   // friend std::ostream &operator<<(std::ostream &os, const Node &node)
-//   // {
-//   //   os << "state: " << node.state << " fScore: " << node.fScore
-//   //      << " gScore: " << node.gScore;
-//   //   return os;
-//   // }
-
-//   const AStarNode* node;
-
-//   // const ob::State* state;
-
-//   // float fScore;
-//   // float gScore;
-
-//   // typename boost::heap::d_ary_heap<AStarOpenNode, boost::heap::arity<2>,
-//   //                                  boost::heap::mutable_<true>>::handle_type
-//   //     handle;
-
-//   // typename boost::heap::d_ary_heap<AStarNode, boost::heap::arity<2>,
-//   //                                  boost::heap::mutable_<true>>::handle_type
-//   //     came_from;
-
-//   // size_t used_motion;
-// };
-
 float heuristic(std::shared_ptr<Robot> robot, const ob::State *s, const ob::State *g)
 {
   // heuristic is the time it might take to get to the goal
@@ -208,6 +159,11 @@ float heuristic(std::shared_ptr<Robot> robot, const ob::State *s, const ob::Stat
   const float time = dist * max_vel;
   return time;
 }
+
+class DBAstar
+{
+
+};
 
 int main(int argc, char* argv[]) {
   namespace po = boost::program_options;
@@ -778,5 +734,96 @@ int main(int argc, char* argv[]) {
 
   }
 
-  return 1;
+  query_n->state = goalState;
+  const auto nearest = T_n->nearest(query_n);
+  if (nearest->gScore == 0) {
+    std::cout << "No solution found (not even approxmite)" << std::endl;
+    return 1;
+  }
+
+  float nearest_distance = si->distance(nearest->state, goalState);
+  std::cout << "Nearest to goal: " << nearest_distance << " (delta: " << delta << ")" << std::endl;
+
+  std::cout << "Using approximate solution cost: " << nearest->gScore << std::endl;
+
+  std::vector<const AStarNode*> result;
+
+  const AStarNode* n = nearest;
+  while (n != nullptr) {
+    result.push_back(n);
+    // std::cout << n->used_motion << std::endl;
+    // si->printState(n->state);
+    n = n->came_from;
+  }
+  std::reverse(result.begin(), result.end());
+
+  std::ofstream out(outputFile);
+  out << "delta: " << delta << std::endl;
+  out << "epsilon: " << epsilon << std::endl;
+  out << "cost: " << nearest->gScore << std::endl;
+  out << "result:" << std::endl;
+  out << "  - states:" << std::endl;
+  for (size_t i = 0; i < result.size() - 1; ++i)
+  {
+    // Compute intermediate states
+    const auto node_state = result[i]->state;
+    const fcl::Vector3f current_pos = robot->getTransform(node_state).translation();
+    const auto &motion = motions.at(result[i+1]->used_motion);
+    out << "      # ";
+    printState(out, si, node_state);
+    out << std::endl;
+    out << "      # motion " << motion.name << " with cost " << motion.cost << std::endl;
+    // skip last state each
+    for (size_t k = 0; k < motion.states.size(); ++k)
+    {
+      const auto state = motion.states[k];
+      si->copyState(tmpState, state);
+      const fcl::Vector3f relative_pos = robot->getTransform(state).translation();
+      robot->setPosition(tmpState, current_pos + result[i+1]->used_offset + relative_pos);
+
+      if (k < motion.states.size() - 1) {
+        out << "      - ";
+      } else {
+        out << "      # ";
+      }
+      printState(out, si, tmpState);
+      out << std::endl;
+    }
+    out << std::endl;
+  }
+  out << "      - ";
+  printState(out, si, result.back()->state);
+  out << std::endl;
+  out << "    actions:" << std::endl;
+  for (size_t i = 0; i < result.size() - 1; ++i)
+  {
+    const auto &motion = motions[result[i+1]->used_motion];
+    out << "      # motion " << motion.name << " with cost " << motion.cost << std::endl;
+    for (size_t k = 0; k < motion.actions.size(); ++k)
+    {
+      const auto& action = motion.actions[k];
+      out << "      - ";
+      printAction(out, si, action);
+      out << std::endl;
+    }
+    out << std::endl;
+  }
+  // statistics for the motions used
+  std::map<size_t, size_t> motionsCount; // motionId -> usage count
+  for (size_t i = 0; i < result.size() - 1; ++i)
+  {
+    auto motionId = result[i+1]->used_motion;
+    auto iter = motionsCount.find(motionId);
+    if (iter == motionsCount.end()) {
+      motionsCount[motionId] = 1;
+    } else {
+      iter->second += 1;
+    }
+  }
+  out << "    motion_stats:" << std::endl;
+  for (const auto& kv : motionsCount) {
+    out << "      " << motions[kv.first].name << ": " << kv.second << std::endl;
+  }
+
+  return 0;
 }

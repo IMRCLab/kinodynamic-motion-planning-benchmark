@@ -110,20 +110,20 @@ def main():
 		"unicycleFirstOrder/parallelpark_0",
 		"unicycleFirstOrder/kink_0",
 		"unicycleFirstOrder/bugtrap_0",
-		"unicycleSecondOrder/parallelpark_0",
-		"unicycleSecondOrder/kink_0",
-		"unicycleSecondOrder/bugtrap_0",
+		# "unicycleSecondOrder/parallelpark_0",
+		# "unicycleSecondOrder/kink_0",
+		# "unicycleSecondOrder/bugtrap_0",
 		# "carFirstOrderWithTrailers/parallelpark_0",
 		# "quadrotor/empty_0",
 	]
 	algs = [
-		"sst",
-		"sbpl",
+		# "sst",
+		# "sbpl",
 		"komo",
 		"dbAstar-komo",
-		"dbAstar-scp",
+		# "dbAstar-scp",
 	]
-	trials = 1
+	trials = 5
 	timelimit = 5 * 60
 
 	tasks = []

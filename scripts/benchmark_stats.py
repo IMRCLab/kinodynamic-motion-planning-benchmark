@@ -12,9 +12,9 @@ def main():
 		"unicycleFirstOrder/parallelpark_0",
 		"unicycleFirstOrder/kink_0",
 		"unicycleFirstOrder/bugtrap_0",
-		"unicycleSecondOrder/parallelpark_0",
-		"unicycleSecondOrder/kink_0",
-		"unicycleSecondOrder/bugtrap_0",
+		# "unicycleSecondOrder/parallelpark_0",
+		# "unicycleSecondOrder/kink_0",
+		# "unicycleSecondOrder/bugtrap_0",
 		# "carFirstOrderWithTrailers/parallelpark_0",
 	]
 	algs = [
@@ -22,7 +22,7 @@ def main():
 		"sbpl",
 		"komo",
 		"dbAstar-komo",
-		"dbAstar-scp",
+		# "dbAstar-scp",
 	]
 
 	report = plot_stats.Report(results_path / "stats.pdf")
