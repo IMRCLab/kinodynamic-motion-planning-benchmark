@@ -71,8 +71,8 @@ def check(filename_env: str, filename_result: str, file = None, expected_T=None)
 			success = False
 
 	if expected_T is not None:
-		if expected_T != T-1:
-			print("Expected T {}, but is {}".format(expected_T, T-1), file=file)
+		if T-1 not in expected_T:
+			print("Expected T to be in {}, but is {}".format(expected_T, T-1), file=file)
 			success = False
 
 	return success

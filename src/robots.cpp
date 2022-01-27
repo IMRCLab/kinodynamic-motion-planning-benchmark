@@ -1040,8 +1040,8 @@ std::shared_ptr<Robot> create_robot(
         positionBounds,
         /*v_limit*/ 0.5 /*m/s*/,
         /*w_limit*/ 0.5 /*rad/s*/,
-        /*a_limit*/ 2.0 /*m/s^2*/,
-        /*w_dot_limit*/ 2.0 /*rad/s^2*/
+        /*a_limit*/ 0.25 /*m/s^2*/,
+        /*w_dot_limit*/ 0.25 /*rad/s^2*/
         ));
   }
   else if (robotType == "car_first_order_with_0_trailers_0")

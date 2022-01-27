@@ -511,8 +511,8 @@ int main(int argn, char **argv) {
                       OT_ineq, {-1}, {-max_velocity}, 1);
   }
   if (car_order == TWO) {
-    const double max_acceleration = 2-0.01; // m s^-2
-    const double max_wdot = 2-0.01;
+    const double max_acceleration = 0.25-0.01; // m s^-2
+    const double max_wdot = 0.25-0.01;
     const double max_velocity = 0.5-0.01; // m/s
     const double max_omega = 0.5-0.01; // rad/s
 
@@ -537,15 +537,15 @@ int main(int argn, char **argv) {
     // so use  amax * dt as limit
 
     komo.addObjective({3./N,1.}, make_shared<UnicycleAcceleration>(), {"robot0"},
-                      OT_ineq, {4}, {max_acceleration * dt}, 2);
+                      OT_ineq, {10}, {max_acceleration * dt}, 2);
 
     komo.addObjective({3./N,1.}, make_shared<UnicycleAcceleration>(), {"robot0"},
-                      OT_ineq, {-4}, {-max_acceleration * dt}, 2);
+                      OT_ineq, {-10}, {-max_acceleration * dt}, 2);
 
-    komo.addObjective({3./N,1.}, FS_qItself, {"robot0"}, OT_ineq, {0, 0, 4},
+    komo.addObjective({3./N,1.}, FS_qItself, {"robot0"}, OT_ineq, {0, 0, 10},
                       {0, 0, max_wdot}, 2);
 
-    komo.addObjective({3./N,1.}, FS_qItself, {"robot0"}, OT_ineq, {0, 0, -4},
+    komo.addObjective({3./N,1.}, FS_qItself, {"robot0"}, OT_ineq, {0, 0, -10},
                       {0, 0, -max_wdot}, 2);
 
     // contraints: zero velocity start and end
@@ -642,7 +642,7 @@ int main(int argn, char **argv) {
   std::cout << results << std::endl;
   std::cout << "(N,T): " << results.N << " " << komo.T << std::endl;
 
-  if (ineq > 0.01 || eq > 0.01) {
+  if (ineq > 0.005 || eq > 0.005) {
     // Optimization failed (constraint violations)
     return 1;
   }

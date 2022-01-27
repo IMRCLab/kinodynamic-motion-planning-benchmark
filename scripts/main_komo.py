@@ -59,7 +59,7 @@ def run_komo(filename_env, filename_initial_guess, filename_result, cfg = ""):
 		return _run_komo(filename_g, filename_env, filename_initial_guess, filename_result, filename_cfg, order)
 
 
-def run_komo_with_T_scaling(filename_env, filename_initial_guess, filename_result, cfg = ""):
+def run_komo_with_T_scaling(filename_env, filename_initial_guess, filename_result, cfg = "", max_T = None):
 
 	with tempfile.TemporaryDirectory() as tmpdirname:
 		p = Path(tmpdirname)
@@ -90,6 +90,8 @@ def run_komo_with_T_scaling(filename_env, filename_initial_guess, filename_resul
 
 		for factor in [0.9, 1.0, 1.1]:
 			T = int(utils_sol_file.T() * factor)
+			if T > max_T:
+				return False
 			print("Trying T ", T)
 			# utils_sol_file.save_rescaled(filename_modified_guess, int(utils_sol_file.T() * 1.1))
 			utils_sol_file.save_rescaled(filename_modified_guess, T)
@@ -100,7 +102,9 @@ def run_komo_with_T_scaling(filename_env, filename_initial_guess, filename_resul
 
 def run_komo_standalone(filename_env, folder, timelimit, cfg = "",
 		search = "binarySearch",
-		initialguess = "ompl"):
+		initialguess = "ompl",
+		T_range_rel=None,
+		T_range_abs=None):
 
 	# search = "linear"
 	# search = "binarySearch"
@@ -127,22 +131,37 @@ def run_komo_standalone(filename_env, folder, timelimit, cfg = "",
 		with open(filename_cfg, 'w') as f:
 			f.write(cfg)
 
-		# compute initial guess via OMPL
-		filename_initial_guess = "{}/result_ompl.yaml".format(folder)
-		result = subprocess.run(["./main_ompl_geometric", 
-			"-i", filename_env,
-			"-o", filename_initial_guess,
-			"--timelimit", str(10),
-			"-p", "rrt*"
-			])
+		if initialguess == "ompl":
+			# compute initial guess via OMPL
+			filename_initial_guess = "{}/result_ompl.yaml".format(folder)
+			result = subprocess.run(["./main_ompl_geometric", 
+				"-i", filename_env,
+				"-o", filename_initial_guess,
+				"--timelimit", str(10),
+				"-p", "rrt*"
+				])
+		else:
+			filename_initial_guess = initialguess
 
 		utils_sol_file = UtilsSolutionFile()
 		utils_sol_file.load(filename_initial_guess)
 
-		length = utils_sol_file.file['result'][0]['pathlength']
-		max_speed = 0.5
-		min_T = int(length / max_speed * 10)
-		max_T = None
+		if T_range_rel is None and T_range_abs is None:
+			length = utils_sol_file.file['result'][0]['pathlength']
+			max_speed = 0.5
+			min_T = int(length / max_speed * 10)
+			max_T = None
+		
+		if T_range_rel is not None:
+			T_file = utils_sol_file.T()
+			min_T = max(1, int(T_range_rel[0] * T_file))
+			max_T = max(int(T_range_rel[1] * T_file), min_T+1)
+
+		if T_range_abs is not None:
+			min_T = max(T_range_abs[0], min_T)
+			max_T = min(T_range_abs[1], max_T)
+
+		print("T range: ", min_T, max_T)
 
 		# prepare stats
 		filename_stats = "{}/stats.yaml".format(folder)
@@ -181,7 +200,7 @@ def run_komo_standalone(filename_env, folder, timelimit, cfg = "",
 				filename_temp_result = p / "T_{}.yaml".format(T)
 				success =  _run_komo(filename_g, filename_env, filename_modified_guess, filename_temp_result, filename_cfg, order)
 				if not success:
-					print("KOMO failed with T", T, result.returncode)
+					print("KOMO failed with T", T)
 					min_T = T + 1
 
 					# return False

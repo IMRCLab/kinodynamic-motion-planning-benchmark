@@ -54,14 +54,14 @@ def test_unicycle_first_order():
 	_run_check("unicycle_first_order_0",
 			 [2,2,0],
 			 [3,2,0],
-			 20)
+			 [20,21])
 
 def test_unicycle_second_0_order_initial_velocity():
 	# move in a straight line for 1m => 2s => 20 timesteps
 	_run_check("unicycle_second_order_0",
 			 [2,2,0,0.5,0],
 			 [3,2,0,0.5,0],
-			 20)
+			 [20,21,22,23])
 
 def test_unicycle_second_0_order_start_stop():
 	# move in a straight line for 1m => 2s => 20 timesteps
@@ -69,4 +69,4 @@ def test_unicycle_second_0_order_start_stop():
 	_run_check("unicycle_second_order_0",
 			 [2,2,0,0.0,0],
 			 [3,2,0,0.0,0],
-			 23)
+			 [42,43])

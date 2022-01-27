@@ -101,7 +101,7 @@ class Animation:
 def visualize(filename_env, filename_result=None, filename_video=None):
   anim = Animation(filename_env, filename_result)
   if filename_video is not None:
-    anim.save(filename_video, 10)
+    anim.save(filename_video, 1)
   else:
     anim.show()
   # anim.save("bugtrap_0_rrt.mp4", 10)
