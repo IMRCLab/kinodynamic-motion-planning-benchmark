@@ -11,27 +11,29 @@ import subprocess
 import tempfile
 from pathlib import Path
 import psutil
+import checker
 
 
 import sys, os
 sys.path.append(os.getcwd())
 from motionplanningutils import RobotHelper
 
-
-def gen_random_motion(robot_type):
-	# robot = robots.create_robot(robot_type)
+def gen_motion(robot_type, start, goal):
+	dbg = False
 	with tempfile.TemporaryDirectory() as tmpdirname:
-		p = Path(tmpdirname)
-		rh = RobotHelper(robot_type)
+		if dbg:
+			p = Path("../results/test")
+		else:
+			p = Path(tmpdirname)
 		env = {
 			"environment":{
 				"dimensions": [4, 4],
 				"obstacles": []
 			},
 			"robots": [{
-				"type": "unicycle_first_order_0",
-				"start": [2, 2, rh.sampleUniform()[2]],
-				"goal": (np.array(rh.sampleUniform()) + np.array([2,2,0])).tolist(),
+				"type": robot_type,
+				"start": list(start),
+				"goal": list(goal),
 			}]
 		}
 
@@ -41,14 +43,18 @@ def gen_random_motion(robot_type):
 
 		run_komo_standalone(filename_env, str(p), 60, search="linear")
 
-		# subprocess.run(["python3",
-		# 			"../benchmark/unicycleFirstOrder/visualize.py",
-		# 			"env.yaml",
-		# 			"--result", "../results/test/result_komo.yaml",
-		# 			"--video", "../results/test/result_komo.mp4"])
+		filename_result = p / "result_komo.yaml"
+		checker.check(str(filename_env), str(filename_result))
+
+		if dbg:
+			subprocess.run(["python3",
+						"../benchmark/unicycleSecondOrder/visualize.py",
+						str(filename_env),
+						"--result", str(filename_result),
+						"--video", str(filename_result.with_suffix(".mp4"))])
 
 		# read the result
-		with open(p / "result_komo.yaml") as f:
+		with open(filename_result) as f:
 			result = yaml.load(f, Loader=yaml.CSafeLoader)
 
 		states = np.array(result["result"][0]["states"])
@@ -75,6 +81,18 @@ def gen_random_motion(robot_type):
 				start_k = k
 				motions.append(motion)
 		return motions
+
+
+def gen_random_motion(robot_type):
+	rh = RobotHelper(robot_type)
+	start = rh.sampleUniform()
+	goal = rh.sampleUniform()
+	# shift to center (at 2,2)
+	start[0] = 2
+	start[1] = 2
+	goal[0] += 2
+	goal[1] += 2
+	return gen_motion(robot_type, start, goal)
 
 
 def main():
