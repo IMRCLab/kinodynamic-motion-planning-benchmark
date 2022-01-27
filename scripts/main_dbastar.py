@@ -198,7 +198,7 @@ def run_dbastar(filename_env, folder, timelimit, cfg, opt_alg="scp", motions_sta
 					if opt_alg == "scp":
 						success = main_scp.run_scp(filename_env, filename_result_dbastar, filename_result_opt)
 					elif opt_alg == "komo":
-						success = main_komo.run_komo(
+						success = main_komo.run_komo_with_T_scaling(
 							filename_env, filename_result_dbastar, filename_result_opt, cfg["rai_cfg"])
 					else:
 						raise Exception("Unknown optimization algorithm {}!".format(opt_alg))

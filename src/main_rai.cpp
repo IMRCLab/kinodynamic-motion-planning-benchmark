@@ -384,6 +384,10 @@ int main(int argn, char **argv) {
   rai::String out_file =
       rai::getParameter<rai::String>("out", STRING("out.yaml"));
 
+  
+  rai::String env_file =
+      rai::getParameter<rai::String>("env", STRING("none"));
+
   enum CAR_ORDER
   {
     ZERO = 0, // no bounds
@@ -408,7 +412,7 @@ int main(int argn, char **argv) {
 
   if (car_order == TWO) {
     arrA waypointsS;
-    // waypointsS.append(waypoints(0));
+    waypointsS.append(waypoints(0));
     // waypointsS.append(waypoints(0));
     for (size_t i = 0; i < waypoints.N; i++) {
       waypointsS.append(waypoints(i));
@@ -487,11 +491,11 @@ int main(int argn, char **argv) {
   // Note: if you want position constraints on the first variable.
   // komo.addObjective({1./N, 1./N}, FS_poseDiff, {"robot0", "start0"}, OT_eq, {1e2});
 
-  // robot dynamics
-  komo.addObjective({}, make_shared<UnicycleDynamics>(), {"robot0"}, OT_eq, {1e1}, {0},
-                    1);
+  if (car_order == ONE) {
+    // robot dynamics
+    komo.addObjective({}, make_shared<UnicycleDynamics>(), {"robot0"}, OT_eq, {1e1}, {0},
+                      1);
 
-  if (car_order >= ONE) {
     const double max_velocity = 0.5-0.01; // m/s
     const double max_omega = 0.5-0.01; // rad/s
 
@@ -506,32 +510,69 @@ int main(int argn, char **argv) {
     komo.addObjective({}, make_shared<UnicycleVelocity>(), {"robot0"},
                       OT_ineq, {-1}, {-max_velocity}, 1);
   }
-  if (car_order >= TWO) {
-    double max_acceleration = 2; // m s^-2
-    double max_wdot = 2;
+  if (car_order == TWO) {
+    const double max_acceleration = 2-0.01; // m s^-2
+    const double max_wdot = 2-0.01;
+    const double max_velocity = 0.5-0.01; // m/s
+    const double max_omega = 0.5-0.01; // rad/s
+
+    // robot dynamics
+    komo.addObjective({2./N,1.}, make_shared<UnicycleDynamics>(), {"robot0"}, OT_eq, {1e1}, {0},
+                      1);
+
+
+    komo.addObjective({2./N,1.}, FS_qItself, {"robot0"}, OT_ineq, {0, 0, 1},
+                      {0, 0, max_omega}, 1);
+    komo.addObjective({2./N,1.}, FS_qItself, {"robot0"}, OT_ineq, {0, 0, -1},
+                      {0, 0, -max_omega}, 1);
+    // velocity limit
+    komo.addObjective({2./N,1.}, make_shared<UnicycleVelocity>(), {"robot0"},
+                      OT_ineq, {1}, {max_velocity}, 1);
+
+    komo.addObjective({2./N,1.}, make_shared<UnicycleVelocity>(), {"robot0"},
+                      OT_ineq, {-1}, {-max_velocity}, 1);
 
     // NOTE: UnicycleAcceleration returns v - v'
     // a = (v - v') / dt
     // so use  amax * dt as limit
 
-    komo.addObjective({}, make_shared<UnicycleAcceleration>(), {"robot0"},
+    komo.addObjective({2./N,1.}, make_shared<UnicycleAcceleration>(), {"robot0"},
                       OT_ineq, {1}, {max_acceleration * dt}, 2);
 
-    komo.addObjective({}, make_shared<UnicycleAcceleration>(), {"robot0"},
+    komo.addObjective({2./N,1.}, make_shared<UnicycleAcceleration>(), {"robot0"},
                       OT_ineq, {-1}, {-max_acceleration * dt}, 2);
 
-    komo.addObjective({}, FS_qItself, {"robot0"}, OT_ineq, {0, 0, 1},
+    komo.addObjective({2./N,1.}, FS_qItself, {"robot0"}, OT_ineq, {0, 0, 1},
                       {0, 0, max_wdot}, 2);
 
-    komo.addObjective({}, FS_qItself, {"robot0"}, OT_ineq, {0, 0, -1},
+    komo.addObjective({2./N,1.}, FS_qItself, {"robot0"}, OT_ineq, {0, 0, -1},
                       {0, 0, -max_wdot}, 2);
 
     // contraints: zero velocity start and end
     // NOTE: {0,0} seems to be ok for velocity. 
     // But why not {1/N,1/N},as in the position case?
-    // komo.addObjective({0,0}, FS_qItself, {"robot0"}, OT_eq, {10},{},1);
-    komo.addObjective({1./N,1./N}, FS_qItself, {"robot0"}, OT_eq, {10},{},1);
-    komo.addObjective({1,1}, FS_qItself, {"robot0"}, OT_eq, {10},{},1);
+
+    YAML::Node env = YAML::LoadFile((const char*)env_file);
+    double v0 = env["robots"][0]["start"][3].as<double>();
+    double w0 = env["robots"][0]["start"][4].as<double>();
+
+    komo.addObjective({2./N,2./N}, FS_poseDiff, {"robot0", "start0"}, OT_eq, {10});
+
+    komo.addObjective({2./N,2./N}, make_shared<UnicycleVelocity>(), {"robot0"},
+                      OT_eq, {10}, {v0}, 1);
+    komo.addObjective({2./N,2./N}, FS_qItself, {"robot0"}, OT_eq, {0, 0, 10},
+                      {0, 0, w0}, 1);
+
+    double vf = env["robots"][0]["goal"][3].as<double>();
+    double wf = env["robots"][0]["goal"][4].as<double>();
+
+    komo.addObjective({1.,1.}, make_shared<UnicycleVelocity>(), {"robot0"},
+                      OT_eq, {10}, {vf}, 1);
+    komo.addObjective({1.,1.}, FS_qItself, {"robot0"}, OT_eq, {0, 0, 10},
+                      {0, 0, wf}, 1);
+
+    // komo.addObjective({1./N,1./N}, FS_qItself, {"robot0"}, OT_eq, {10},{},1);
+    // komo.addObjective({1,1}, FS_qItself, {"robot0"}, OT_eq, {10},{},1);
 
     // Regularization: go slow at beginning and end
     // komo.addObjective({0,.1}, FS_qItself, {"robot0"}, OT_sos, {},{},1);
@@ -633,7 +674,7 @@ int main(int argn, char **argv) {
     }
   } else if (car_order == TWO) {
     out << "  - states:" << std::endl;
-    for (size_t t = order-1; t < results.N; ++t)
+    for (size_t t = order-1+2; t < results.N; ++t)
     {
       const auto& v = results(t);
       out << "      - [" << v(0) << "," << v(1) << ","
@@ -642,7 +683,7 @@ int main(int argn, char **argv) {
           << "]" << std::endl;
     }
     out << "    actions:" << std::endl;
-    for (size_t t = order; t < results.N; ++t)
+    for (size_t t = order+2; t < results.N; ++t)
     {
       out << "      - [" << acceleration(results, t, dt) << "," 
           << angularAcceleration(results, t, dt) << "]"

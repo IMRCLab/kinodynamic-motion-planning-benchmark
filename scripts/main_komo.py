@@ -11,7 +11,55 @@ import robots
 import translate_g
 from utils_optimization import UtilsSolutionFile
 
+def _run_komo(filename_g, filename_env, filename_initial_guess, filename_result, filename_cfg, order):
+
+	while True:
+		# Run KOMO
+		result = subprocess.run(["./main_rai",
+				"-model", "\""+str(filename_g)+"\"",
+				"-waypoints", "\""+str(filename_initial_guess)+"\"",
+				"-one_every", "1",
+				"-display", str(0),
+				"-animate", str(0),
+				"-order", str(order),
+				"-cfg", "\""+str(filename_cfg)+"\"",
+				"-env", "\"" + str(filename_env)+"\"",
+				"-out", "\""+str(filename_result)+"\""])
+		# a negative returncode indicates an internal error -> repeat
+		if result.returncode >= 0:
+			break
+	if result.returncode != 0:
+		print("KOMO failed")
+		# return False
+	else:
+		return True
+
 def run_komo(filename_env, filename_initial_guess, filename_result, cfg = ""):
+
+	with tempfile.TemporaryDirectory() as tmpdirname:
+		p = Path(tmpdirname)
+
+		with open(filename_env) as f:
+			env = yaml.safe_load(f)
+		robot_type = env["robots"][0]["type"]
+		if "first_order" in robot_type:
+			order = 1
+		elif "second_order" in robot_type:
+			order = 2
+
+		# convert environment YAML -> g
+		filename_g = p / "env.g"
+		translate_g.write(filename_env, str(filename_g))
+
+		# write config file
+		filename_cfg = p / "rai.cfg"
+		with open(filename_cfg, 'w') as f:
+			f.write(cfg)
+
+		return _run_komo(filename_g, filename_env, filename_initial_guess, filename_result, filename_cfg, order)
+
+
+def run_komo_with_T_scaling(filename_env, filename_initial_guess, filename_result, cfg = ""):
 
 	with tempfile.TemporaryDirectory() as tmpdirname:
 		p = Path(tmpdirname)
@@ -36,6 +84,8 @@ def run_komo(filename_env, filename_initial_guess, filename_result, cfg = ""):
 		# hack
 		utils_sol_file = UtilsSolutionFile()
 		utils_sol_file.load(filename_initial_guess)
+		if utils_sol_file.T() == 0:
+			return False
 		filename_modified_guess = p / "guess.yaml"
 
 		for factor in [0.9, 1.0, 1.1]:
@@ -44,26 +94,8 @@ def run_komo(filename_env, filename_initial_guess, filename_result, cfg = ""):
 			# utils_sol_file.save_rescaled(filename_modified_guess, int(utils_sol_file.T() * 1.1))
 			utils_sol_file.save_rescaled(filename_modified_guess, T)
 
-			while True:
-				# Run KOMO
-				result = subprocess.run(["./main_rai",
-						"-model", "\""+str(filename_g)+"\"",
-						# "-waypoints", "\""+str(filename_initial_guess)+"\"",
-						"-waypoints", "\""+str(filename_modified_guess)+"\"",
-						"-one_every", "1",
-						"-display", str(0),
-						"-animate", str(0),
-						"-order", str(order),
-						"-cfg", "\""+str(filename_cfg)+"\"",
-						"-out", "\""+str(filename_result)+"\""])
-				# a negative returncode indicates an internal error -> repeat
-				if result.returncode >= 0:
-					break
-			if result.returncode != 0:
-				print("KOMO failed")
-				# return False
-			else:
-				return True
+			return _run_komo(filename_g, filename_env, filename_initial_guess, filename_result, filename_cfg, order)
+
 
 
 def run_komo_standalone(filename_env, folder, timelimit, cfg = "",
@@ -147,21 +179,8 @@ def run_komo_standalone(filename_env, folder, timelimit, cfg = "",
 
 				# Run KOMO
 				filename_temp_result = p / "T_{}.yaml".format(T)
-				while True:
-					result = subprocess.run(["./main_rai",
-									"-model", "\""+str(filename_g)+"\"",
-									"-waypoints", "\""+str(filename_modified_guess)+"\"",
-									"-one_every", "1",
-									"-display", str(0),
-									"-animate", str(0),
-									"-order", str(order),
-									"-cfg", "\"" + str(filename_cfg)+"\"",
-									"-out", "\""+str(filename_temp_result)+"\""])#,
-									# stdout=subprocess.DEVNULL)
-					# a negative returncode indicates an internal error -> repeat
-					if result.returncode >= 0:
-						break
-				if result.returncode != 0:
+				success =  _run_komo(filename_g, filename_env, filename_modified_guess, filename_temp_result, filename_cfg, order)
+				if not success:
 					print("KOMO failed with T", T, result.returncode)
 					min_T = T + 1
 
