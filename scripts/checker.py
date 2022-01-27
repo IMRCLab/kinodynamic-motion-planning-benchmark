@@ -9,7 +9,7 @@ from motionplanningutils import CollisionChecker, RobotHelper
 import robots
 
 
-def check(filename_env: str, filename_result: str, file = None) -> bool:
+def check(filename_env: str, filename_result: str, file = None, expected_T=None) -> bool:
 
 	with open(filename_env) as f:
 		env = yaml.safe_load(f)
@@ -68,6 +68,11 @@ def check(filename_env: str, filename_result: str, file = None) -> bool:
 		dist, _, _ = cc.distance(states[t])
 		if dist < -0.03: # allow up to 3cm violation
 			print("Collision at t={} ({})".format(t, dist), file=file)
+			success = False
+
+	if expected_T is not None:
+		if expected_T != T-1:
+			print("Expected T {}, but is {}".format(expected_T, T-1), file=file)
 			success = False
 
 	return success

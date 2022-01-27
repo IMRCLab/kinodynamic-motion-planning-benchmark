@@ -536,16 +536,16 @@ int main(int argn, char **argv) {
     // a = (v - v') / dt
     // so use  amax * dt as limit
 
-    komo.addObjective({2./N,1.}, make_shared<UnicycleAcceleration>(), {"robot0"},
-                      OT_ineq, {1}, {max_acceleration * dt}, 2);
+    komo.addObjective({3./N,1.}, make_shared<UnicycleAcceleration>(), {"robot0"},
+                      OT_ineq, {4}, {max_acceleration * dt}, 2);
 
-    komo.addObjective({2./N,1.}, make_shared<UnicycleAcceleration>(), {"robot0"},
-                      OT_ineq, {-1}, {-max_acceleration * dt}, 2);
+    komo.addObjective({3./N,1.}, make_shared<UnicycleAcceleration>(), {"robot0"},
+                      OT_ineq, {-4}, {-max_acceleration * dt}, 2);
 
-    komo.addObjective({2./N,1.}, FS_qItself, {"robot0"}, OT_ineq, {0, 0, 1},
+    komo.addObjective({3./N,1.}, FS_qItself, {"robot0"}, OT_ineq, {0, 0, 4},
                       {0, 0, max_wdot}, 2);
 
-    komo.addObjective({2./N,1.}, FS_qItself, {"robot0"}, OT_ineq, {0, 0, -1},
+    komo.addObjective({3./N,1.}, FS_qItself, {"robot0"}, OT_ineq, {0, 0, -4},
                       {0, 0, -max_wdot}, 2);
 
     // contraints: zero velocity start and end

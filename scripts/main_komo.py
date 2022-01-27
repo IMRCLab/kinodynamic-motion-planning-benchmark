@@ -141,7 +141,7 @@ def run_komo_standalone(filename_env, folder, timelimit, cfg = "",
 
 		length = utils_sol_file.file['result'][0]['pathlength']
 		max_speed = 0.5
-		min_T = int(length / max_speed)
+		min_T = int(length / max_speed * 10)
 		max_T = None
 
 		# prepare stats
