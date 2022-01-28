@@ -82,7 +82,7 @@ def run_komo_with_T_scaling(filename_env, filename_initial_guess, filename_resul
 			f.write(cfg)
 
 		# hack
-		utils_sol_file = UtilsSolutionFile()
+		utils_sol_file = UtilsSolutionFile(robot_type)
 		utils_sol_file.load(filename_initial_guess)
 		if utils_sol_file.T() == 0:
 			return False
@@ -143,7 +143,7 @@ def run_komo_standalone(filename_env, folder, timelimit, cfg = "",
 		else:
 			filename_initial_guess = initialguess
 
-		utils_sol_file = UtilsSolutionFile()
+		utils_sol_file = UtilsSolutionFile(robot_type)
 		utils_sol_file.load(filename_initial_guess)
 
 		if T_range_rel is None and T_range_abs is None:

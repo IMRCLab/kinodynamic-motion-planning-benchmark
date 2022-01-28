@@ -105,6 +105,22 @@ public:
     return reals;
   }
 
+  std::vector<double> interpolate(
+    const std::vector<double>& stateFrom,
+    const std::vector<double>& stateTo,
+    double t)
+  {
+    auto si = robot_->getSpaceInformation();
+    si->getStateSpace()->copyFromReals(tmp_state_a_, stateFrom);
+    si->getStateSpace()->copyFromReals(tmp_state_b_, stateTo);
+
+    si->getStateSpace()->interpolate(tmp_state_a_, tmp_state_b_, t, tmp_state_a_);
+
+    std::vector<double> reals;
+    si->getStateSpace()->copyToReals(reals, tmp_state_a_);
+    return reals;
+  }
+
 private: 
   std::shared_ptr<Robot> robot_;
   ob::StateSamplerPtr state_sampler_;
@@ -225,5 +241,6 @@ PYBIND11_MODULE(motionplanningutils, m)
       .def("distance", &RobotHelper::distance)
       .def("sampleUniform", &RobotHelper::sampleStateUniform)
       .def("sampleControlUniform", &RobotHelper::sampleControlUniform)
-      .def("step", &RobotHelper::step);
+      .def("step", &RobotHelper::step)
+      .def("interpolate", &RobotHelper::interpolate);
 }

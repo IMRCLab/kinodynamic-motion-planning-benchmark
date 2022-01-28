@@ -642,7 +642,7 @@ int main(int argn, char **argv) {
   std::cout << results << std::endl;
   std::cout << "(N,T): " << results.N << " " << komo.T << std::endl;
 
-  if (ineq > 0.005 || eq > 0.005) {
+  if (ineq > 0.01 || eq > 0.01) {
     // Optimization failed (constraint violations)
     return 1;
   }
