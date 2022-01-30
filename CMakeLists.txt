@@ -130,10 +130,26 @@ target_link_libraries(dbastar
 add_executable(main_rai
   src/main_rai.cpp
 )
+
+set_source_files_properties(src/trailer.cpp PROPERTIES COMPILE_FLAGS "-g -O0")
+add_executable(trailer
+  src/trailer.cpp
+)
+
+
+
+
+
 target_link_libraries(main_rai
   rai
   yaml-cpp
 )
+
+
+target_link_libraries(trailer
+  rai
+)
+
 
 ## kinedit
 add_executable(kinedit
