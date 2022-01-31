@@ -81,10 +81,21 @@ python3 translate_g.py --fin ../benchmark/carFirstOrder/bugtrap_0.yaml  --fout .
 
 ```
 cd build
-python3 ../scripts/translate_g.py --fin ../benchmark/carFirstOrder/parallelpark_0.yaml  --fout env.g
-./main_rai -model "env.g" -waypoints \"../benchmark/carSecondOrder/initGuess/result_dbastar_parallelpark.yaml\" -one_every 1 -display 0 -animate 0 -out "komo.yaml"
-python3 ../scripts/checker.py ../benchmark/carSecondOrder/parallelpark_0.yaml komo.yaml
+python3 ../scripts/translate_g.py --fin ../benchmark/unicycleFirstOrder/bugtrap_0.yaml  --fout env.g
 ```
+
+The following fails with high eq/ineq:
+
+```
+./main_rai -model "env.g" -waypoints \"../test/unicycleFirstOrder/guess_bugtrap_0_sol1.yaml\" -one_every 1 -display 0 -animate 0 -out "komo.yaml" -order 1
+```
+
+However, the following (using sol2.yaml from a pure geometric planner) works just fine:
+```
+./main_rai -model "env.g" -waypoints \"../test/unicycleFirstOrder/guess_bugtrap_0_sol2.yaml\" -one_every 1 -display 0 -animate 0 -out "komo.yaml" -order 1
+```
+
+Note that T of the first solution is significantly higher than the T of the second solution.
 
 ### Profiling
 
