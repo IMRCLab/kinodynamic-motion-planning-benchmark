@@ -17,95 +17,68 @@
 /* V is car speed */
 /* u is change of angular rate */
 
+void get_speed(arr &y, arr &J, const FrameL &F) {
+
+  const double tol = 0.1; // tolerance to avoid division by zero
+
+  for (auto &f : F)
+    assert(f->joint->type == rai::JT_transXYPhi);
+
+  // p: position = [x,y,theta]
+  // v: velocity = [vx,vy,vtheta]
+  arr p, v, Jp, Jv;
+  F_qItself().setOrder(0).eval(p, Jp, F[1].reshape(1, -1));
+  F_qItself().setOrder(1).eval(v, Jv, F);
+
+  double theta = p(2);
+  double c_theta = cos(theta);
+  double s_theta = sin(theta);
+  double speed;
+  int mode;
+  if (fabs(c_theta) > tol) {
+    mode = 1;
+    speed = v(0) / c_theta;
+  } else {
+    mode = 2;
+    speed = v(1) / s_theta;
+  }
+
+  // feature is y
+  y.resize(1);
+  y(0) = speed;
+
+  if (!!J) {
+    arr Jl;
+    // ROWS = 1 equations ; COLUMNS= 3 position + 3 velocities
+    Jl.resize(1, 6);
+    Jl.setZero();
+    if (mode == 1) {
+      // w.r.t theta
+      Jl(0, 2) = v(0) * s_theta / (c_theta * c_theta);
+      // w.r.t vx
+      Jl(0, 3) = 1 / c_theta;
+      // w.r.t vy
+      Jl(0, 4) = 0;
+    } else if (mode == 2) {
+      // w.r.t theta
+      Jl(0, 2) = -v(1) * c_theta / (s_theta * s_theta);
+      // w.r.t vx
+      Jl(0, 3) = 0;
+      // w.r.t vy
+      Jl(0, 4) = 1 / s_theta;
+    }
+    arr JBlock;
+    JBlock.setBlockMatrix(Jp, Jv);
+    J = Jl * JBlock;
+  }
+}
+
 struct UnicycleDynamics : Feature {
   // Model dubins with 2 non linear equations:
   // V cos(theta) - xdot = 0
   // V sin(theta) - ydot = 0
   void phi2(arr &y, arr &J, const FrameL &F) {
 
-    const double tol = 0.1; // tolerance to avoid division by zero
-
-    // implementation only for rai::JT_transXYPhi!
-    for (auto &f : F)
-    {
-      assert(f->joint->type == rai::JT_transXYPhi);
-    }
-
-    // p: position = [x,y,theta]
-    // v: velocity = [vx,vy,vtheta]
-    arr p, v, Jp, Jv;
-    F_qItself().setOrder(0).eval(p, Jp, F[1].reshape(1, -1));
-    F_qItself().setOrder(1).eval(v, Jv, F);
-    double theta = p(2);
-
-    double c_theta = cos(theta);
-    double s_theta = sin(theta);
-    double speed;
-    int mode;
-    if (fabs(c_theta) > tol)
-    {
-      mode = 1;
-      speed = v(0) / c_theta;
-    }
-    else
-    {
-      mode = 2;
-      speed = v(1) / s_theta;
-    }
-
-    // feature is y
-    y.resize(2);
-    y(0) = c_theta * speed - v(0); // cos V - xdot = 0
-    y(1) = s_theta * speed - v(1); // sin V - ydot = 0
-
-    // std::cout  << p(0) << " " << p(1) << " " << p(2) << " " << speed << " " << v(2) << std::endl;
-
-    // compute Jacobian
-    if (!!J)
-    {
-      arr Jl;
-      Jl.resize(2, 6); // ROWS = 2 equations ; COLUMNS= 3 position * 3 velocities
-      Jl.setZero();
-      if (mode == 1)
-      {
-        // w.r.t theta
-        Jl(0, 2) = 0;
-        Jl(1, 2) = v(0) * 1 / c_theta * 1 / c_theta;
-        // w.r.t vx
-        Jl(0, 3) = 0;
-        Jl(1, 3) = s_theta / c_theta;
-        // w.r.t vy
-        Jl(0, 4) = 0;
-        Jl(1, 4) = -1;
-      }
-      else if (mode == 2)
-      {
-        // w.r.t theta
-        Jl(0, 2) = -v(1) * 1 / s_theta * 1 / s_theta;
-        Jl(1, 2) = 0;
-        // w.r.t vx
-        Jl(0, 3) = -1;
-        Jl(1, 3) = 0;
-        // w.r.t vy
-        Jl(0, 4) = c_theta / s_theta;
-        Jl(1, 4) = 0;
-      }
-
-      arr JBlock;
-      JBlock.setBlockMatrix(Jp, Jv);
-      J = Jl * JBlock;
-    }
-  }
-  uint dim_phi2(const FrameL &F) {
-    (void)F;
-    return 2;
-  }
-};
-
-struct UnicycleVelocity : Feature {
-  uint dim_phi2(const FrameL &) { return 1; }
-
-  void phi2(arr &y, arr &J, const FrameL &F) {
     const double tol = 0.1; // tolerance to avoid division by zero
 
     // implementation only for rai::JT_transXYPhi!
@@ -118,51 +91,63 @@ struct UnicycleVelocity : Feature {
     arr p, v, Jp, Jv;
     F_qItself().setOrder(0).eval(p, Jp, F[1].reshape(1, -1));
     F_qItself().setOrder(1).eval(v, Jv, F);
-
     double theta = p(2);
+
     double c_theta = cos(theta);
     double s_theta = sin(theta);
-    double speed;
-    int mode;
-    if (fabs(c_theta) > tol) {
-      mode = 1;
-      speed = v(0) / c_theta;
-    } else {
-      mode = 2;
-      speed = v(1) / s_theta;
-    }
 
-    // feature is y
-    y.resize(1);
-    y(0) = speed;
+    arr speed, Jspeed;
+    get_speed(speed, Jspeed, F);
 
-    // std::cout << "v " << speed << std::endl;
+    // std::cout << speed << std::endl;
+    // std::cout << v << std::endl;
+    y.resize(2);
+    y(0) = c_theta * speed(0) - v(0); // cos V - xdot = 0
+    y(1) = s_theta * speed(0) - v(1); // sin V - ydot = 0
 
-    // compute Jacobian
     if (!!J) {
       arr Jl;
-      // ROWS = 1 equations ; COLUMNS= 3 position + 3 velocities
-      Jl.resize(1, 6);
+      Jl.resize(2, 7); // ROWS = 2 equations ; COLUMNS= 3 position +  3
+                       // velocities + 1 speed
       Jl.setZero();
-      if (mode == 1) {
-        // w.r.t theta
-        Jl(0, 2) = v(0) * s_theta / (c_theta * c_theta);
-        // w.r.t vx
-        Jl(0, 3) = 1 / c_theta;
-        // w.r.t vy
-        Jl(0, 4) = 0;
-      } else if (mode == 2) {
-        // w.r.t theta
-        Jl(0, 2) = -v(1) * c_theta / (s_theta * s_theta);
-        // w.r.t vx
-        Jl(0, 3) = 0;
-        // w.r.t vy
-        Jl(0, 4) = 1 / s_theta;
-      }
+
+      // w.r.t theta
+      Jl(0, 2) = -s_theta * speed(0);
+      Jl(1, 2) = c_theta * speed(0);
+
+      // w.r.t sv
+      Jl(0, 3) = -1;
+      Jl(1, 4) = -1;
+
+      // w.r.t speed
+      Jl(0, 6) = c_theta;
+      Jl(1, 6) = s_theta;
+
       arr JBlock;
       JBlock.setBlockMatrix(Jp, Jv);
-      J = Jl * JBlock;
+      arr out;
+      out.setBlockMatrix(JBlock, Jspeed);
+
+      J = Jl * out;
     }
+  }
+  uint dim_phi2(const FrameL &F) {
+    (void)F;
+    return 2;
+  }
+};
+
+struct UnicycleVelocity : Feature {
+  uint dim_phi2(const FrameL &) { return 1; }
+
+  void phi2(arr &y, arr &J, const FrameL &F) {
+
+    // implementation only for rai::JT_transXYPhi!
+    for (auto &f : F) {
+      assert(f->joint->type == rai::JT_transXYPhi);
+    }
+
+    get_speed(y, J, F);
   }
 };
 
@@ -222,98 +207,21 @@ struct UnicycleAcceleration : Feature {
     arr p, v, Jp, Jv;
     arr pprev, vprev, Jpprev, Jvprev;
 
+    arr speedPrev, speed;
+    arr JspeedPrev, Jspeed;
+    get_speed(speedPrev, JspeedPrev, F({0, 1}));
+    get_speed(speed, Jspeed, F({1, 2}));
+
     F_qItself().setOrder(0).eval(p, Jp, F[2].reshape(1, -1));
     F_qItself().setOrder(1).eval(v, Jv, F({1, 2}));
     F_qItself().setOrder(0).eval(pprev, Jpprev, F[1].reshape(1, -1));
     F_qItself().setOrder(1).eval(vprev, Jvprev, F({0, 1}));
 
-    const double tol = 0.1; // tolerance to avoid division by zero
-
-    double theta = p(2);
-    double c_theta = cos(theta);
-    double s_theta = sin(theta);
-    double speed;
-    int mode;
-    if (fabs(c_theta) > tol)
-    {
-      mode = 1;
-      speed = v(0) / c_theta;
-    }
-    else
-    {
-      mode = 2;
-      speed = v(1) / s_theta;
-    }
-
-    double thetaprev = pprev(2);
-    double c_thetaprev = cos(thetaprev);
-    double s_thetaprev = sin(thetaprev);
-    double speedprev;
-    int modeprev;
-    if (fabs(c_thetaprev) > tol)
-    {
-      modeprev = 1;
-      speedprev = vprev(0) / c_thetaprev;
-    }
-    else
-    {
-      modeprev = 2;
-      speedprev = vprev(1) / s_thetaprev;
-    }
-
     y.resize(1);
-    y(0) = speed - speedprev;
+    y(0) = speed(0) - speedPrev(0);
 
     if (!!J) {
-      arr Jl;
-      // ROWS = 1 equations ; COLUMNS= 3 p + 3 v + 3 pprev + 3 vprev
-      Jl.resize(1, 12);
-      Jl.setZero();
-      if (mode == 1)
-      {
-        // w.r.t theta
-        Jl(0, 2) = v(0) * s_theta / (c_theta * c_theta);
-        // w.r.t vx
-        Jl(0, 3) = 1 / c_theta;
-        // w.r.t vy
-        Jl(0, 4) = 0;
-      }
-      else if (mode == 2)
-      {
-        // w.r.t theta
-        Jl(0, 2) = -v(1) * c_theta / (s_theta * s_theta);
-        // w.r.t vx
-        Jl(0, 3) = 0;
-        // w.r.t vy
-        Jl(0, 4) = 1 / s_theta;
-      }
-
-      if (modeprev == 1)
-      {
-        // w.r.t theta
-        Jl(0, 2+6) = -vprev(0) * s_thetaprev / (c_thetaprev * c_thetaprev);
-        // w.r.t vx
-        Jl(0, 3+6) = -1 / c_thetaprev;
-        // w.r.t vy
-        Jl(0, 4+6) = -0;
-      }
-      else if (modeprev == 2)
-      {
-        // w.r.t theta
-        Jl(0, 2+6) = vprev(1) * c_thetaprev / (s_thetaprev * s_thetaprev);
-        // w.r.t vx
-        Jl(0, 3+6) = -0;
-        // w.r.t vy
-        Jl(0, 4+6) = -1 / s_thetaprev;
-      }
-
-      arr JBlock_a;
-      JBlock_a.setBlockMatrix(Jp, Jv);
-      arr JBlock_b;
-      JBlock_b.setBlockMatrix(Jpprev, Jvprev);
-      arr JBlock;
-      JBlock.setBlockMatrix(JBlock_a, JBlock_b);
-      J = Jl * JBlock;
+      J = Jspeed - JspeedPrev;
     }
   }
 };
@@ -363,7 +271,6 @@ struct UnicycleAngularAcceleration : Feature {
       JBlock_b.setBlockMatrix(Jpprev, Jvprev);
       arr JBlock;
       JBlock.setBlockMatrix(JBlock_a, JBlock_b);
-      J = Jl * JBlock;
     }
   }
 };
@@ -389,17 +296,16 @@ arrA load_waypoints(const char *filename) {
   return waypoints;
 }
 
-double velocity(const arrA& results, int t, double dt)
-{
+double velocity(const arrA &results, int t, double dt) {
   const double tol = 0.1; // tolerance to avoid division by zero
 
-  arr v = results(t) - results(t-1);
+  arr v = results(t) - results(t - 1);
   double theta = results(t)(2);
 
   double c_theta = cos(theta);
   double s_theta = sin(theta);
   double speed;
-  
+
   if (fabs(c_theta) > tol) {
     speed = v(0) / c_theta;
   } else {
@@ -409,42 +315,40 @@ double velocity(const arrA& results, int t, double dt)
   return speed / dt;
 }
 
-double acceleration(const arrA &results, int t, double dt)
-{
+double acceleration(const arrA &results, int t, double dt) {
   double vel_now = velocity(results, t, dt);
   double vel_before = velocity(results, t - 1, dt);
   double acc = (vel_now - vel_before) / dt;
   return acc;
 }
 
-double angularVelocity(const arrA &results, int t, double dt)
-{
+double angularVelocity(const arrA &results, int t, double dt) {
   arr delta = results(t) - results(t - 1);
   double angular_change = atan2(sin(delta(2)), cos(delta(2)));
   double angular_velocity = angular_change / dt; // rad/s
   return angular_velocity;
 }
 
-double angularAcceleration(const arrA &results, int t, double dt)
-{
+double angularAcceleration(const arrA &results, int t, double dt) {
   double omega_now = angularVelocity(results, t, dt);
   double omega_before = angularVelocity(results, t - 1, dt);
   double omega_dot = (omega_now - omega_before) / dt;
   return omega_dot;
 }
 
-arrA getPath_qAll_with_prefix(KOMO& komo, int order) {
-  arrA q(komo.T+order);
-  for(int t=-order; t<int(komo.T); t++) q(t+order) = komo.getConfiguration_qAll(t);
+arrA getPath_qAll_with_prefix(KOMO &komo, int order) {
+  arrA q(komo.T + order);
+  for (int t = -order; t < int(komo.T); t++)
+    q(t + order) = komo.getConfiguration_qAll(t);
   return q;
 }
 
-    // usage:
-    // EXECUTABLE -model FILE_G -waypoints FILE_WAY -one_every ONE_EVERY_N -display
-    // {0,1} -out OUT_FILE OUT_FILE -animate  {0,1,2} -order {0,1,2}
+// usage:
+// EXECUTABLE -model FILE_G -waypoints FILE_WAY -one_every ONE_EVERY_N
+// -display {0,1} -out OUT_FILE OUT_FILE -animate  {0,1,2} -order {0,1,2}
 
-    // OUT_FILE: Write down the trajectory
-    // ONE_EVERY_N: take only one every N waypoints
+// OUT_FILE: Write down the trajectory
+// ONE_EVERY_N: take only one every N waypoints
 
 int main(int argn, char **argv) {
 
@@ -467,14 +371,11 @@ int main(int argn, char **argv) {
   rai::String out_file =
       rai::getParameter<rai::String>("out", STRING("out.yaml"));
 
-  
-  rai::String env_file =
-      rai::getParameter<rai::String>("env", STRING("none"));
+  rai::String env_file = rai::getParameter<rai::String>("env", STRING("none"));
 
   double action_factor = rai::getParameter<double>("action_factor", 1.0);
   
-  enum CAR_ORDER
-  {
+  enum CAR_ORDER {
     ZERO = 0, // no bounds
     ONE = 1,  // bounds velocity
     TWO = 2,  // bound acceleration
@@ -536,36 +437,34 @@ int main(int argn, char **argv) {
   std::cout << "Nplus1 " << Nplus1 << std::endl;
   std::cout << "N " << N << std::endl;
 
-  if (N==0) {
+  if (N == 0) {
     return 1;
   }
 
-
   double dt = 0.1;
   double duration_phase = N * dt;
-  komo.setTiming(1,N, duration_phase, order);
+  komo.setTiming(1, N, duration_phase, order);
 
-  if (order == 2)
-  {
+  if (order == 2) {
     komo.add_qControlObjective({}, 2, .1);
     // NOTE: we could also add cost on the velocity
   }
 
-  if (order==1)
-  {
+  if (order == 1) {
     komo.add_qControlObjective({}, 1, .1);
   }
 
   bool regularize_traj = false;
-  if (regularize_traj)
-  {
+  if (regularize_traj) {
     double scale_regularization = .1; // try different scales
     int it = 1;
     // ways -> N+1
     // N
-    for (const arr &a : waypoints({1, -1})) // i take from index=1 because we are ignoring the first waypoint.
+    for (const arr &a : waypoints({1, -1})) // i take from index=1 because we
+                                            // are ignoring the first waypoint.
     {
-      komo.addObjective(double(it) * arr{1. / N, 1. / N}, FS_qItself, {"robot0"}, OT_sos, {scale_regularization}, a, 0);
+      komo.addObjective(double(it) * arr{1. / N, 1. / N}, FS_qItself,
+                        {"robot0"}, OT_sos, {scale_regularization}, a, 0);
       it++;
     }
   }
@@ -574,12 +473,13 @@ int main(int argn, char **argv) {
   komo.addObjective({1., 1.}, FS_poseDiff, {"robot0", "goal0"}, OT_eq, {1e2});
 
   // Note: if you want position constraints on the first variable.
-  // komo.addObjective({1./N, 1./N}, FS_poseDiff, {"robot0", "start0"}, OT_eq, {1e2});
+  // komo.addObjective({1./N, 1./N}, FS_poseDiff, {"robot0", "start0"}, OT_eq,
+  // {1e2});
 
   if (car_order == ONE) {
     // robot dynamics
-    komo.addObjective({}, make_shared<UnicycleDynamics>(), {"robot0"}, OT_eq, {1e1}, {0},
-                      1);
+    komo.addObjective({}, make_shared<UnicycleDynamics>(), {"robot0"}, OT_eq,
+                      {1e1}, {0}, 1);
 
     const double max_velocity = 0.5*action_factor-0.01; // m/s
     const double max_omega = 0.5*action_factor-0.01; // rad/s
@@ -592,22 +492,21 @@ int main(int argn, char **argv) {
                       OT_ineq, {-1}, {-max_omega}, 1);
 
     // velocity limit
-    komo.addObjective({}, make_shared<UnicycleVelocity>(), {"robot0"},
-                      OT_ineq, {1}, {max_velocity}, 1);
+    komo.addObjective({}, make_shared<UnicycleVelocity>(), {"robot0"}, OT_ineq,
+                      {1}, {max_velocity}, 1);
 
-    komo.addObjective({}, make_shared<UnicycleVelocity>(), {"robot0"},
-                      OT_ineq, {-1}, {-max_velocity}, 1);
+    komo.addObjective({}, make_shared<UnicycleVelocity>(), {"robot0"}, OT_ineq,
+                      {-1}, {-max_velocity}, 1);
   }
   if (car_order == TWO) {
-    const double max_acceleration = 0.25-0.01; // m s^-2
-    const double max_wdot = 0.25-0.01;
-    const double max_velocity = 0.5-0.01; // m/s
-    const double max_omega = 0.5-0.01; // rad/s
+    const double max_acceleration = 0.25 - 0.01; // m s^-2
+    const double max_wdot = 0.25 - 0.01;
+    const double max_velocity = 0.5 - 0.01; // m/s
+    const double max_omega = 0.5 - 0.01;    // rad/s
 
     // robot dynamics
-    komo.addObjective({2./N,1.}, make_shared<UnicycleDynamics>(), {"robot0"}, OT_eq, {1e1}, {0},
-                      1);
-
+    komo.addObjective({2. / N, 1.}, make_shared<UnicycleDynamics>(), {"robot0"},
+                      OT_eq, {1e1}, {0}, 1);
     // angular velocity limit
     komo.addObjective({2./N,1.}, make_shared<UnicycleAngularVelocity>(), {"robot0"},
                       OT_ineq, {1}, {max_omega}, 1);
@@ -616,55 +515,57 @@ int main(int argn, char **argv) {
                       OT_ineq, {-1}, {-max_omega}, 1);
 
     // velocity limit
-    komo.addObjective({2./N,1.}, make_shared<UnicycleVelocity>(), {"robot0"},
+    komo.addObjective({2. / N, 1.}, make_shared<UnicycleVelocity>(), {"robot0"},
                       OT_ineq, {1}, {max_velocity}, 1);
 
-    komo.addObjective({2./N,1.}, make_shared<UnicycleVelocity>(), {"robot0"},
+    komo.addObjective({2. / N, 1.}, make_shared<UnicycleVelocity>(), {"robot0"},
                       OT_ineq, {-1}, {-max_velocity}, 1);
 
     // NOTE: UnicycleAcceleration returns v - v'
     // a = (v - v') / dt
     // so use  amax * dt as limit
 
-    komo.addObjective({3./N,1.}, make_shared<UnicycleAcceleration>(), {"robot0"},
-                      OT_ineq, {10}, {max_acceleration * dt}, 2);
+    komo.addObjective({3. / N, 1.}, make_shared<UnicycleAcceleration>(),
+                      {"robot0"}, OT_ineq, {10}, {max_acceleration * dt}, 2);
 
-    komo.addObjective({3./N,1.}, make_shared<UnicycleAcceleration>(), {"robot0"},
-                      OT_ineq, {-10}, {-max_acceleration * dt}, 2);
+    komo.addObjective({3. / N, 1.}, make_shared<UnicycleAcceleration>(),
+                      {"robot0"}, OT_ineq, {-10}, {-max_acceleration * dt}, 2);
 
     // angular acceleration control limit
     komo.addObjective({3./N,1.}, make_shared<UnicycleAngularAcceleration>(), {"robot0"},
                       OT_ineq, {10}, {max_wdot}, 2);
 
-    komo.addObjective({3./N,1.}, make_shared<UnicycleAngularAcceleration>(), {"robot0"},
-                      OT_ineq, {-10}, {-max_wdot}, 2);
+    komo.addObjective({3./N,1.}, FS_qItself, {"robot0"}, OT_ineq, {0, 0, -10},
+                      {0, 0, -max_wdot}, 2);
 
 
     // contraints: zero velocity start and end
-    // NOTE: {0,0} seems to be ok for velocity. 
+    // NOTE: {0,0} seems to be ok for velocity.
     // But why not {1/N,1/N},as in the position case?
 
-    YAML::Node env = YAML::LoadFile((const char*)env_file);
+    YAML::Node env = YAML::LoadFile((const char *)env_file);
     double v0 = env["robots"][0]["start"][3].as<double>();
     double w0 = env["robots"][0]["start"][4].as<double>();
 
-    komo.addObjective({2./N,2./N}, FS_poseDiff, {"robot0", "start0"}, OT_eq, {10});
+    komo.addObjective({2. / N, 2. / N}, FS_poseDiff, {"robot0", "start0"},
+                      OT_eq, {10});
 
-    komo.addObjective({2./N,2./N}, make_shared<UnicycleVelocity>(), {"robot0"},
-                      OT_eq, {10}, {v0}, 1);
-    komo.addObjective({2./N,2./N}, FS_qItself, {"robot0"}, OT_eq, {0, 0, 10},
-                      {0, 0, w0}, 1);
+    komo.addObjective({2. / N, 2. / N}, make_shared<UnicycleVelocity>(),
+                      {"robot0"}, OT_eq, {10}, {v0}, 1);
+    komo.addObjective({2. / N, 2. / N}, FS_qItself, {"robot0"}, OT_eq,
+                      {0, 0, 10}, {0, 0, w0}, 1);
 
     double vf = env["robots"][0]["goal"][3].as<double>();
     double wf = env["robots"][0]["goal"][4].as<double>();
 
-    komo.addObjective({1.,1.}, make_shared<UnicycleVelocity>(), {"robot0"},
+    komo.addObjective({1., 1.}, make_shared<UnicycleVelocity>(), {"robot0"},
                       OT_eq, {10}, {vf}, 1);
-    komo.addObjective({1.,1.}, FS_qItself, {"robot0"}, OT_eq, {0, 0, 10},
+    komo.addObjective({1., 1.}, FS_qItself, {"robot0"}, OT_eq, {0, 0, 10},
                       {0, 0, wf}, 1);
 
-    // komo.addObjective({1./N,1./N}, FS_qItself, {"robot0"}, OT_eq, {10},{},1);
-    // komo.addObjective({1,1}, FS_qItself, {"robot0"}, OT_eq, {10},{},1);
+    // komo.addObjective({1./N,1./N}, FS_qItself, {"robot0"}, OT_eq,
+    // {10},{},1); komo.addObjective({1,1}, FS_qItself, {"robot0"}, OT_eq,
+    // {10},{},1);
 
     // Regularization: go slow at beginning and end
     // komo.addObjective({0,.1}, FS_qItself, {"robot0"}, OT_sos, {},{},1);
@@ -677,7 +578,12 @@ int main(int argn, char **argv) {
 
   komo.run_prepare(0.1); // TODO: is this necessary?
   // komo.checkGradients();
-  komo.initWithWaypoints(waypoints({1,-1}), N);
+  std::cout << "done" << std::endl;
+  komo.initWithWaypoints(waypoints({1, -1}), N);
+  // komo.run_prepare(0.1); // TODO: is this necessary?
+  // komo.checkGradients();
+  std::cout << "done" << std::endl;
+  // throw -1;
 
   bool report_before = true;
   if (report_before) {
@@ -698,7 +604,7 @@ int main(int argn, char **argv) {
   bool check_gradients = false;
   if (check_gradients) {
     std::cout << "checking gradients" << std::endl;
-    // TODO: to avoid singular points, I shoud add noise before 
+    // TODO: to avoid singular points, I shoud add noise before
     // checking the gradients.
     komo.checkGradients();
     std::cout << "done " << std::endl;
@@ -708,7 +614,7 @@ int main(int argn, char **argv) {
     komo.opt.animateOptimization = animate;
   }
 
-  // TODO: in final benchmark, check which is the optimal value of inital 
+  // TODO: in final benchmark, check which is the optimal value of inital
   // noise.
   komo.optimize(0.1);
 
@@ -728,7 +634,7 @@ int main(int argn, char **argv) {
     // komo.view_play(false, .3, "z.vid/");
   }
 
-  arrA results = getPath_qAll_with_prefix(komo,order); 
+  arrA results = getPath_qAll_with_prefix(komo, order);
 
   std::cout << "results: " << std::endl;
   std::cout << results << std::endl;
@@ -742,45 +648,39 @@ int main(int argn, char **argv) {
 
   // write the results.
   std::ofstream out(out_file);
-  //out << std::setprecision(std::numeric_limits<double>::digits10 + 1);
+  // out << std::setprecision(std::numeric_limits<double>::digits10 + 1);
   out << "result:" << std::endl;
   if (car_order == ZERO) {
     out << "  - states:" << std::endl;
     for (size_t t = order - 1; t < results.N; ++t) {
-      auto&v = results(t);
+      auto &v = results(t);
       out << "      - [" << v(0) << "," << v(1) << ","
           << std::remainder(v(2), 2 * M_PI) << "]" << std::endl;
     }
-  }
-  else if (car_order == ONE) {
+  } else if (car_order == ONE) {
     out << "  - states:" << std::endl;
     for (size_t t = order - 1; t < results.N; ++t) {
-      auto&v = results(t);
+      auto &v = results(t);
       out << "      - [" << v(0) << "," << v(1) << ","
           << std::remainder(v(2), 2 * M_PI) << "]" << std::endl;
     }
     out << "    actions:" << std::endl;
     for (size_t t = order; t < results.N; ++t) {
-      out << "      - [" << velocity(results, t, dt) << "," 
-          << angularVelocity(results, t, dt) << "]"
-          << std::endl;
+      out << "      - [" << velocity(results, t, dt) << ","
+          << angularVelocity(results, t, dt) << "]" << std::endl;
     }
   } else if (car_order == TWO) {
     out << "  - states:" << std::endl;
-    for (size_t t = order-1+2; t < results.N; ++t)
-    {
-      const auto& v = results(t);
+    for (size_t t = order - 1 + 2; t < results.N; ++t) {
+      const auto &v = results(t);
       out << "      - [" << v(0) << "," << v(1) << ","
-          << std::remainder(v(2), 2 * M_PI) << ","
-          << velocity(results, t, dt) << "," << angularVelocity(results, t, dt)
-          << "]" << std::endl;
+          << std::remainder(v(2), 2 * M_PI) << "," << velocity(results, t, dt)
+          << "," << angularVelocity(results, t, dt) << "]" << std::endl;
     }
     out << "    actions:" << std::endl;
-    for (size_t t = order+2; t < results.N; ++t)
-    {
-      out << "      - [" << acceleration(results, t, dt) << "," 
-          << angularAcceleration(results, t, dt) << "]"
-          << std::endl;
+    for (size_t t = order + 2; t < results.N; ++t) {
+      out << "      - [" << acceleration(results, t, dt) << ","
+          << angularAcceleration(results, t, dt) << "]" << std::endl;
     }
   }
 
