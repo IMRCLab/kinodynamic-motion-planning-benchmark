@@ -164,6 +164,77 @@ class RobotCarFirstOrderWithTrailers:
 		state_next = np.array(state_next_list)
 		return state_next
 
+# Based on https://github.com/StanfordASL/GuSTO.jl/blob/master/src/dynamics/airplane.jl
+# The paper refers on book https://uavbook.byu.edu/lib/exe/fetch.php?media=uavbook_supplement.pdf
+# However, there is no clear match between the equations in GuSTO and the given book.
+class Airplane:
+
+	def __init__(self):
+		mass = 1.
+		g = 9.81
+		rho = 1.225
+		area = 0.7
+		Cd0 = 0.015
+		Kd = 0.025
+		alpha0 = 5*np.pi/180
+		gamma_max = np.pi/6
+		v_min = 3
+		v_max = 10
+
+		C_con = np.pi * rho * area / mass
+		v_hat = np.sqrt(g / (C_con * alpha0))
+		acc_nom = (rho*area)*(v_hat**2)*(Cd0+4*(np.pi**2)*Kd*(alpha0**2))
+
+		self.action_desc = ["acc [m/s^2]", "phi_dot [rad/s]", "alpha_dot [rad/s]"]
+		self.min_u = np.array([-10 * acc_nom, -np.pi/3*2, -2 * gamma_max])
+		self.max_u = np.array([10 * acc_nom, np.pi/3*2, 2 * gamma_max])
+
+		self.state_desc = [
+			"x [m]", "y [m]", "z [m]", 	# position
+			"psi [rad]",				# heading
+			"v [m/s]",					# speed
+			"gamma [rad]", 				# flight path angle
+			"phi [rad]",				# roll angle
+			"alpha [rad]"				# angle of attack
+		]
+		min_x = [-np.inf, -np.inf, -np.inf,
+				-np.pi,
+				v_min,
+				-gamma_max,
+				-np.pi / 4,
+				-np.pi]
+		max_x = [np.inf, np.inf, np.inf,
+				np.pi,
+				v_max,
+				gamma_max,
+				np.pi / 4,
+				np.pi]
+		self.min_x = np.array(min_x)
+		self.max_x = np.array(max_x)
+
+		self.dt = 0.01
+
+	def step(self, state, action):
+		# compute next state
+		state = np.asarray(state)
+		action = np.asarray(action)
+
+		x, y, z, psi, v, gamma, phi, alpha = state
+		acc, phi_dot, alpha_dot = action
+
+		Fl = np.pi * self.rho * self.area * v**2 * alpha
+		Fd = self.rho*self.area*v**2 * (self.Cd0 + 4 * np.pi**2 * self.Kd * alpha**2)
+
+		x_next = x + self.dt * (v * np.cos(psi) * np.cos(gamma))
+		y_next = y + self.dt * (v * np.sin(psi) * np.cos(gamma))
+		z_next = z + self.dt * (v * np.sin(gamma))
+		psi_next = psi + self.dt * (-Fl * np.sin(phi) / (self.mass * v * np.cos(gamma)))
+		v_next = v + self.dt * (acc - Fd/self.mass - self.g * np.sin(gamma))
+		gamma_next = gamma + self.dt * (Fl * np.cos(phi)/(self.mass*v) - self.g * np.cos(gamma) / v)
+		phi_next = phi + self.dt * phi_dot
+		alpha_next = alpha + self.dt * alpha_dot
+
+		return np.concatenate((x_next, y_next, z_next, psi_next, v_next, gamma_next, phi_next, alpha_next))
 
 class Quadrotor:
 
