@@ -166,6 +166,50 @@ struct UnicycleVelocity : Feature {
   }
 };
 
+struct UnicycleAngularVelocity : Feature {
+  uint dim_phi2(const FrameL &) { return 1; }
+
+  void phi2(arr &y, arr &J, const FrameL &F) {
+    const double dt = 0.1;
+
+    assert(order == 1);
+
+    // implementation only for rai::JT_transXYPhi!
+    for (auto &f : F) {
+      assert(f->joint->type == rai::JT_transXYPhi);
+    }
+
+    // p: position = [x,y,theta]
+    // v: velocity = [vx,vy,vtheta]
+    arr p, v, Jp, Jv;
+    F_qItself().setOrder(0).eval(p, Jp, F[1].reshape(1, -1));
+    F_qItself().setOrder(1).eval(v, Jv, F);
+
+    double angular_change = atan2(sin(v(2)*dt), cos(v(2)*dt));
+    double angular_velocity = angular_change / dt; // rad/s
+
+    // feature is y
+    y.resize(1);
+    y(0) = angular_velocity;
+
+    // std::cout << "v " << speed << std::endl;
+
+    // compute Jacobian
+    if (!!J) {
+      arr Jl;
+      // ROWS = 1 equations ; COLUMNS= 3 position + 3 velocities
+      Jl.resize(1, 6);
+      Jl.setZero();
+      // w.r.t theta_dot
+      Jl(0, 5) = 1;
+
+      arr JBlock;
+      JBlock.setBlockMatrix(Jp, Jv);
+      J = Jl * JBlock;
+    }
+  }
+};
+
 struct UnicycleAcceleration : Feature {
   uint dim_phi2(const FrameL &) { return 1; }
 
@@ -496,13 +540,14 @@ int main(int argn, char **argv) {
     komo.addObjective({}, make_shared<UnicycleDynamics>(), {"robot0"}, OT_eq, {1e1}, {0},
                       1);
 
-    const double max_velocity = 0.5-0.01; // m/s
-    const double max_omega = 0.5-0.01; // rad/s
 
-    komo.addObjective({}, FS_qItself, {"robot0"}, OT_ineq, {0, 0, 1},
-                      {0, 0, max_omega}, 1);
-    komo.addObjective({}, FS_qItself, {"robot0"}, OT_ineq, {0, 0, -1},
-                      {0, 0, -max_omega}, 1);
+    // angular velocity limit
+    komo.addObjective({}, make_shared<UnicycleAngularVelocity>(), {"robot0"},
+                      OT_ineq, {1}, {max_omega}, 1);
+
+    komo.addObjective({}, make_shared<UnicycleAngularVelocity>(), {"robot0"},
+                      OT_ineq, {-1}, {-max_omega}, 1);
+
     // velocity limit
     komo.addObjective({}, make_shared<UnicycleVelocity>(), {"robot0"},
                       OT_ineq, {1}, {max_velocity}, 1);
