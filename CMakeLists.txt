@@ -138,6 +138,15 @@ target_link_libraries(main_rai
   yaml-cpp
 )
 
+## main_rai_quadrotor
+add_executable(main_rai_quadrotor
+  src/main_rai_quadrotor.cpp
+)
+target_link_libraries(main_rai_quadrotor
+  rai
+  yaml-cpp
+)
+
 ## kinedit
 add_executable(kinedit
   deps/rai/bin/src_kinEdit/main.cpp
