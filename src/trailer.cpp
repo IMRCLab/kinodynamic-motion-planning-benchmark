@@ -209,16 +209,46 @@ struct FirstCarRotation : Feature {
   }
 };
 
-int main() {
+arrA getPath_qAll_with_prefix(KOMO &komo, int order) {
+  arrA q(komo.T + order);
+  for (int t = -order; t < int(komo.T); t++) {
+    q(t + order) = komo.getConfiguration_qAll(t);
+  }
+  return q;
+}
 
-  auto filename = "../src/car_with_trailer.g";
+int main(int argn, char **argv) {
+
+  rai::initCmdLine(argn, argv);
+  rnd.clockSeed();
+
+  // path to *.g file
+  rai::String model_file =
+      rai::getParameter<rai::String>("model", STRING("none"));
+
+  // path to initial guess file (yaml)
+  rai::String waypoints_file =
+      rai::getParameter<rai::String>("waypoints", STRING("none"));
+
+  bool display = rai::getParameter<bool>("display", false);
+  int animate = rai::getParameter<int>("animate", 0);
+
+  // path to output file (*.yaml)
+  rai::String out_file =
+      rai::getParameter<rai::String>("out", STRING("out.yaml"));
+
   rai::Configuration C;
-  C.addFile(filename);
+  C.addFile(model_file);
+
+  int order = 2;
 
   KOMO komo;
   komo.setModel(C, true);
 
-  komo.setTiming(1, 20, 5, 2);
+  double dt = 0.1;
+  const int N = 20;
+  double duration_phase = N * dt;
+  komo.setTiming(1, N, duration_phase, order);
   // komo.add_qControlObjective({},2,.1);
   komo.add_qControlObjective({}, 2, 1);
   komo.add_qControlObjective({}, 1, 1);
@@ -258,12 +288,43 @@ int main() {
 
   komo.reportProblem();
 
-  komo.view(true);
-  komo.view_play(true);
+  if (display) {
+    komo.view(true);
+    komo.view_play(true);
+    komo.plotTrajectory();
 
-  komo.plotTrajectory();
+    do {
+      cout << '\n' << "Press a key to continue...";
+    } while (std::cin.get() != '\n');
+  }
 
-  do {
-    cout << '\n' << "Press a key to continue...";
-  } while (std::cin.get() != '\n');
+  auto report = komo.getReport(display, 0, std::cout);
+  std::cout << "report " << report << std::endl;
+  double ineq = report.get<double>("ineq") / komo.T;
+  double eq = report.get<double>("eq") / komo.T;
+  if (ineq > 0.01 || eq > 0.01) {
+    // Optimization failed (constraint violations)
+    std::cout << "Optimization failed (constraint violation)!" << std::endl;
+    return 1;
+  }
+
+  // write the results.
+  arrA results = getPath_qAll_with_prefix(komo, order);
+
+  std::ofstream out(out_file);
+  // out << std::setprecision(std::numeric_limits<double>::digits10 + 1);
+  out << "result:" << std::endl;
+  out << "  - states:" << std::endl;
+  for (size_t t = order - 1; t < results.N; ++t) {
+    auto &v = results(t);
+    out << "      - [" << v(0) << "," << v(1) << ","
+        << std::remainder(v(2), 2 * M_PI) << "]" << std::endl;
+  }
+  // out << "    actions:" << std::endl;
+  // for (size_t t = order; t < results.N; ++t) {
+  //   out << "      - [" << velocity(results, t, dt) << ","
+  //       << angularVelocity(results, t, dt) << "]" << std::endl;
+  // }
+
+  return 0;
 }

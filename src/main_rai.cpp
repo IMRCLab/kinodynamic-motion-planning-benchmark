@@ -145,8 +145,9 @@ double angularAcceleration(const arrA &results, int t, double dt) {
 
 arrA getPath_qAll_with_prefix(KOMO &komo, int order) {
   arrA q(komo.T + order);
-  for (int t = -order; t < int(komo.T); t++)
+  for (int t = -order; t < int(komo.T); t++) {
     q(t + order) = komo.getConfiguration_qAll(t);
+  }
   return q;
 }
 
