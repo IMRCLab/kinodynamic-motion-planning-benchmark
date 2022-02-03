@@ -126,15 +126,25 @@ target_link_libraries(dbastar
   yaml-cpp
 )
 
+
+set( FILES_DEBUG_INFO src/main_rai.cpp src/car_utils.cpp src/trailer.cpp)
+set_source_files_properties( ${FILES_DEBUG_INFO}  PROPERTIES COMPILE_FLAGS "-g -O0")
+
+
 ## main_rai
 add_executable(main_rai
   src/main_rai.cpp
+  src/car_utils.cpp
 )
 
-set_source_files_properties(src/trailer.cpp PROPERTIES COMPILE_FLAGS "-g -O0")
-add_executable(trailer
-  src/trailer.cpp
-)
+
+# set_source_files_properties(src/trailer.cpp PROPERTIES COMPILE_FLAGS "-g -O0")
+# set_source_files_properties(src/car_utils.cpp PROPERTIES COMPILE_FLAGS "-g -O0")
+
+
+# TODO: refactor car_utils as small shared object
+
+add_executable(trailer src/trailer.cpp src/car_utils.cpp )
 
 
 
@@ -148,6 +158,7 @@ target_link_libraries(main_rai
 
 target_link_libraries(trailer
   rai
+  yaml-cpp
 )
 
 
