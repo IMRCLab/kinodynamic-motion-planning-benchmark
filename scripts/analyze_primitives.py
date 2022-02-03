@@ -74,7 +74,7 @@ def main() -> None:
 
 
 
-	used_motions = sort_primitives(motions, robot_type, 10)
+	used_motions = sort_primitives(motions, robot_type)
 
 	with tempfile.TemporaryDirectory() as tmpdirname:
 		p = Path(tmpdirname)

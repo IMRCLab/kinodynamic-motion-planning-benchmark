@@ -88,16 +88,20 @@ def run_komo_with_T_scaling(filename_env, filename_initial_guess, filename_resul
 			return False
 		filename_modified_guess = p / "guess.yaml"
 
-		for factor in [0.9, 1.0, 1.1]:
+		for factor in [1.0]: #[0.8, 1.0, 1.2]:
 			T = int(utils_sol_file.T() * factor)
-			if T > max_T:
+			if max_T is not None and T > max_T:
 				return False
 			print("Trying T ", T)
 			# utils_sol_file.save_rescaled(filename_modified_guess, int(utils_sol_file.T() * 1.1))
 			utils_sol_file.save_rescaled(filename_modified_guess, T)
 
-			return _run_komo(filename_g, filename_env, filename_initial_guess, filename_result, filename_cfg, order)
-
+			result = _run_komo(filename_g, filename_env, filename_modified_guess, filename_result, filename_cfg, order)
+			# shutil.copyfile(filename_modified_guess, filename_result)
+			# return True
+			if result:
+				return True
+		return False
 
 
 def run_komo_standalone(filename_env, folder, timelimit, cfg = "",
@@ -143,7 +147,7 @@ def run_komo_standalone(filename_env, folder, timelimit, cfg = "",
 		else:
 			filename_initial_guess = initialguess
 
-		utils_sol_file = UtilsSolutionFile(robot_type)
+		utils_sol_file = UtilsSolutionFile("unicycle_first_order_0")
 		utils_sol_file.load(filename_initial_guess)
 
 		if T_range_rel is None and T_range_abs is None:
@@ -193,11 +197,11 @@ def run_komo_standalone(filename_env, folder, timelimit, cfg = "",
 
 					print("TRYING ", T, min_T, max_T)
 
-				filename_modified_guess = p / "guess.yaml"
+				filename_modified_guess = p / "guess_{}.yaml".format(T)
 				utils_sol_file.save_rescaled(filename_modified_guess, T)
 
 				# Run KOMO
-				filename_temp_result = p / "T_{}.yaml".format(T)
+				filename_temp_result = p / "result_{}.yaml".format(T)
 				success =  _run_komo(filename_g, filename_env, filename_modified_guess, filename_temp_result, filename_cfg, order)
 				if not success:
 					print("KOMO failed with T", T)
@@ -220,7 +224,8 @@ def run_komo_standalone(filename_env, folder, timelimit, cfg = "",
 						# return True
 			
 		if best_T is not None:
-			shutil.copyfile(p / "T_{}.yaml".format(best_T), filename_result)
+			shutil.copyfile(p / "result_{}.yaml".format(best_T), filename_result)
+			shutil.copyfile(p / "guess_{}.yaml".format(best_T), filename_initial_guess)
 			return True
 		return False
 	

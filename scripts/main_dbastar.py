@@ -12,6 +12,7 @@ import shutil
 from collections import defaultdict
 import tempfile
 from pathlib import Path
+from analyze_primitives import sort_primitives
 
 import sys
 import os
@@ -124,9 +125,10 @@ def run_dbastar(filename_env, folder, timelimit, cfg, opt_alg="scp", motions_sta
 
 
 		# load existing motions
-		with open('motions_{}.yaml'.format(robot_node["type"])) as f:
+		with open('motions_{}_sorted.yaml'.format(robot_node["type"])) as f:
 			all_motions = yaml.load(f, Loader=yaml.CSafeLoader)
-		random.shuffle(all_motions)
+		# all_motions = sort_primitives(all_motions, robot_type, 100)
+		# all_motions = all_motions[0:300]
 		motions = all_motions[0:add_prims]
 		del all_motions[0:add_prims]
 		with open(filename_motions, 'w') as file:
@@ -200,6 +202,8 @@ def run_dbastar(filename_env, folder, timelimit, cfg, opt_alg="scp", motions_sta
 					elif opt_alg == "komo":
 						success = main_komo.run_komo_with_T_scaling(
 							filename_env, filename_result_dbastar, filename_result_opt, cfg["rai_cfg"], max_T=int(maxCost*10))
+
+						# success = main_komo.run_komo(filename_env, filename_result_dbastar, filename_result_opt, cfg["rai_cfg"])
 					else:
 						raise Exception("Unknown optimization algorithm {}!".format(opt_alg))
 
@@ -208,26 +212,13 @@ def run_dbastar(filename_env, folder, timelimit, cfg, opt_alg="scp", motions_sta
 						# delta = delta * 0.9
 
 
-						print("Optimization failed; Using more primitives", len(motions))
-						if len(all_motions) > add_prims:
-								motions.extend(all_motions[0:add_prims])
-								del all_motions[0:add_prims]
-						else:
-							break
-							# for _ in range(add_prims):
-							# 	print("gen motion", len(motions))
-							# 	motion = gen_motion_primitive.gen_random_motion(robot_type)
-							# 	motion['distance'] = rh.distance(motion['x0'], motion['xf'])
-							# 	motions.append(motion)
-
-						with open(filename_motions, 'w') as file:
-							yaml.dump(motions, file, Dumper=yaml.CSafeDumper)
+						print("Optimization failed; Using more primitives")
 
 					else:
 						# # ONLY FOR MOTION PRIMITIVE SELECTION
 						# if motions_stats is not None:
 							# compute_motion_importance(filename_env, filename_motions, filename_result_dbastar, delta, maxCost, motions_stats)
-						with open(filename_result_dbastar) as f:
+						with open(filename_result_opt) as f:
 							result = yaml.safe_load(f)
 							cost = len(result["result"][0]["actions"]) / 10
 						now = time.time()
@@ -241,6 +232,21 @@ def run_dbastar(filename_env, folder, timelimit, cfg, opt_alg="scp", motions_sta
 					shutil.copyfile(filename_result_dbastar, "{}/result_dbastar_sol{}.yaml".format(folder, sol))
 
 					sol += 1
+
+					# use more primitives in all cases
+					if len(all_motions) > add_prims:
+						motions.extend(all_motions[0:add_prims])
+						del all_motions[0:add_prims]
+					else:
+						break
+						# for _ in range(add_prims):
+						# 	print("gen motion", len(motions))
+						# 	motion = gen_motion_primitive.gen_random_motion(robot_type)
+						# 	motion['distance'] = rh.distance(motion['x0'], motion['xf'])
+						# 	motions.append(motion)
+
+					with open(filename_motions, 'w') as file:
+						yaml.dump(motions, file, Dumper=yaml.CSafeDumper)
 
 
 						# delta = initialDelta

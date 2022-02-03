@@ -41,14 +41,14 @@ def gen_motion(robot_type, start, goal):
 		with open(filename_env, 'w') as f:
 			yaml.dump(env, f, Dumper=yaml.CSafeDumper)
 
-		run_komo_standalone(filename_env, str(p), 60, search="linear")
+		run_komo_standalone(filename_env, str(p), 60, "action_factor: 1.0", search="linear")
 
 		filename_result = p / "result_komo.yaml"
 		checker.check(str(filename_env), str(filename_result))
 
 		if dbg:
 			subprocess.run(["python3",
-						"../benchmark/unicycleSecondOrder/visualize.py",
+						"../benchmark/unicycleFirstOrder/visualize.py",
 						str(filename_env),
 						"--result", str(filename_result),
 						"--video", str(filename_result.with_suffix(".mp4"))])
@@ -61,25 +61,32 @@ def gen_motion(robot_type, start, goal):
 		actions = np.array(result["result"][0]["actions"])
 
 		eucledian_distance = 0
-		start_k = 0
-		motions = []
+		split = [0]
 		for k in range(1, len(states)):
 			eucledian_distance += np.linalg.norm(states[k-1][0:2] - states[k][0:2])
 			if eucledian_distance >= 0.5:
-				# shift states
-				# print(states[start_k:k+1, 0:2])
-				states[start_k:, 0:2] -= states[start_k, 0:2]
-				# print(states[start_k:k+1, 0:2])
-				# create motion
-				motion = dict()
-				motion['x0'] = states[start_k].tolist()
-				motion['xf'] = states[k].tolist()
-				motion['states'] = states[start_k:k+1].tolist()
-				motion['actions'] = actions[start_k:k].tolist()
-				motion['T'] = k-start_k
+				split.append(k)
 				eucledian_distance = 0
-				start_k = k
-				motions.append(motion)
+		
+		# include last segment, if it not very short
+		if len(states) - split[-1] > 5:
+			split.append(len(states)-1)
+
+		# create motions
+		motions = []
+		for idx in range(1, len(split)):
+			start_k = split[idx-1]
+			k = split[idx]
+			# shift states
+			states[start_k:, 0:2] -= states[start_k, 0:2]
+			# create motion
+			motion = dict()
+			motion['x0'] = states[start_k].tolist()
+			motion['xf'] = states[k].tolist()
+			motion['states'] = states[start_k:k+1].tolist()
+			motion['actions'] = actions[start_k:k].tolist()
+			motion['T'] = k-start_k
+			motions.append(motion)
 		return motions
 
 

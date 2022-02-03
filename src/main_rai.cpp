@@ -172,8 +172,6 @@ struct UnicycleAngularVelocity : Feature {
   void phi2(arr &y, arr &J, const FrameL &F) {
     const double dt = 0.1;
 
-    assert(order == 1);
-
     // implementation only for rai::JT_transXYPhi!
     for (auto &f : F) {
       assert(f->joint->type == rai::JT_transXYPhi);
@@ -215,8 +213,7 @@ struct UnicycleAcceleration : Feature {
 
   void phi2(arr &y, arr &J, const FrameL &F) {
 
-    if (order != 2)
-      throw std::runtime_error("error");
+    assert(order == 2);
 
     for (auto &f : F) {
       assert(f->joint->type == rai::JT_transXYPhi);
@@ -316,14 +313,56 @@ struct UnicycleAcceleration : Feature {
       JBlock_b.setBlockMatrix(Jpprev, Jvprev);
       arr JBlock;
       JBlock.setBlockMatrix(JBlock_a, JBlock_b);
-      // JBlock.setBlockMatrix(Jp, Jv, Jpprev, Jvprev);
-      // std::cout << JBlock << std::endl;
-      // JBlock.resize(Jp.d0 + Jv.d0 + Jpprev.d0 + Jvprev.d0, Jp.d1);
-      // JBlock.setMatrixBlock(Jp, 0, 0);
-      // JBlock.setMatrixBlock(Jv, Jp.d0, 0);
-      // JBlock.setMatrixBlock(Jpprev, Jp.d0 + Jv.d0, 0);
-      // JBlock.setMatrixBlock(Jvprev, Jp.d0 + Jv.d0 + Jpprev.d0, 0);
+      J = Jl * JBlock;
+    }
+  }
+};
 
+struct UnicycleAngularAcceleration : Feature {
+  uint dim_phi2(const FrameL &) { return 1; }
+
+  void phi2(arr &y, arr &J, const FrameL &F) {
+    const double dt = 0.1;
+
+    assert(order == 2);
+
+    for (auto &f : F) {
+      assert(f->joint->type == rai::JT_transXYPhi);
+    }
+
+    arr p, v, Jp, Jv;
+    arr pprev, vprev, Jpprev, Jvprev;
+
+    F_qItself().setOrder(0).eval(p, Jp, F[2].reshape(1, -1));
+    F_qItself().setOrder(1).eval(v, Jv, F({1, 2}));
+    F_qItself().setOrder(0).eval(pprev, Jpprev, F[1].reshape(1, -1));
+    F_qItself().setOrder(1).eval(vprev, Jvprev, F({0, 1}));
+
+    double angular_change = atan2(sin(v(2)*dt), cos(v(2)*dt));
+    double angular_velocity = angular_change / dt; // rad/s
+
+    double angular_change_prev = atan2(sin(vprev(2)*dt), cos(vprev(2)*dt));
+    double angular_velocity_prev = angular_change_prev / dt; // rad/s
+
+    y.resize(1);
+    y(0) = (angular_velocity - angular_velocity_prev) / dt;
+
+    if (!!J) {
+      arr Jl;
+      // ROWS = 1 equations ; COLUMNS= 3 p + 3 v + 3 pprev + 3 vprev
+      Jl.resize(1, 12);
+      Jl.setZero();
+      // w.r.t. theta_dot
+      Jl(0, 5) = 1/dt;
+      // w.r.t. theta_dot_prev
+      Jl(0, 11) = -1/dt;
+
+      arr JBlock_a;
+      JBlock_a.setBlockMatrix(Jp, Jv);
+      arr JBlock_b;
+      JBlock_b.setBlockMatrix(Jpprev, Jvprev);
+      arr JBlock;
+      JBlock.setBlockMatrix(JBlock_a, JBlock_b);
       J = Jl * JBlock;
     }
   }
@@ -432,6 +471,8 @@ int main(int argn, char **argv) {
   rai::String env_file =
       rai::getParameter<rai::String>("env", STRING("none"));
 
+  double action_factor = rai::getParameter<double>("action_factor", 1.0);
+  
   enum CAR_ORDER
   {
     ZERO = 0, // no bounds
@@ -540,6 +581,8 @@ int main(int argn, char **argv) {
     komo.addObjective({}, make_shared<UnicycleDynamics>(), {"robot0"}, OT_eq, {1e1}, {0},
                       1);
 
+    const double max_velocity = 0.5*action_factor-0.01; // m/s
+    const double max_omega = 0.5*action_factor-0.01; // rad/s
 
     // angular velocity limit
     komo.addObjective({}, make_shared<UnicycleAngularVelocity>(), {"robot0"},
@@ -565,11 +608,13 @@ int main(int argn, char **argv) {
     komo.addObjective({2./N,1.}, make_shared<UnicycleDynamics>(), {"robot0"}, OT_eq, {1e1}, {0},
                       1);
 
+    // angular velocity limit
+    komo.addObjective({2./N,1.}, make_shared<UnicycleAngularVelocity>(), {"robot0"},
+                      OT_ineq, {1}, {max_omega}, 1);
 
-    komo.addObjective({2./N,1.}, FS_qItself, {"robot0"}, OT_ineq, {0, 0, 1},
-                      {0, 0, max_omega}, 1);
-    komo.addObjective({2./N,1.}, FS_qItself, {"robot0"}, OT_ineq, {0, 0, -1},
-                      {0, 0, -max_omega}, 1);
+    komo.addObjective({2./N,1.}, make_shared<UnicycleAngularVelocity>(), {"robot0"},
+                      OT_ineq, {-1}, {-max_omega}, 1);
+
     // velocity limit
     komo.addObjective({2./N,1.}, make_shared<UnicycleVelocity>(), {"robot0"},
                       OT_ineq, {1}, {max_velocity}, 1);
@@ -587,11 +632,13 @@ int main(int argn, char **argv) {
     komo.addObjective({3./N,1.}, make_shared<UnicycleAcceleration>(), {"robot0"},
                       OT_ineq, {-10}, {-max_acceleration * dt}, 2);
 
-    komo.addObjective({3./N,1.}, FS_qItself, {"robot0"}, OT_ineq, {0, 0, 10},
-                      {0, 0, max_wdot}, 2);
+    // angular acceleration control limit
+    komo.addObjective({3./N,1.}, make_shared<UnicycleAngularAcceleration>(), {"robot0"},
+                      OT_ineq, {10}, {max_wdot}, 2);
 
-    komo.addObjective({3./N,1.}, FS_qItself, {"robot0"}, OT_ineq, {0, 0, -10},
-                      {0, 0, -max_wdot}, 2);
+    komo.addObjective({3./N,1.}, make_shared<UnicycleAngularAcceleration>(), {"robot0"},
+                      OT_ineq, {-10}, {-max_wdot}, 2);
+
 
     // contraints: zero velocity start and end
     // NOTE: {0,0} seems to be ok for velocity. 
@@ -689,6 +736,7 @@ int main(int argn, char **argv) {
 
   if (ineq > 0.01 || eq > 0.01) {
     // Optimization failed (constraint violations)
+    std::cout << "Optimization failed (constraint violation)!" << std::endl;
     return 1;
   }
 
