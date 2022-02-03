@@ -5,8 +5,8 @@
 #include <Kin/kin.h>
 #include <cassert>
 
-const double L = .2;   // distance  rear-front wheels
-const double d1 = .35; // distance between car centers
+const double L = .4;   // distance  rear-front wheels
+const double d1 = .5; // distance between car centers
 
 #if 0
 // feature
@@ -310,6 +310,10 @@ int main(int argn, char **argv) {
 
   // write the results.
   arrA results = getPath_qAll_with_prefix(komo, order);
+  std::cout << "results: " << std::endl;
+  std::cout << C.getFrameNames() << std::endl;
+  std::cout << results << std::endl;
+  std::cout << "(N,T): " << results.N << " " << komo.T << std::endl;
 
   std::ofstream out(out_file);
   // out << std::setprecision(std::numeric_limits<double>::digits10 + 1);
@@ -318,7 +322,8 @@ int main(int argn, char **argv) {
   for (size_t t = order - 1; t < results.N; ++t) {
     auto &v = results(t);
     out << "      - [" << v(0) << "," << v(1) << ","
-        << std::remainder(v(2), 2 * M_PI) << "]" << std::endl;
+        << std::remainder(v(2), 2 * M_PI) << ","
+        << std::remainder(v(2) + M_PI / 2 + v(4) - M_PI, 2 * M_PI) << "]" << std::endl;
   }
   // out << "    actions:" << std::endl;
   // for (size_t t = order; t < results.N; ++t) {
