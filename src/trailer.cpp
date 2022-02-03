@@ -211,9 +211,7 @@ struct FirstCarRotation : Feature {
 
 int main() {
 
-  auto filename =
-      "/home/quim/stg/wolfgang/kinodynamic-motion-planning-benchmark/src/"
-      "car_with_trailer.g";
+  auto filename = "../src/car_with_trailer.g";
   rai::Configuration C;
   C.addFile(filename);
 
