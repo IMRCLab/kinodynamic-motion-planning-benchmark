@@ -52,10 +52,6 @@ struct UnicycleAngularVelocity : Feature {
   }
 };
 
-    if (order != 2)
-    }
-  }
-};
 
 struct UnicycleAngularAcceleration : Feature {
   uint dim_phi2(const FrameL &) { return 1; }
@@ -102,8 +98,12 @@ struct UnicycleAngularAcceleration : Feature {
       JBlock_b.setBlockMatrix(Jpprev, Jvprev);
       arr JBlock;
       JBlock.setBlockMatrix(JBlock_a, JBlock_b);
+      J = Jl * JBlock;
+    }
+  }
+};
 
-double velocity(const arrA &results, int t, double dt) {
+double velocity(const arrA& results, int t, double dt) {
   const double tol = 0.1; // tolerance to avoid division by zero
 
   arr v = results(t) - results(t - 1);
@@ -342,8 +342,8 @@ int main(int argn, char **argv) {
     komo.addObjective({3./N,1.}, make_shared<UnicycleAngularAcceleration>(), {"robot0"},
                       OT_ineq, {10}, {max_wdot}, 2);
 
-    komo.addObjective({3./N,1.}, FS_qItself, {"robot0"}, OT_ineq, {0, 0, -10},
-                      {0, 0, -max_wdot}, 2);
+    komo.addObjective({3./N,1.}, make_shared<UnicycleAngularAcceleration>(), {"robot0"},
+                      OT_ineq, {-10}, {-max_wdot}, 2);
 
 
     // contraints: zero velocity start and end
