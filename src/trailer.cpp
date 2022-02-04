@@ -1,80 +1,16 @@
-
 #include "KOMO/komo.h"
 #include "Kin/F_qFeatures.h"
 #include "car_utils.hpp"
 #include <Kin/kin.h>
 #include <cassert>
 
-const double L = .4;   // distance  rear-front wheels
-const double d1 = .5; // distance between car centers
-
-#if 0
-// feature
-struct CarDynamics : Feature {
-  // xdot = s cos ( theta )
-  // ydot = s sin ( theta )
-  // thetadot = s / L tan ( phi )
-  void phi2(arr &y, arr &J, const FrameL &F) {
-
-    CHECK_EQ(F.nd, 2, "need two frames");
-
-    CHECK_EQ(F(0, 0)->joint->type, rai::JT_transXYPhi, "");
-    CHECK_EQ(F(0, 1)->joint->type, rai::JT_hingeZ, "");
-    CHECK_EQ(F(1, 0)->joint->type, rai::JT_transXYPhi, "");
-    CHECK_EQ(F(1, 1)->joint->type, rai::JT_hingeZ, "");
-
-    std::cout << "frames " << std::endl;
-    std::cout << F.nd << std::endl;
-    std::cout << F(0, 0)->name << std::endl; // robot
-    std::cout << F(0, 1)->name << std::endl; // front wheel
-    for (auto &f : F) {
-      std::cout << f->name << std::endl;
-    }
-
-    std::cout << "**** " << std::endl;
-
-    // robot
-    arr r, Jr;
-    arr rdot, Jdot;
-    F_qItself().setOrder(0).eval(r, Jr, FrameL{F(1, 0)}.reshape(1, -1));
-    F_qItself().setOrder(1).eval(rdot, Jdot,
-                                 FrameL{F(0, 0), F(1, 0)}.reshape(-1, 1));
-
-    // phi
-    arr phi;
-    arr Jphi;
-    F_qItself().setOrder(0).eval(phi, Jphi, F(1, {1, 1}).reshape(1, -1));
-
-    std::cout << "r " << r << std::endl;
-    std::cout << "Jr " << Jr << std::endl;
-    std::cout << "rdot " << rdot << std::endl;
-    std::cout << "Jdot " << Jdot << std::endl;
-    std::cout << "phi " << phi << std::endl;
-    std::cout << "Jphi " << Jphi << std::endl;
-
-    // y(0,1) are the typical velocity stuff...
-    // y(2):   dot_theta - 1 / L * vel * tan ( phi ) = 0
-
-    y = zeros(3);
-    if (!!J) {
-      // ROWS = 3 equations ; COLUMNS= 3 position + 3 velocities + phi
-      J.resize(3, 7);
-
-      // Jac of y(2)
-      // Jdot_theta-1/L*vel*1/cos(phi)^2*Jphi-1/L*tan(phi)*Jvel
-    }
-  }
-
-  uint dim_phi2(const FrameL &F) {
-    (void)F;
-    return 3;
-  }
-};
-#endif
-
 struct Trailer : Feature {
-  // See Quim's Drawing:
-  // theta1DOT - s / d1 * cos (theta) = 0
+  // IMPORTANT: See Quim's Drawing:
+
+  double d1;
+
+  Trailer(double d1) : d1(d1) {}
+
   void phi2(arr &y, arr &J, const FrameL &F) {
 
     CHECK_EQ(F.nd, 2, "need two frames");
@@ -89,9 +25,9 @@ struct Trailer : Feature {
 
     // robot
     arr r, Jr;
-    arr rdot, Jdot;
+    arr rdot, Jrdot;
     F_qItself().setOrder(0).eval(r, Jr, FrameL{F(1, 0)}.reshape(1, -1));
-    F_qItself().setOrder(1).eval(rdot, Jdot,
+    F_qItself().setOrder(1).eval(rdot, Jrdot,
                                  FrameL{F(0, 0), F(1, 0)}.reshape(-1, 1));
 
     // trailer
@@ -108,23 +44,23 @@ struct Trailer : Feature {
 
     double ct = std::cos(t(0));
     double st = std::sin(t(0));
-    y(0) = tdot(0) - vel(0) / d1 * ct;
+    y(0) = tdot(0) + rdot(2) - vel(0) / d1 * ct;
 
-    std::cout << "y out " << y.N << y << std::endl;
     if (!!J) {
-      // ROWS = 1 equations ; COLUMNS= 1 t +  1 tdot + 1 vel
+      // ROWS = 1 equations ; COLUMNS= 1 t +  1 tdot + 1 vel + 3 rdot
       arr Jl;
-      Jl.resize(1, 3);
+      Jl.resize(1, 6);
+      Jl.setZero(0);
       Jl(0, 0) = vel(0) / d1 * st;
       Jl(0, 1) = 1;
       Jl(0, 2) = -1 / d1 * ct;
+      Jl(0, 5) = 1;
 
-      arr block_, block;
+      arr block_, block_2, block;
       block_.setBlockMatrix(Jt, Jtdot);
-      block.setBlockMatrix(block_, Jvel);
+      block_2.setBlockMatrix(block_, Jvel);
+      block.setBlockMatrix(block_2, Jrdot);
       J = Jl * block;
-      std::cout << "returning Jac " << std::endl;
-      std::cout << J << std::endl;
     }
   }
 
@@ -136,6 +72,9 @@ struct Trailer : Feature {
 };
 
 struct FirstCarRotation : Feature {
+
+  double L;
+  FirstCarRotation(double L) : L(L) {}
 
   void phi2(arr &y, arr &J, const FrameL &F) {
 
@@ -219,6 +158,8 @@ arrA getPath_qAll_with_prefix(KOMO &komo, int order) {
 
 int main(int argn, char **argv) {
 
+  const double L = .4;  // distance  rear-front wheels
+  const double d1 = .5; // distance between car centers
   rai::initCmdLine(argn, argv);
   rnd.clockSeed();
 
@@ -240,49 +181,97 @@ int main(int argn, char **argv) {
   rai::Configuration C;
   C.addFile(model_file);
 
-  int order = 2;
+  int order = rai::getParameter<int>("order", 1);
+  std::cout << "Car order: " << order << std::endl;
 
   KOMO komo;
   komo.setModel(C, true);
 
+  auto robot_collision = "R_robot_shape";
+  auto car_name = "R_robot";
+  auto goal_name = "GOAL_robot";
+  auto arm_name = "R_arm";
+  auto wheel_name = "R_front_wheel";
+  auto trailer_name = "R_trailer";
+  auto trailer_goal = "GOAL_trailer";
+
+  // int N = 50;
+  int N = 50;
   double dt = 0.1;
-  const int N = 20;
   double duration_phase = N * dt;
   komo.setTiming(1, N, duration_phase, order);
-  // komo.add_qControlObjective({},2,.1);
-  komo.add_qControlObjective({}, 2, 1);
-  komo.add_qControlObjective({}, 1, 1);
 
-  // Position First Car
-  // V cos(theta) - xdot = 0
-  // V sin(theta) - ydot = 0
-  komo.addObjective({}, make_shared<UnicycleDynamics>(), {"robot"}, OT_eq,
-                    {1e1}, {0}, 1);
+  komo.add_qControlObjective({}, order, 1);
 
-  // Rotation First Car
-  // theta_dot = s / L * tan(phi)
-  komo.addObjective({}, make_shared<FirstCarRotation>(),
-                    {"robot", "front_wheel"}, OT_eq, {1e1}, {0}, 1);
+  double action_factor = rai::getParameter<double>("action_factor", 1.0);
 
-  // Rotation Trailer
-  komo.addObjective({}, make_shared<Trailer>(), {"robot", "arm"}, OT_eq, {1e1},
-                    {0}, 1);
-
-  // komo.addObjective({1., 1.}, FS_poseDiff, {"robot", "goal_forward"}, OT_eq,
-  //                   {1e2}); SEEMS OK
-
-  komo.addObjective({1., 1.}, FS_poseDiff, {"robot", "goal_curve"}, OT_eq,
+  // add the goal
+  komo.addObjective({1., 1.}, FS_poseDiff, {car_name, goal_name}, OT_eq, {1e2});
+  komo.addObjective({1., 1.}, FS_poseDiff, {trailer_name, trailer_goal}, OT_eq,
                     {1e2});
 
-  komo.run_prepare(0);
+  // add collisions
+  StringA obstacles;
+  for (auto &frame : C.frames) {
+    std::cout << *frame << std::endl;
+    if (frame->shape && frame->name.startsWith("obs")) {
+      obstacles.append(frame->name);
+    }
+  }
+
+  for (auto &obs : obstacles) {
+    komo.addObjective({}, FS_distance, {robot_collision, obs}, OT_ineq, {1e2});
+    komo.addObjective({}, FS_distance, {trailer_name, obs}, OT_ineq, {1e2});
+  }
+
+  if (order == 1) {
+
+    const double max_velocity = 0.5 * action_factor - 0.01; // m/s
+    double max_phi = 45 * 3.14159 / 180;
+
+    // Linear velocity First Car
+    komo.addObjective({}, make_shared<UnicycleDynamics>(), {car_name}, OT_eq,
+                      {1e1}, {0}, 1);
+
+    // Rotation First Car
+    komo.addObjective({}, make_shared<FirstCarRotation>(L),
+                      {car_name, wheel_name}, OT_eq, {1e1}, {0}, 1);
+
+    // Rotation Trailer
+    komo.addObjective({}, make_shared<Trailer>(d1), {car_name, arm_name}, OT_eq,
+                      {1e1}, {0}, 1);
+
+    // Bound Linear Velocity
+    komo.addObjective({}, make_shared<UnicycleVelocity>(), {car_name}, OT_ineq,
+                      {1}, {max_velocity}, 1);
+
+    komo.addObjective({}, make_shared<UnicycleVelocity>(), {car_name}, OT_ineq,
+                      {-1}, {-max_velocity}, 1);
+
+    // Bound angle on wheel
+    komo.addObjective({}, FS_qItself, {wheel_name}, OT_ineq, {1}, {max_phi}, 1);
+
+    komo.addObjective({}, FS_qItself, {wheel_name}, OT_ineq, {-1}, {-max_phi},
+                      1);
+
+    // TODO: Wolfgang, do you want bounds on the angular velocity?
+
+  } else {
+    NIY;
+  }
+
+  bool check_gradients = false;
+  if (check_gradients) {
+    std::cout << "checking gradients" << std::endl;
+    // TODO: to avoid singular points, I shoud add noise before
+    // checking the gradients.
+    komo.run_prepare(.1);
+    komo.checkGradients();
+    std::cout << "done " << std::endl;
+  }
+
+  komo.run_prepare(0.01);
   komo.reportProblem();
-  // komo.checkGradients(); // it breaks here, not giving the jacobian
-  //
-  //
-
-  // komo.initWithWaypoints( {
-
-  // goal_forward{ shape:marker, size:[.3], X:<t(2 .2 0) d(0 0 0 1)> }
 
   komo.run();
 
@@ -291,6 +280,7 @@ int main(int argn, char **argv) {
   if (display) {
     komo.view(true);
     komo.view_play(true);
+    // komo.view_play(true, 1,"vid/car");
     komo.plotTrajectory();
 
     do {
@@ -323,7 +313,8 @@ int main(int argn, char **argv) {
     auto &v = results(t);
     out << "      - [" << v(0) << "," << v(1) << ","
         << std::remainder(v(2), 2 * M_PI) << ","
-        << std::remainder(v(2) + M_PI / 2 + v(4) - M_PI, 2 * M_PI) << "]" << std::endl;
+        << std::remainder(v(2) + M_PI / 2 + v(4) - M_PI, 2 * M_PI) << "]"
+        << std::endl;
   }
   // out << "    actions:" << std::endl;
   // for (size_t t = order; t < results.N; ++t) {
