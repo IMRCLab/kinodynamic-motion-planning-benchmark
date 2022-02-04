@@ -11,13 +11,13 @@ sst:
 
 dbAstar-komo:
   default:
-    add_primitives_per_iteration: 100
+    add_primitives_per_iteration: 200
     desired_branching_factor: 16
     suboptimality_bound: 1.0
     # Config file (rai.cfg) that will be used
     rai_cfg: |
-      opt/verbose: 0
-      KOMO/verbose: 0
+      opt/verbose: 4
+      KOMO/verbose: 3
       opt/stopTolerance: 0.0001
 
 # dbAstar-scp:

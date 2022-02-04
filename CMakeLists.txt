@@ -127,8 +127,8 @@ target_link_libraries(dbastar
 )
 
 
-set( FILES_DEBUG_INFO src/main_rai.cpp src/car_utils.cpp src/trailer.cpp)
-set_source_files_properties( ${FILES_DEBUG_INFO}  PROPERTIES COMPILE_FLAGS "-g -O0")
+# set( FILES_DEBUG_INFO src/main_rai.cpp src/car_utils.cpp src/trailer.cpp)
+# set_source_files_properties( ${FILES_DEBUG_INFO}  PROPERTIES COMPILE_FLAGS "-g -O0")
 
 
 ## main_rai
