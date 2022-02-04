@@ -44,14 +44,14 @@ def generatePDF(data, data_propagated, filename):
 	fig, axs = plt.subplots(2, 3, sharex='all', sharey='row')
 	for k, name in enumerate(['x', 'y', 'z']):
 		axs[0, k].plot(data[:, k], label="KOMO")
-		if data_propagated:
+		if data_propagated is not None:
 			axs[0, k].plot(data_propagated[:, k], label="Dynamics")
 		axs[0, k].set_ylabel(name + " [m]")
 	axs[0,0].legend()
 
 	for k, name in enumerate(['vx', 'vy', 'vz']):
 		axs[1, k].plot(data[:, 3+k], '--', label="KOMO (estimated)")
-		if data_propagated:
+		if data_propagated is not None:
 			axs[1, k].plot(data_propagated[:, 3+k], label="Dynamics")
 		axs[1, k].set_ylabel(name + " [m/s]")
 		axs[1, k].set_xlabel("timestep")
@@ -62,18 +62,18 @@ def generatePDF(data, data_propagated, filename):
 
 	fig, axs = plt.subplots(2, 3, sharex='all', sharey='row')
 	rpy = np.degrees(rowan.to_euler(data[:, 6:10], 'xyz'))
-	if data_propagated:
+	if data_propagated is not None:
 		rpy_propagated = np.degrees(rowan.to_euler(data_propagated[:, 6:10], 'xyz'))
 	for k, name in enumerate(['roll', 'pitch', 'yaw']):
 		axs[0, k].plot(rpy[:, k], label="KOMO")
-		if data_propagated:
+		if data_propagated is not None:
 			axs[0, k].plot(rpy_propagated[:, k], label="Dynamics")
 		axs[0, k].set_ylabel(name + " [deg]")
 	axs[0, 0].legend()
 
 	for k, name in enumerate(['wx', 'wy', 'wz']):
 		axs[1, k].plot(np.degrees(data[:, 10+k]), '--', label="KOMO (estimated)")
-		if data_propagated:
+		if data_propagated is not None:
 			axs[1, k].plot(np.degrees(data_propagated[:, 10+k]), label="Dynamics")
 		axs[1, k].set_ylabel(name + " [deg/s]")
 		axs[1, k].set_xlabel("timestep")
@@ -134,8 +134,23 @@ if __name__ == '__main__':
 	# 	data_propagated.append(quad.step(data_propagated[-1], row[13:17]))
 	# data_propagated = np.array(data_propagated)
 
-	# generatePDF(data, data_propagated, 'output.pdf')
+	import yaml
+	with open("out.yaml") as f:
+		result = yaml.safe_load(f)
+
+	# x,y,z, qx, qy, qz, qw, vx, vy, vz, wx, wy, wz
+	data2 = np.array(result["result"][0]["states"])
+	data_prop = np.empty_like(data2)
+	data_prop[:,0:3] = data2[:,0:3]	# copy positions
+	data_prop[:,3:6] = data2[:,7:10]	# copy velocity
+	data_prop[:,7:10] = data2[:,3:6]	# copy quaternion
+	data_prop[:,6] = data2[:,6]	# copy quaternion
+	data_prop[:,6:10] = rowan.normalize(data_prop[:,6:10])
+	data_prop[:,10:13] = data2[:,10:13]	# copy omega
+
+
+	generatePDF(data, data_prop, 'output.pdf')
 	# generatePDF(data, None, 'output.pdf')
-	animate(data)
+	# animate(data)
 
 

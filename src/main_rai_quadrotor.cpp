@@ -15,60 +15,72 @@ arr velocity(const arr& results, int t, double dt) {
   return v;
 }
 
-rai::Quaternion quat_exp(const rai::Quaternion& q)
-{
-  const auto& v = q.getVec();
-  double norm_v = v.length();
-  if (norm_v == 0) {
-    double e = exp(q.w);
-    return rai::Quaternion(e, 0, 0, 0);
-  } else {
-    double e = exp(q.w);
-    double w = e * cos(norm_v);
-    rai::Vector vec = e / norm_v * sin(norm_v) * v;
-    return rai::Quaternion(w, vec.x, vec.y, vec.z);
-  }
-}
+// rai::Quaternion quat_exp(const rai::Quaternion& q)
+// {
+//   const auto& v = q.getVec();
+//   double norm_v = v.length();
+//   if (norm_v == 0) {
+//     double e = exp(q.w);
+//     return rai::Quaternion(e, 0, 0, 0);
+//   } else {
+//     double e = exp(q.w);
+//     double w = e * cos(norm_v);
+//     rai::Vector vec = e / norm_v * sin(norm_v) * v;
+//     return rai::Quaternion(w, vec.x, vec.y, vec.z);
+//   }
+// }
 
-rai::Quaternion quat_log(const rai::Quaternion& q)
-{
-  double norm_q = q.normalization();
-  const auto& v = q.getVec();
-  double norm_v = v.length();
-  if (norm_v == 0) {
-    double w = log(norm_q);
-    return rai::Quaternion(w, 0, 0, 0);
-  } else {
-    double w = log(norm_q);
-    rai::Vector vec = v / norm_v * acos(q.w / norm_q);
-    return rai::Quaternion(w, vec.x, vec.y, vec.z);
-  }
-}
+// rai::Quaternion quat_log(const rai::Quaternion& q)
+// {
+//   double norm_q = q.normalization();
+//   const auto& v = q.getVec();
+//   double norm_v = v.length();
+//   if (norm_v == 0) {
+//     double w = log(norm_q);
+//     return rai::Quaternion(w, 0, 0, 0);
+//   } else {
+//     double w = log(norm_q);
+//     rai::Vector vec = v / norm_v * acos(q.w / norm_q);
+//     return rai::Quaternion(w, vec.x, vec.y, vec.z);
+//   }
+// }
 
-rai::Quaternion operator/(const rai::Quaternion& q, double f)
-{
-  return rai::Quaternion(q.w / f, q.x / f, q.y / f, q.z / f);
-}
+// rai::Quaternion operator/(const rai::Quaternion& q, double f)
+// {
+//   return rai::Quaternion(q.w / f, q.x / f, q.y / f, q.z / f);
+// }
 
-rai::Quaternion operator*(const rai::Quaternion& q, double f)
-{
-  return rai::Quaternion(q.w * f, q.x * f, q.y * f, q.z * f);
-}
+// rai::Quaternion operator*(const rai::Quaternion& q, double f)
+// {
+//   return rai::Quaternion(q.w * f, q.x * f, q.y * f, q.z * f);
+// }
 
-// See https://gamedev.stackexchange.com/questions/30926/quaternion-dfference-time-angular-velocity-gyroscope-in-physics-library
-rai::Vector angular_vel_numeric(const rai::Quaternion& q1, const rai::Quaternion& q2, double dt)
-{
-  rai::Quaternion q2i(q2);
-  q2i.invert();
-  const auto diff_q = q1 * q2i;
-  return (quat_exp(quat_log(diff_q) / dt) * q2i * 2).getVec();
-}
+// // See https://gamedev.stackexchange.com/questions/30926/quaternion-dfference-time-angular-velocity-gyroscope-in-physics-library
+// rai::Vector angular_vel_numeric(const rai::Quaternion& q1, const rai::Quaternion& q2, double dt)
+// {
+//   rai::Quaternion q2i(q2);
+//   q2i.invert();
+//   const auto diff_q = q1 * q2i;
+//   return (quat_exp(quat_log(diff_q) / dt) * q2i * 2).getVec();
+// }
+
+// rai::Vector angularVelocity(const arr& results, int t, double dt) {
+//   rai::Quaternion q1(results(t - 1, {7,-1}));
+//   rai::Quaternion q2(results(t, {7,-1}));
+//   std::cout << q1 << " " << q2 << std::endl;
+//   return angular_vel_numeric(q1, q2, dt);
+// }
 
 rai::Vector angularVelocity(const arr& results, int t, double dt) {
-  rai::Quaternion q1(results(t - 1, {7,-1}));
-  rai::Quaternion q2(results(t, {7,-1}));
-  std::cout << q2 << std::endl;
-  return angular_vel_numeric(q1, q2, dt);
+  // numerically estimate qdot
+  arr qdot_arr = (results(t - 1, {7,-1}) - results(t, {7,-1})) / dt;
+  rai::Quaternion qdot(qdot_arr);
+  rai::Quaternion q(results(t, {7,-1}));
+  // omega = 2 * qdot * q_inv
+  // compute qdot * q^-1
+  auto r = qdot / q;
+  // take vector component
+  return rai::Vector(r.x, r.y, r.z) * 2;
 }
 
 // usage:
@@ -223,8 +235,8 @@ int main(int argn, char **argv) {
     out << "      - [" << x(4) << "," << x(5) << "," << x(6) << ","                 // x,y,z,
                        << x(8) << "," << x(9) << "," << x(10) << "," << x(7) << "," // qx,qy,qz,qw,
                        << v(0) << "," << v(1) << "," << v(2) << ","                 // vx,vy,vz
-                      //  << w.x << "," << w.y << "," << w.z << "]\n";                 // wx, wy, wz
-                       << 0 << "," << 0 << "," << 0 << "]\n";                 // wx, wy, wz
+                       << w.x << "," << w.y << "," << w.z << "]\n";                 // wx, wy, wz
+                      //  << 0 << "," << 0 << "," << 0 << "]\n";                 // wx, wy, wz
   }
   out << "    actions:" << std::endl;
   for (size_t t = 1; t < komo.T - 1; ++t) {
