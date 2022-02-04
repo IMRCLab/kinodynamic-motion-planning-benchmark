@@ -2,6 +2,7 @@ import argparse
 import math
 import yaml
 from typing import List
+from translate_utils import Box
 
 
 class Robot:
