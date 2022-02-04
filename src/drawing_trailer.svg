@@ -26,14 +26,14 @@
      inkscape:pageopacity="0.0"
      inkscape:pageshadow="2"
      inkscape:zoom="0.93541667"
-     inkscape:cx="418.15866"
-     inkscape:cy="600.26175"
+     inkscape:cx="371.78624"
+     inkscape:cy="401.6747"
      inkscape:document-units="mm"
      inkscape:current-layer="layer1"
      showgrid="false"
-     inkscape:window-width="956"
-     inkscape:window-height="1041"
-     inkscape:window-x="960"
+     inkscape:window-width="1276"
+     inkscape:window-height="1401"
+     inkscape:window-x="1280"
      inkscape:window-y="18"
      inkscape:window-maximized="0" />
   <metadata
@@ -44,7 +44,7 @@
         <dc:format>image/svg+xml</dc:format>
         <dc:type
            rdf:resource="http://purl.org/dc/dcmitype/StillImage" />
-        <dc:title></dc:title>
+        <dc:title />
       </cc:Work>
     </rdf:RDF>
   </metadata>
@@ -354,5 +354,61 @@
          x="127.28284"
          y="171.69711"
          style="stroke-width:0.26458332">L</tspan></text>
+    <text
+       xml:space="preserve"
+       style="font-style:normal;font-weight:normal;font-size:10.58333302px;line-height:1.25;font-family:sans-serif;letter-spacing:0px;word-spacing:0px;fill:#000000;fill-opacity:1;stroke:none;stroke-width:0.26458332"
+       x="22.062361"
+       y="261.36081"
+       id="text56"><tspan
+         sodipodi:role="line"
+         id="tspan54"
+         x="22.062361"
+         y="261.36081"
+         style="stroke-width:0.26458332">theta1VALLE =90 - theta1 - theta0  </tspan></text>
+    <path
+       style="fill:none;stroke:#000000;stroke-width:0.26458332px;stroke-linecap:butt;stroke-linejoin:miter;stroke-opacity:1"
+       d="m 49.892857,148.45535 19.971284,-0.80056"
+       id="path58"
+       inkscape:connector-curvature="0" />
+    <path
+       style="opacity:0.34200003;fill:none;fill-opacity:1;stroke:#000000;stroke-width:0.80000001;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:1"
+       id="path60"
+       sodipodi:type="arc"
+       sodipodi:cx="49.892857"
+       sodipodi:cy="148.45535"
+       sodipodi:rx="16.654758"
+       sodipodi:ry="14.570623"
+       sodipodi:start="6.2444012"
+       sodipodi:end="0.34594637"
+       d="m 66.535091,147.89039 a 16.654758,14.570623 0 0 1 -0.974188,5.50567 l -15.668046,-4.94071 z" />
+    <path
+       sodipodi:type="star"
+       style="opacity:0.34200003;fill:none;fill-opacity:1;stroke:#000000;stroke-width:0.80000001;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:1"
+       id="path62"
+       sodipodi:sides="3"
+       sodipodi:cx="26.70076"
+       sodipodi:cy="126.79514"
+       sodipodi:r1="2.6926594"
+       sodipodi:r2="1.3463296"
+       sodipodi:arg1="1.3078016"
+       sodipodi:arg2="2.3549991"
+       inkscape:flatsided="true"
+       inkscape:rounded="0"
+       inkscape:randomized="0"
+       d="m 27.40078,129.39522 -3.301761,-3.29388 4.503461,-1.21247 z"
+       inkscape:transform-center-x="-0.39874396"
+       inkscape:transform-center-y="0.154383"
+       transform="matrix(0.05201658,-0.84159443,0.95436762,0.10782746,-56.039682,160.08048)" />
+    <text
+       xml:space="preserve"
+       style="font-style:normal;font-weight:normal;font-size:10.58333302px;line-height:1.25;font-family:sans-serif;letter-spacing:0px;word-spacing:0px;fill:#000000;fill-opacity:1;stroke:none;stroke-width:0.26458332"
+       x="-1.1000328"
+       y="144.29564"
+       id="text66"><tspan
+         sodipodi:role="line"
+         id="tspan64"
+         x="-1.1000328"
+         y="144.29564"
+         style="stroke-width:0.26458332">theta1VALLE</tspan></text>
   </g>
 </svg>
