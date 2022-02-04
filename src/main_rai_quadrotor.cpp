@@ -10,6 +10,67 @@
 #include <yaml-cpp/yaml.h>
 
 
+arr velocity(const arr& results, int t, double dt) {
+  arr v = (results(t,{4,7}) - results(t - 1, {4,7})) / dt;
+  return v;
+}
+
+rai::Quaternion quat_exp(const rai::Quaternion& q)
+{
+  const auto& v = q.getVec();
+  double norm_v = v.length();
+  if (norm_v == 0) {
+    double e = exp(q.w);
+    return rai::Quaternion(e, 0, 0, 0);
+  } else {
+    double e = exp(q.w);
+    double w = e * cos(norm_v);
+    rai::Vector vec = e / norm_v * sin(norm_v) * v;
+    return rai::Quaternion(w, vec.x, vec.y, vec.z);
+  }
+}
+
+rai::Quaternion quat_log(const rai::Quaternion& q)
+{
+  double norm_q = q.normalization();
+  const auto& v = q.getVec();
+  double norm_v = v.length();
+  if (norm_v == 0) {
+    double w = log(norm_q);
+    return rai::Quaternion(w, 0, 0, 0);
+  } else {
+    double w = log(norm_q);
+    rai::Vector vec = v / norm_v * acos(q.w / norm_q);
+    return rai::Quaternion(w, vec.x, vec.y, vec.z);
+  }
+}
+
+rai::Quaternion operator/(const rai::Quaternion& q, double f)
+{
+  return rai::Quaternion(q.w / f, q.x / f, q.y / f, q.z / f);
+}
+
+rai::Quaternion operator*(const rai::Quaternion& q, double f)
+{
+  return rai::Quaternion(q.w * f, q.x * f, q.y * f, q.z * f);
+}
+
+// See https://gamedev.stackexchange.com/questions/30926/quaternion-dfference-time-angular-velocity-gyroscope-in-physics-library
+rai::Vector angular_vel_numeric(const rai::Quaternion& q1, const rai::Quaternion& q2, double dt)
+{
+  rai::Quaternion q2i(q2);
+  q2i.invert();
+  const auto diff_q = q1 * q2i;
+  return (quat_exp(quat_log(diff_q) / dt) * q2i * 2).getVec();
+}
+
+rai::Vector angularVelocity(const arr& results, int t, double dt) {
+  rai::Quaternion q1(results(t - 1, {7,-1}));
+  rai::Quaternion q2(results(t, {7,-1}));
+  std::cout << q2 << std::endl;
+  return angular_vel_numeric(q1, q2, dt);
+}
+
 // usage:
 // EXECUTABLE -model FILE_G -waypoints FILE_WAY -one_every ONE_EVERY_N -display
 // {0,1} -out OUT_FILE OUT_FILE -animate  {0,1,2} -order {0,1,2}
@@ -29,8 +90,8 @@ int main(int argn, char **argv) {
 
   // bool display = rai::getParameter<bool>("display", false);
   // int animate = rai::getParameter<int>("animate", 0);
-  // rai::String out_file =
-  //     rai::getParameter<rai::String>("out", STRING("out.yaml"));
+  rai::String out_file =
+      rai::getParameter<rai::String>("out", STRING("out.yaml"));
 
   
   // rai::String env_file =
@@ -55,7 +116,10 @@ int main(int argn, char **argv) {
   const float max_force_per_motor = 12. / 1000. * 9.81;
 
   KOMO komo;
-  komo.setTiming(1., 50, 0.5, 2);
+  const double dt = 0.01;
+  const int N = 50;
+  double duration_phase = N * dt;
+  komo.setTiming(1, N, duration_phase, /*order*/2);
 
   rai::Frame *world = C["world"];
   auto f1 = new rai::ForceExchange(*world, *C["m1"], rai::FXT_forceZ);
@@ -145,11 +209,35 @@ int main(int argn, char **argv) {
   allDofs.write(csv, ", ", "\n", "");
   csv.close();
 
-  gnuplot("load 'plt'");
+  // write the results.
 
-  komo.view(true);
-  while(komo.view_play(true, 1.));
-  komo.view_play(false,.2,"z.vid/");
+  std::ofstream out(out_file);
+  // out << std::setprecision(std::numeric_limits<double>::digits10 + 1);
+  out << "result:" << std::endl;
+  out << "  - states:" << std::endl;
+  for (size_t t = 1; t < komo.T; ++t) {
+    const arr x = allDofs(t,{0, -1});
+    auto v = velocity(allDofs, t, dt);
+    auto w = angularVelocity(allDofs, t, dt);
+    // x,y,z, qx, qy, qz, qw, vx, vy, vz, wx, wy, wz
+    out << "      - [" << x(4) << "," << x(5) << "," << x(6) << ","                 // x,y,z,
+                       << x(8) << "," << x(9) << "," << x(10) << "," << x(7) << "," // qx,qy,qz,qw,
+                       << v(0) << "," << v(1) << "," << v(2) << ","                 // vx,vy,vz
+                      //  << w.x << "," << w.y << "," << w.z << "]\n";                 // wx, wy, wz
+                       << 0 << "," << 0 << "," << 0 << "]\n";                 // wx, wy, wz
+  }
+  out << "    actions:" << std::endl;
+  for (size_t t = 1; t < komo.T - 1; ++t) {
+    const arr u = allDofs(t,{0, 4});
+    out << "      - [" << u(0) << "," << u(1) << "," << u(2) << "," << u(3) << "]\n";
+  }
+
+
+  // gnuplot("load 'plt'");
+
+  // komo.view(true);
+  // while(komo.view_play(true, 1.));
+  // komo.view_play(false,.2,"z.vid/");
 
   return 0;
 }
