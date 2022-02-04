@@ -42,4 +42,15 @@ struct UnicycleAcceleration : Feature {
   void phi2(arr &y, arr &J, const FrameL &F);
 };
 
+struct UnicycleAngularVelocity : Feature {
+  inline uint dim_phi2(const FrameL &) { return 1; }
+
+  void phi2(arr &y, arr &J, const FrameL &F);
+};
+
+struct UnicycleAngularAcceleration : Feature {
+  inline uint dim_phi2(const FrameL &) { return 1; }
+  void phi2(arr &y, arr &J, const FrameL &F);
+};
+
 arrA load_waypoints(const char *filename);
