@@ -62,6 +62,32 @@ def main() -> None:
 	with open(args.motions) as f:
 		motions = yaml.load(f, Loader=yaml.CSafeLoader)
 
+	# all_actions = []
+	# all_start_states = []
+	# for m in motions:
+	# 	all_actions.extend(m["actions"])
+	# 	all_start_states.append(m["x0"])
+	
+
+	# import numpy as np
+	# import matplotlib.pyplot as plt
+	# from matplotlib.backends.backend_pdf import PdfPages
+
+	# all_actions = np.array(all_actions)
+	# all_start_states = np.array(all_start_states)
+
+	# pp = PdfPages("../results/test/a.pdf")
+	# fig, ax = plt.subplots()
+	# # ax.scatter(all_actions[:,0], all_actions[:,1])
+	# ax.scatter(all_start_states[:,2], all_start_states[:,4])
+
+	# pp.savefig(fig)
+	# plt.close(fig)
+	# pp.close()
+
+	
+	# exit()
+
 	filename_motions_sorted = Path(args.motions).stem + "_sorted.yaml"
 	used_motions = sort_primitives(motions, args.robot_type)
 	with open(filename_motions_sorted, 'w') as file:
@@ -74,7 +100,7 @@ def main() -> None:
 
 
 
-	used_motions = sort_primitives(motions, robot_type)
+	used_motions = sort_primitives(motions, robot_type, 10)
 
 	with tempfile.TemporaryDirectory() as tmpdirname:
 		p = Path(tmpdirname)

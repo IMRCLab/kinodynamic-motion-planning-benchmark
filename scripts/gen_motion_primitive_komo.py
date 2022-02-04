@@ -16,7 +16,6 @@ import checker
 
 import sys, os
 sys.path.append(os.getcwd())
-from motionplanningutils import RobotHelper
 
 def gen_motion(robot_type, start, goal):
 	dbg = False
@@ -41,7 +40,9 @@ def gen_motion(robot_type, start, goal):
 		with open(filename_env, 'w') as f:
 			yaml.dump(env, f, Dumper=yaml.CSafeDumper)
 
-		run_komo_standalone(filename_env, str(p), 60, "action_factor: 1.0", search="linear")
+		success = run_komo_standalone(filename_env, str(p), 120, "action_factor: 1.0", search="linear")
+		if not success:
+			return []
 
 		filename_result = p / "result_komo.yaml"
 		checker.check(str(filename_env), str(filename_result))
@@ -87,10 +88,18 @@ def gen_motion(robot_type, start, goal):
 			motion['actions'] = actions[start_k:k].tolist()
 			motion['T'] = k-start_k
 			motions.append(motion)
+			# use the following break to only create the first motion
+			# this will create a nicer (uniform) distribution, but take
+			# much longer
+			# break
 		return motions
 
 
 def gen_random_motion(robot_type):
+	# NOTE: It is *very* important to keep this as a local import, otherwise
+	#       random numbers may repeat, when using multiprocessing
+	from motionplanningutils import RobotHelper
+
 	rh = RobotHelper(robot_type)
 	start = rh.sampleUniform()
 	goal = rh.sampleUniform()
@@ -99,7 +108,10 @@ def gen_random_motion(robot_type):
 	start[1] = 2
 	goal[0] += 2
 	goal[1] += 2
-	return gen_motion(robot_type, start, goal)
+	motions =  gen_motion(robot_type, start, goal)
+	for motion in motions:
+		motion['distance'] = rh.distance(motion['x0'], motion['xf'])
+	return motions
 
 
 def main():
@@ -109,7 +121,7 @@ def main():
 	parser.add_argument("--N", help="number of motions", default=100, type=int)
 	args = parser.parse_args()
 
-	rh = RobotHelper(args.robot_type)
+	# rh = RobotHelper(args.robot_type)
 
 	motions = []
 	tasks = itertools.repeat(args.robot_type, args.N)
@@ -118,15 +130,13 @@ def main():
 	if False:
 		while len(motions) < args.N:
 			multiple_motions = gen_random_motion(args.robot_type)
-			for motion in multiple_motions:
-				motion['distance'] = rh.distance(motion['x0'], motion['xf'])
-				motion['name'] = 'm{}'.format(len(motions))
-				motions.append(motion)
+			motions.extend(multiple_motions)
 	else:
 		# mp.set_start_method('spawn')
 		use_cpus = psutil.cpu_count(logical=False)
 		async_results = []
 		with mp.Pool(use_cpus) as p:
+			len_motions_last_printed = 0
 			while len(motions) < args.N:
 				# clean up async_results
 				async_results = [x for x in async_results if not x.ready()]
@@ -134,6 +144,9 @@ def main():
 				while len(async_results) < use_cpus:
 					ar = p.apply_async(gen_random_motion, (args.robot_type,), callback=lambda r: motions.extend(r))
 					async_results.append(ar)
+				if len(motions) > len_motions_last_printed:
+					print("Generated {} motions".format(len(motions)))
+					len_motions_last_printed = len(motions)
 			p.terminate()
 			# r.get()
 			# p.close()
@@ -150,7 +163,6 @@ def main():
 			# 		break
 
 	for k, motion in enumerate(motions):
-		motion['distance'] = rh.distance(motion['x0'], motion['xf'])
 		motion['name'] = 'm{}'.format(k)
 
 	print("Generated {}".format(len(motions)))

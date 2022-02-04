@@ -313,6 +313,8 @@ int main(int argc, char* argv[]) {
     T_m->add(&motion);
   }
 
+  std::cout << "There are " << motions.size() << " motions!" << std::endl;
+
 
   //////////////////////////
   if (delta < 0) {
@@ -341,6 +343,7 @@ int main(int argc, char* argv[]) {
   }
   //////////////////////////
 
+  // if (false)
   {
     size_t num_duplicates = 0;
     Motion fakeMotion;
@@ -361,7 +364,7 @@ int main(int argc, char* argv[]) {
         }
         float goal_delta = si->distance(m.states.back(), nm->states.back());
         if (goal_delta < delta/2) {
-          // std::cout << nm->idx << " " << goal_delta << std::endl;
+          // std::cout << nm->idx << " " << goal_delta << " " << delta/2 << std::endl;
           nm->disabled = true;
           ++num_duplicates;
         }
