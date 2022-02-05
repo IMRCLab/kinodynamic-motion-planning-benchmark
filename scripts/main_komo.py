@@ -9,7 +9,6 @@ import time
 
 from utils_optimization import UtilsSolutionFile
 import translate_g
-import translate_g_trailer
 
 def _run_komo(filename_g, filename_env, filename_initial_guess, filename_result, filename_cfg, order, binary="./main_rai", N=-1):
 
@@ -124,28 +123,25 @@ def run_komo_standalone(filename_env, folder, timelimit, cfg = "",
 			env = yaml.safe_load(f)
 		robot_type = env["robots"][0]["type"]
 
-		# convert environment YAML -> g
-		filename_g = p / "env.g"
 
 		if "unicycle_first_order" in robot_type:
 			order = 1
 			robot_type_guess = "unicycle_first_order_0"
-			translate_g.write(filename_env, str(filename_g))
 			binary="./main_rai"
 		elif "unicycle_second_order" in robot_type:
 			order = 2
 			robot_type_guess = "unicycle_first_order_0"
-			translate_g.write(filename_env, str(filename_g))
 			binary="./main_rai"
 		elif "car_first_order_with_1_trailers" in robot_type:
 			order = 1
 			robot_type_guess = "car_first_order_with_1_trailers_0"
-			translate_g_trailer.write(filename_env, str(filename_g))
 			binary="./trailer"
 		else:
 			raise "No known robot_type!"
 
-
+		# convert environment YAML -> g
+		filename_g = p / "env.g"
+		translate_g.write(filename_env, str(filename_g))
 
 		# write config file
 		filename_cfg = p / "rai.cfg"

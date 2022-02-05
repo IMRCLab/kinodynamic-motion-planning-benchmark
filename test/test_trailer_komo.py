@@ -29,7 +29,7 @@ def test_trailer_komo2():
 
 def test_yaml_to_komo():
     # generate from yaml file
-    cmd = "python3 ../scripts/translate_g_trailer.py  --fin  ../benchmark/carFirstOrderWithTrailers/parallelpark_0.yaml --fout tmp_trailer.g"
+    cmd = "python3 ../scripts/translate_g.py  --fin  ../benchmark/carFirstOrderWithTrailers/parallelpark_0.yaml --fout tmp_trailer.g"
     print("Running", cmd)
     out = sp.run(cmd.split())
     print("Running DONE", cmd)
