@@ -14,7 +14,6 @@ struct Trailer : Feature {
   void phi2(arr &y, arr &J, const FrameL &F) {
 
     CHECK_EQ(F.nd, 2, "need two frames");
-    std::cout << "ho" << std::endl;
 
     CHECK_EQ(F(0, 0)->joint->type, rai::JT_transXYPhi, "");
     CHECK_EQ(F(0, 1)->joint->type, rai::JT_hingeZ, "");
@@ -66,7 +65,6 @@ struct Trailer : Feature {
 
   uint dim_phi2(const FrameL &F) {
     (void)F;
-    std::cout << "dim is " << 1 << std::endl;
     return 1;
   }
 };
@@ -110,12 +108,12 @@ struct FirstCarRotation : Feature {
     arr Jphi;
     F_qItself().setOrder(0).eval(phi, Jphi, F(1, {1, 1}).reshape(1, -1));
 
-    std::cout << "r " << r << std::endl;
-    std::cout << "Jr " << Jr << std::endl;
-    std::cout << "rdot " << rdot << std::endl;
-    std::cout << "Jdot " << Jrdot << std::endl;
-    std::cout << "phi " << phi << std::endl;
-    std::cout << "Jphi " << Jphi << std::endl;
+    // std::cout << "r " << r << std::endl;
+    // std::cout << "Jr " << Jr << std::endl;
+    // std::cout << "rdot " << rdot << std::endl;
+    // std::cout << "Jdot " << Jrdot << std::endl;
+    // std::cout << "phi " << phi << std::endl;
+    // std::cout << "Jphi " << Jphi << std::endl;
 
     arr vel, Jvel;
     FrameL Fvel = {F(0, 0), F(1, 0)}; // First column
@@ -156,6 +154,25 @@ arrA getPath_qAll_with_prefix(KOMO &komo, int order) {
   return q;
 }
 
+double velocity(const arrA& results, int t, double dt) {
+  const double tol = 0.1; // tolerance to avoid division by zero
+
+  arr v = results(t) - results(t - 1);
+  double theta = results(t)(2);
+
+  double c_theta = cos(theta);
+  double s_theta = sin(theta);
+  double speed;
+
+  if (fabs(c_theta) > tol) {
+    speed = v(0) / c_theta;
+  } else {
+    speed = v(1) / s_theta;
+  }
+
+  return speed / dt;
+}
+
 int main(int argn, char **argv) {
 
   const double L = .4;  // distance  rear-front wheels
@@ -170,6 +187,8 @@ int main(int argn, char **argv) {
   // path to initial guess file (yaml)
   rai::String waypoints_file =
       rai::getParameter<rai::String>("waypoints", STRING("none"));
+
+  int N = rai::getParameter<int>("N", -1);
 
   bool display = rai::getParameter<bool>("display", false);
   int animate = rai::getParameter<int>("animate", 0);
@@ -195,8 +214,8 @@ int main(int argn, char **argv) {
   auto trailer_name = "R_trailer";
   auto trailer_goal = "GOAL_trailer";
 
-  // int N = 50;
-  int N = 50;
+  if (waypoints_file != "none") {
+  }
   double dt = 0.1;
   double duration_phase = N * dt;
   komo.setTiming(1, N, duration_phase, order);
@@ -311,16 +330,20 @@ int main(int argn, char **argv) {
   out << "  - states:" << std::endl;
   for (size_t t = order - 1; t < results.N; ++t) {
     auto &v = results(t);
+    // v(2) = theta0
+    // v(4) = theta1q
+    // theta1v = theta1q - 90 + theta0
     out << "      - [" << v(0) << "," << v(1) << ","
         << std::remainder(v(2), 2 * M_PI) << ","
-        << std::remainder(v(2) + M_PI / 2 + v(4) - M_PI, 2 * M_PI) << "]"
+        << std::remainder(v(4) - M_PI / 2 + v(2), 2 * M_PI) << "]"
         << std::endl;
   }
-  // out << "    actions:" << std::endl;
-  // for (size_t t = order; t < results.N; ++t) {
-  //   out << "      - [" << velocity(results, t, dt) << ","
-  //       << angularVelocity(results, t, dt) << "]" << std::endl;
-  // }
+  out << "    actions:" << std::endl;
+  for (size_t t = order; t < results.N; ++t) {
+    auto &v = results(t);
+    out << "      - [" << velocity(results, t, dt) << ","
+        << v(3) << "]" << std::endl;
+  }
 
   return 0;
 }

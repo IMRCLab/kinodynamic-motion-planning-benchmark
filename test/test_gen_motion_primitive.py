@@ -7,6 +7,7 @@ import checker
 import tempfile
 from pathlib import Path
 import yaml
+import numpy as np
 
 
 def _run_check(robot_type: str, start: list, goal: list):
@@ -46,6 +47,7 @@ def _run_check(robot_type: str, start: list, goal: list):
 				yaml.dump(env, f, Dumper=yaml.CSafeDumper)
 
 			result = checker.check(filename_env, filename_result)
+			assert(result)
 
 def test_unicycle_first_order():
 	_run_check("unicycle_first_order_0",
@@ -58,3 +60,7 @@ def test_unicycle_second_order():
 			 [3,2,0,0.5,0])
 
 
+def test_car_first_order_with_1_trailers():
+	_run_check("car_first_order_with_1_trailers_0",
+			 [2,2,0,0],
+			 [3,2,0,0])

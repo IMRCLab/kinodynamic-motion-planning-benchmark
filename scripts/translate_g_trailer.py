@@ -34,10 +34,10 @@ class Robot:
         self.car_start = start[0:3] 
         # Conversion of theta1 between Quim and Valle
         # Check Quim Drawing!
-        self.trailer_start = 90 - start[3] + start[2]
+        self.trailer_start = math.degrees(math.pi/2 - start[3] + start[2])
 
         self.car_goal = goal[0:3]
-        self.trailer_goal = 90 - start[3] + start[2]
+        self.trailer_goal = math.degrees(math.pi/2 - goal[3] + goal[2])
 
     def to_g(self) -> str:
 
@@ -55,7 +55,7 @@ class Robot:
         out += self.include
 
         out += "Edit {}robot {{ joint:rigid, Q:<t({} 0) d({} 0 0 1)>  }}\n".format(
-                self.name_goal, ' '.join(map(str, self.car_goal[:2])), self.car_goal[2])
+                self.name_goal, ' '.join(map(str, self.car_goal[:2])), math.degrees(self.car_goal[2]))
         # there is no goal in the from wheel
         out += "Edit {}front_wheel {{ joint:rigid }}\n".format(self.name_goal)
         out += "Edit {}arm {{ joint:rigid, Q:<t(0 0 0) d({} 0 0 1)>}}\n".format(
