@@ -269,7 +269,7 @@ int main_trailer() {
   if (order == 1) {
 
     const double max_velocity = 0.5 * action_factor - 0.01; // m/s
-    double max_phi = 45 * 3.14159 / 180;
+    const double max_phi = M_PI / 3;
 
     // Linear velocity First Car
     komo.addObjective({}, make_shared<UnicycleDynamics>(), {car_name}, OT_eq,
@@ -291,10 +291,10 @@ int main_trailer() {
                       {-1}, {-max_velocity}, 1);
 
     // Bound angle on wheel
-    komo.addObjective({}, FS_qItself, {wheel_name}, OT_ineq, {1}, {max_phi}, 1);
+    komo.addObjective({}, FS_qItself, {wheel_name}, OT_ineq, {1}, {max_phi}, -1);
 
     komo.addObjective({}, FS_qItself, {wheel_name}, OT_ineq, {-1}, {-max_phi},
-                      1);
+                      -1);
 
     // TODO: Wolfgang, do you want bounds on the angular velocity?
 
