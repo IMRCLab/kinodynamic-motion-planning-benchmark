@@ -1,6 +1,6 @@
 #include "KOMO/komo.h"
 #include "Kin/F_qFeatures.h"
-#include "car_utils.hpp"
+#include "car_utils.h"
 #include <Kin/kin.h>
 #include <cassert>
 
@@ -146,7 +146,7 @@ struct FirstCarRotation : Feature {
   }
 };
 
-arrA getPath_qAll_with_prefix(KOMO &komo, int order) {
+static arrA getPath_qAll_with_prefix(KOMO &komo, int order) {
   arrA q(komo.T + order);
   for (int t = -order; t < int(komo.T); t++) {
     q(t + order) = komo.getConfiguration_qAll(t);
@@ -154,7 +154,7 @@ arrA getPath_qAll_with_prefix(KOMO &komo, int order) {
   return q;
 }
 
-double velocity(const arrA& results, int t, double dt) {
+static double velocity(const arrA& results, int t, double dt) {
   const double tol = 0.1; // tolerance to avoid division by zero
 
   arr v = results(t) - results(t - 1);
@@ -173,12 +173,10 @@ double velocity(const arrA& results, int t, double dt) {
   return speed / dt;
 }
 
-int main(int argn, char **argv) {
+int main_trailer() {
 
   const double L = .4;  // distance  rear-front wheels
   const double d1 = .5; // distance between car centers
-  rai::initCmdLine(argn, argv);
-  rnd.clockSeed();
 
   // path to *.g file
   rai::String model_file =

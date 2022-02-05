@@ -8,7 +8,7 @@ def test_trailer_komo():
     Run basic test of komo trailer to check that it solve and easy optimization problem.
     """
 
-    cmd = "./trailer -model \"../src/car_with_trailer.g\" -N 50"
+    cmd = "./main_rai -robot trailer -model \"../src/car_with_trailer.g\" -N 50"
 
     print("Running", cmd)
     out = sp.run(cmd.split())
@@ -19,7 +19,7 @@ def test_trailer_komo():
 
 def test_trailer_komo2():
 
-    cmd = "./trailer -model \"../src/g_trailer_test.g\" -N 50"
+    cmd = "./main_rai -robot trailer -model \"../src/g_trailer_test.g\" -N 50"
     print("Running", cmd)
     out = sp.run(cmd.split())
     print("Running DONE", cmd)
@@ -36,7 +36,7 @@ def test_yaml_to_komo():
     assert out.returncode == 0
 
     # generate from yaml file
-    cmd = "./trailer -model tmp_trailer.g -N 50"
+    cmd = "./main_rai -robot trailer -model tmp_trailer.g -N 50"
     print("Running", cmd)
     out = sp.run(cmd.split())
     print("Running DONE", cmd)

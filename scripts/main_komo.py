@@ -10,18 +10,27 @@ import time
 from utils_optimization import UtilsSolutionFile
 import translate_g
 
-def _run_komo(filename_g, filename_env, filename_initial_guess, filename_result, filename_cfg, order, binary="./main_rai", N=-1):
+def _run_komo(filename_g, filename_env, filename_initial_guess, filename_result, filename_cfg, robot_type, N=-1):
+
+	if "unicycle_first_order" in robot_type:
+		order = 1
+	elif "unicycle_second_order" in robot_type:
+		order = 2
+	elif "car_first_order_with_1_trailers" in robot_type:
+		order = 1
+	else:
+		raise "No known robot_type!"
 
 	while True:
 		# Run KOMO
-		result = subprocess.run([binary,
+		result = subprocess.run(["./main_rai",
 				"-model", "\""+str(filename_g)+"\"",
 				"-waypoints", "\""+str(filename_initial_guess)+"\"",
 				"-N", str(N),
-				"-one_every", "1",
 				"-display", str(0),
 				"-animate", str(0),
 				"-order", str(order),
+				"-robot", robot_type,
 				"-cfg", "\""+str(filename_cfg)+"\"",
 				"-env", "\"" + str(filename_env)+"\"",
 				"-out", "\""+str(filename_result)+"\""])
@@ -42,10 +51,6 @@ def run_komo(filename_env, filename_initial_guess, filename_result, cfg = ""):
 		with open(filename_env) as f:
 			env = yaml.safe_load(f)
 		robot_type = env["robots"][0]["type"]
-		if "first_order" in robot_type:
-			order = 1
-		elif "second_order" in robot_type:
-			order = 2
 
 		# convert environment YAML -> g
 		filename_g = p / "env.g"
@@ -56,7 +61,7 @@ def run_komo(filename_env, filename_initial_guess, filename_result, cfg = ""):
 		with open(filename_cfg, 'w') as f:
 			f.write(cfg)
 
-		return _run_komo(filename_g, filename_env, filename_initial_guess, filename_result, filename_cfg, order)
+		return _run_komo(filename_g, filename_env, filename_initial_guess, filename_result, filename_cfg, robot_type)
 
 
 def run_komo_with_T_scaling(filename_env, filename_initial_guess, filename_result, cfg = "", max_T = None):
@@ -67,10 +72,6 @@ def run_komo_with_T_scaling(filename_env, filename_initial_guess, filename_resul
 		with open(filename_env) as f:
 			env = yaml.safe_load(f)
 		robot_type = env["robots"][0]["type"]
-		if "first_order" in robot_type:
-			order = 1
-		elif "second_order" in robot_type:
-			order = 2
 
 		# convert environment YAML -> g
 		filename_g = p / "env.g"
@@ -96,7 +97,7 @@ def run_komo_with_T_scaling(filename_env, filename_initial_guess, filename_resul
 			# utils_sol_file.save_rescaled(filename_modified_guess, int(utils_sol_file.T() * 1.1))
 			utils_sol_file.save_rescaled(filename_modified_guess, T)
 
-			result = _run_komo(filename_g, filename_env, filename_modified_guess, filename_result, filename_cfg, order)
+			result = _run_komo(filename_g, filename_env, filename_modified_guess, filename_result, filename_cfg, robot_type)
 			# shutil.copyfile(filename_modified_guess, filename_result)
 			# return True
 			if result:
@@ -123,19 +124,10 @@ def run_komo_standalone(filename_env, folder, timelimit, cfg = "",
 			env = yaml.safe_load(f)
 		robot_type = env["robots"][0]["type"]
 
-
-		if "unicycle_first_order" in robot_type:
-			order = 1
+		if "unicycle" in robot_type:
 			robot_type_guess = "unicycle_first_order_0"
-			binary="./main_rai"
-		elif "unicycle_second_order" in robot_type:
-			order = 2
-			robot_type_guess = "unicycle_first_order_0"
-			binary="./main_rai"
-		elif "car_first_order_with_1_trailers" in robot_type:
-			order = 1
+		elif "trailer" in robot_type:
 			robot_type_guess = "car_first_order_with_1_trailers_0"
-			binary="./trailer"
 		else:
 			raise "No known robot_type!"
 
@@ -223,7 +215,7 @@ def run_komo_standalone(filename_env, folder, timelimit, cfg = "",
 
 				# Run KOMO
 				filename_temp_result = p / "result_{}.yaml".format(T)
-				success =  _run_komo(filename_g, filename_env, filename_modified_guess, filename_temp_result, filename_cfg, order, binary, T)
+				success =  _run_komo(filename_g, filename_env, filename_modified_guess, filename_temp_result, filename_cfg, robot_type, T)
 				if not success:
 					print("KOMO failed with T", T)
 					min_T = T + 1

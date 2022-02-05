@@ -28,8 +28,8 @@ def test_dynamics_unicycle_second_order_0():
     _test_dynamics('unicycle_second_order_0', 0.1)
 
 
-def test_dynamics_car_first_order_with_0_trailers_0():
-    _test_dynamics('car_first_order_with_0_trailers_0', 0.1)
+def test_dynamics_car_first_order():
+    _test_dynamics('car_first_order_0', 0.1)
 
 
 def test_dynamics_car_first_order_with_1_trailers_0():

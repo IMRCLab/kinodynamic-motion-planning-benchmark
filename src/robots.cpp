@@ -1044,7 +1044,7 @@ std::shared_ptr<Robot> create_robot(
         /*w_dot_limit*/ 0.25 /*rad/s^2*/
         ));
   }
-  else if (robotType == "car_first_order_with_0_trailers_0")
+  else if (robotType == "car_first_order_0")
   {
     robot.reset(new RobotCarFirstOrderWithTrailers(
         positionBounds,

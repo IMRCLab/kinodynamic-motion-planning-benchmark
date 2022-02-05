@@ -59,8 +59,12 @@ def test_unicycle_second_order():
 			 [2,2,0,0.5,0],
 			 [3,2,0,0.5,0])
 
-
 def test_car_first_order_with_1_trailers():
 	_run_check("car_first_order_with_1_trailers_0",
 			 [2,2,0,0],
 			 [3,2,0,0])
+
+# def test_car_first_order_with_1_trailers():
+# 	_run_check("car_first_order_with_1_trailers_0",
+# 			 [1,1,np.pi/4,np.pi/4],
+# 			 [2,2,np.pi/4,np.pi/4])

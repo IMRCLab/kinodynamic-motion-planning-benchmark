@@ -49,7 +49,9 @@ def gen_motion(robot_type, start, goal):
 
 		if dbg:
 			subprocess.run(["python3",
-						"../benchmark/unicycleFirstOrder/visualize.py",
+						# "../benchmark/unicycleFirstOrder/visualize.py",
+						"../benchmark/unicycleSecondOrder/visualize.py",
+						# "../benchmark/carFirstOrderWithTrailers/visualize.py",
 						str(filename_env),
 						"--result", str(filename_result),
 						"--video", str(filename_result.with_suffix(".mp4"))])
