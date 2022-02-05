@@ -276,13 +276,15 @@ int main(int argc, char* argv[]) {
     // generate collision objects and collision manager
     for (const auto &state : m.states)
     {
-      const auto &transform = robot->getTransform(state, 0);
+      for (size_t part = 0; part < robot->numParts(); ++part) {
+        const auto &transform = robot->getTransform(state, part);
 
-      auto co = new fcl::CollisionObjectf(robot->getCollisionGeometry(0));
-      co->setTranslation(transform.translation());
-      co->setRotation(transform.rotation());
-      co->computeAABB();
-      m.collision_objects.push_back(co);
+        auto co = new fcl::CollisionObjectf(robot->getCollisionGeometry(part));
+        co->setTranslation(transform.translation());
+        co->setRotation(transform.rotation());
+        co->computeAABB();
+        m.collision_objects.push_back(co);
+      }
     }
     m.collision_manager.reset(new ShiftableDynamicAABBTreeCollisionManager<float>());
     m.collision_manager->registerObjects(m.collision_objects);
