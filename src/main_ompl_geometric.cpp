@@ -30,13 +30,15 @@ int main(int argc, char* argv[]) {
   std::string plannerDesc;
   int timelimit;
   float goalRegion;
+  std::string robotType;
   desc.add_options()
     ("help", "produce help message")
     ("input,i", po::value<std::string>(&inputFile)->required(), "input file (yaml)")
     ("output,o", po::value<std::string>(&outputFile)->required(), "output file (yaml)")
     ("planner,p", po::value<std::string>(&plannerDesc)->default_value("rrt"), "Planner")
     ("timelimit", po::value<int>(&timelimit)->default_value(10), "Time limit for planner")
-    ("goalregion", po::value<float>(&goalRegion)->default_value(0.1), "radius around goal to count success");
+    ("goalregion", po::value<float>(&goalRegion)->default_value(0.1), "radius around goal to count success")
+    ("robottype", po::value<std::string>(&robotType)->required(), "type to use for planning");
 
   try {
     po::variables_map vm;
@@ -81,8 +83,6 @@ int main(int argc, char* argv[]) {
   bpcm_env->setup();
 
   const auto& robot_node = env["robots"][0];
-  // auto robotType = robot_node["type"].as<std::string>();
-  auto robotType = "unicycle_first_order_0";
   const auto &dims = env["environment"]["dimensions"];
   ob::RealVectorBounds position_bounds(2);
   position_bounds.setLow(0);
@@ -110,7 +110,7 @@ int main(int argc, char* argv[]) {
   std::vector<double> reals;
   for (const auto& v : robot_node["start"]) {
     reals.push_back(v.as<double>());
-    if (reals.size() == 3) break;
+    if (reals.size() == si->getStateSpace()->getDimension()) break;
   }
   si->getStateSpace()->copyFromReals(startState, reals);
   pdef->addStartState(startState);
@@ -121,7 +121,7 @@ int main(int argc, char* argv[]) {
   reals.clear();
   for (const auto &v : robot_node["goal"]) {
     reals.push_back(v.as<double>());
-    if (reals.size() == 3) break;
+    if (reals.size() == si->getStateSpace()->getDimension()) break;
   }
   si->getStateSpace()->copyFromReals(goalState, reals);
   pdef->setGoalState(goalState, goalRegion);

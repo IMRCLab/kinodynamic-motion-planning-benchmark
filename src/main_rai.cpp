@@ -77,11 +77,8 @@ int main(int argn, char **argv) {
       rai::getParameter<rai::String>("model", STRING("none"));
   rai::String waypoints_file =
       rai::getParameter<rai::String>("waypoints", STRING("none"));
-  int one_every = int(rai::getParameter<double>("one_every", 1));
 
-  if (one_every < 1) {
-    throw std::runtime_error("one every should be >= 1");
-  }
+  int N = rai::getParameter<int>("N", -1);
 
   bool display = rai::getParameter<bool>("display", false);
   int animate = rai::getParameter<int>("animate", 0);
@@ -101,28 +98,27 @@ int main(int argn, char **argv) {
   CAR_ORDER car_order = static_cast<CAR_ORDER>(order);
   std::cout << "Car order: " << order << std::endl;
 
-  arrA waypoints = load_waypoints(waypoints_file);
+  arrA waypoints;
+  if (waypoints_file != "none") {
+    waypoints = load_waypoints(waypoints_file);
 
-  // downsample
-  if (one_every > 1) {
-    arrA waypointsS;
-    for (size_t i = 0; i < waypoints.N; i++) {
-      if (i % one_every == 0) {
+    if (car_order == TWO) {
+      arrA waypointsS;
+      waypointsS.append(waypoints(0));
+      // waypointsS.append(waypoints(0));
+      for (size_t i = 0; i < waypoints.N; i++) {
         waypointsS.append(waypoints(i));
       }
+      waypointsS.append(waypoints(-1));
+      waypoints = waypointsS;
     }
-    waypoints = waypointsS;
-  }
 
-  if (car_order == TWO) {
-    arrA waypointsS;
-    waypointsS.append(waypoints(0));
-    // waypointsS.append(waypoints(0));
-    for (size_t i = 0; i < waypoints.N; i++) {
-      waypointsS.append(waypoints(i));
-    }
-    waypointsS.append(waypoints(-1));
-    waypoints = waypointsS;
+    std::cout << "Warning: we will skip the first waypoint" << std::endl;
+    std::cout << "waypoints are (including the first)" << std::endl;
+    std::cout << waypoints << std::endl;
+
+    int Nplus1 = waypoints.N;
+    N = Nplus1 - 1;
   }
 
   // load G file
@@ -144,15 +140,10 @@ int main(int argn, char **argv) {
     }
   }
 
-  std::cout << "Warning: we will skip the first waypoint" << std::endl;
-  std::cout << "waypoints are (including the first)" << std::endl;
-  std::cout << waypoints << std::endl;
   // create optimization problem
   KOMO komo;
   komo.setModel(C, true);
-  int Nplus1 = waypoints.N;
-  int N = Nplus1 - 1;
-  std::cout << "Nplus1 " << Nplus1 << std::endl;
+
   std::cout << "N " << N << std::endl;
 
   if (N == 0) {
@@ -173,7 +164,7 @@ int main(int argn, char **argv) {
   }
 
   bool regularize_traj = false;
-  if (regularize_traj) {
+  if (regularize_traj && waypoints_file != "none") {
     double scale_regularization = .1; // try different scales
     int it = 1;
     // ways -> N+1
@@ -297,24 +288,27 @@ int main(int argn, char **argv) {
   komo.run_prepare(0.1); // TODO: is this necessary?
   // komo.checkGradients();
   std::cout << "done" << std::endl;
-  komo.initWithWaypoints(waypoints({1, -1}), N);
-  // komo.run_prepare(0.1); // TODO: is this necessary?
-  // komo.checkGradients();
-  std::cout << "done" << std::endl;
-  // throw -1;
+  if (waypoints_file != "none") {
+    komo.initWithWaypoints(waypoints({1, -1}), N);
 
-  bool report_before = true;
-  if (report_before) {
-    std::cout << "report before solve" << std::endl;
-    auto sparse = komo.nlp_SparseNonFactored();
-    arr phi;
-    sparse->evaluate(phi, NoArr, komo.x);
+    // komo.run_prepare(0.1); // TODO: is this necessary?
+    // komo.checkGradients();
+    std::cout << "done" << std::endl;
+    // throw -1;
 
-    komo.reportProblem();
-    rai::Graph report = komo.getReport(display, 0, std::cout);
-    std::cout << "report " << report << std::endl;
-    if (display) {
-      komo.view_play(true, 0.3);
+    bool report_before = true;
+    if (report_before) {
+      std::cout << "report before solve" << std::endl;
+      auto sparse = komo.nlp_SparseNonFactored();
+      arr phi;
+      sparse->evaluate(phi, NoArr, komo.x);
+
+      komo.reportProblem();
+      rai::Graph report = komo.getReport(display, 0, std::cout);
+      std::cout << "report " << report << std::endl;
+      if (display) {
+        komo.view_play(true, 0.3);
+      }
     }
   }
   // return 5;

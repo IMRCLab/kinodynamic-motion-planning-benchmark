@@ -252,7 +252,7 @@ def create_robot(robot_type):
 		return RobotUnicycleFirstOrder(0.5, 0.5)
 	elif robot_type == "unicycle_second_order_0":
 		return RobotUnicycleSecondOrder(0.5, 0.5, 0.25, 0.25)
-	elif robot_type == "car_first_order_with_0_trailers_0":
+	elif robot_type == "car_first_order__0":
 		return RobotCarFirstOrderWithTrailers(0.5, np.pi/3, 0.4, [])
 	elif robot_type == "car_first_order_with_1_trailers_0":
 		return RobotCarFirstOrderWithTrailers(0.5, np.pi/3, 0.4, [0.5])

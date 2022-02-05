@@ -7,17 +7,18 @@ import subprocess
 import shutil
 import time
 
-import robots
-import translate_g
 from utils_optimization import UtilsSolutionFile
+import translate_g
+import translate_g_trailer
 
-def _run_komo(filename_g, filename_env, filename_initial_guess, filename_result, filename_cfg, order):
+def _run_komo(filename_g, filename_env, filename_initial_guess, filename_result, filename_cfg, order, binary="./main_rai", N=-1):
 
 	while True:
 		# Run KOMO
-		result = subprocess.run(["./main_rai",
+		result = subprocess.run([binary,
 				"-model", "\""+str(filename_g)+"\"",
 				"-waypoints", "\""+str(filename_initial_guess)+"\"",
+				"-N", str(N),
 				"-one_every", "1",
 				"-display", str(0),
 				"-animate", str(0),
@@ -115,20 +116,36 @@ def run_komo_standalone(filename_env, folder, timelimit, cfg = "",
 
 	with tempfile.TemporaryDirectory() as tmpdirname:
 		p = Path(tmpdirname)
+		# p = Path("../results/test")
 
 		start = time.time()
 
 		with open(filename_env) as f:
 			env = yaml.safe_load(f)
 		robot_type = env["robots"][0]["type"]
-		if "first_order" in robot_type:
-			order = 1
-		elif "second_order" in robot_type:
-			order = 2
 
 		# convert environment YAML -> g
 		filename_g = p / "env.g"
-		translate_g.write(filename_env, str(filename_g))
+
+		if "unicycle_first_order" in robot_type:
+			order = 1
+			robot_type_guess = "unicycle_first_order_0"
+			translate_g.write(filename_env, str(filename_g))
+			binary="./main_rai"
+		elif "unicycle_second_order" in robot_type:
+			order = 2
+			robot_type_guess = "unicycle_first_order_0"
+			translate_g.write(filename_env, str(filename_g))
+			binary="./main_rai"
+		elif "car_first_order_with_1_trailers" in robot_type:
+			order = 1
+			robot_type_guess = "car_first_order_with_1_trailers_0"
+			translate_g_trailer.write(filename_env, str(filename_g))
+			binary="./trailer"
+		else:
+			raise "No known robot_type!"
+
+
 
 		# write config file
 		filename_cfg = p / "rai.cfg"
@@ -142,24 +159,29 @@ def run_komo_standalone(filename_env, folder, timelimit, cfg = "",
 				"-i", filename_env,
 				"-o", filename_initial_guess,
 				"--timelimit", str(10),
-				"-p", "rrt*"
+				"-p", "rrt*",
+				"--robottype", robot_type_guess,
 				])
 		else:
 			filename_initial_guess = initialguess
 
-		utils_sol_file = UtilsSolutionFile("unicycle_first_order_0")
-		utils_sol_file.load(filename_initial_guess)
+		if filename_initial_guess != "none":
+			utils_sol_file = UtilsSolutionFile(robot_type_guess)
+			utils_sol_file.load(filename_initial_guess)
 
-		if T_range_rel is None and T_range_abs is None:
-			length = utils_sol_file.file['result'][0]['pathlength']
-			max_speed = 0.5
-			min_T = int(length / max_speed * 10)
+			if T_range_rel is None and T_range_abs is None:
+				length = utils_sol_file.file['result'][0]['pathlength']
+				max_speed = 0.5
+				min_T = int(length / max_speed * 10)
+				max_T = None
+			
+			if T_range_rel is not None:
+				T_file = utils_sol_file.T()
+				min_T = max(1, int(T_range_rel[0] * T_file))
+				max_T = max(int(T_range_rel[1] * T_file), min_T+1)
+		else:
+			min_T = 1
 			max_T = None
-		
-		if T_range_rel is not None:
-			T_file = utils_sol_file.T()
-			min_T = max(1, int(T_range_rel[0] * T_file))
-			max_T = max(int(T_range_rel[1] * T_file), min_T+1)
 
 		if T_range_abs is not None:
 			min_T = max(T_range_abs[0], min_T)
@@ -197,12 +219,15 @@ def run_komo_standalone(filename_env, folder, timelimit, cfg = "",
 
 					print("TRYING ", T, min_T, max_T)
 
-				filename_modified_guess = p / "guess_{}.yaml".format(T)
-				utils_sol_file.save_rescaled(filename_modified_guess, T)
+				if filename_initial_guess != "none":
+					filename_modified_guess = p / "guess_{}.yaml".format(T)
+					utils_sol_file.save_rescaled(filename_modified_guess, T)
+				else:
+					filename_modified_guess = "none"
 
 				# Run KOMO
 				filename_temp_result = p / "result_{}.yaml".format(T)
-				success =  _run_komo(filename_g, filename_env, filename_modified_guess, filename_temp_result, filename_cfg, order)
+				success =  _run_komo(filename_g, filename_env, filename_modified_guess, filename_temp_result, filename_cfg, order, binary, T)
 				if not success:
 					print("KOMO failed with T", T)
 					min_T = T + 1
@@ -225,7 +250,8 @@ def run_komo_standalone(filename_env, folder, timelimit, cfg = "",
 			
 		if best_T is not None:
 			shutil.copyfile(p / "result_{}.yaml".format(best_T), filename_result)
-			shutil.copyfile(p / "guess_{}.yaml".format(best_T), filename_initial_guess)
+			if filename_initial_guess != "none":
+				shutil.copyfile(p / "guess_{}.yaml".format(best_T), filename_initial_guess)
 			return True
 		return False
 	
