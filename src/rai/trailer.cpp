@@ -212,7 +212,32 @@ int main_trailer() {
   auto trailer_name = "R_trailer";
   auto trailer_goal = "GOAL_trailer";
 
+  arrA waypoints;
   if (waypoints_file != "none") {
+    // load initial guess
+    YAML::Node env = YAML::LoadFile((const char*)waypoints_file);
+    const auto& node = env["result"][0];
+    size_t num_states = node["states"].size();
+
+    // the initial guess has states: x,y,theta0,theta1v and actions: v, phi
+    // KOMO uses 5 states: x,y,theta0,phi,theta1q
+    for (size_t i = 1; i < num_states; ++i) {
+      const auto &state = node["states"][i];
+
+      auto x = state[0].as<double>();
+      auto y = state[1].as<double>();
+      auto theta0 = state[2].as<double>();
+      auto theta1v = state[3].as<double>();
+      // see drawing
+      double theta1q = M_PI / 2 - theta0 + theta1v;
+      auto phi = 0;
+      if (node["actions"]) {
+        const auto &action = env["result"][0]["actions"][i-1];
+        phi = action[1].as<double>();
+      }
+      waypoints.append({x, y, theta0, phi, theta1q});
+    }
+    N = waypoints.N;
   }
   double dt = 0.1;
   double duration_phase = N * dt;
@@ -277,6 +302,11 @@ int main_trailer() {
     NIY;
   }
 
+  komo.run_prepare(0.01); // TODO: is this necessary?
+  if (waypoints_file != "none") {
+    komo.initWithWaypoints(waypoints, N);
+  }
+
   bool check_gradients = false;
   if (check_gradients) {
     std::cout << "checking gradients" << std::endl;
@@ -287,7 +317,7 @@ int main_trailer() {
     std::cout << "done " << std::endl;
   }
 
-  komo.run_prepare(0.01);
+  // komo.run_prepare(0.01);
   komo.reportProblem();
 
   komo.run();
