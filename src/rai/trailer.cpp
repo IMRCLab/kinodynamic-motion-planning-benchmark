@@ -230,7 +230,7 @@ int main_trailer() {
       auto theta1v = state[3].as<double>();
       // see drawing
       double theta1q = M_PI / 2 - theta0 + theta1v;
-      auto phi = 0;
+      double phi = 0;
       if (node["actions"]) {
         const auto &action = env["result"][0]["actions"][i-1];
         phi = action[1].as<double>();
@@ -305,6 +305,21 @@ int main_trailer() {
   komo.run_prepare(0.01); // TODO: is this necessary?
   if (waypoints_file != "none") {
     komo.initWithWaypoints(waypoints, N);
+
+    bool report_before = true;
+    if (report_before) {
+      std::cout << "report before solve" << std::endl;
+      auto sparse = komo.nlp_SparseNonFactored();
+      arr phi;
+      sparse->evaluate(phi, NoArr, komo.x);
+
+      komo.reportProblem();
+      rai::Graph report = komo.getReport(display, 0, std::cout);
+      std::cout << "report " << report << std::endl;
+      if (display) {
+        komo.view_play(true, 0.3);
+      }
+    }
   }
 
   bool check_gradients = false;
@@ -318,7 +333,7 @@ int main_trailer() {
   }
 
   // komo.run_prepare(0.01);
-  komo.reportProblem();
+  // komo.reportProblem();
 
   komo.run();
 

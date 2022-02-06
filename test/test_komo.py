@@ -43,7 +43,7 @@ def test_unicycle_second_order_0_kink_0():
                "tmp.yaml")
 
 
-def test_unicycle_second_order_0_bugtrap_0():
-    _run_check("../benchmark/unicycleSecondOrder/bugtrap_0.yaml",
-               "../test/unicycleSecondOrder/guess_bugtrap_0_sol0.yaml",
-               "tmp.yaml")
+def test_car_first_order_with_trailers_parallelpark_0():
+    _run_check("../benchmark/carFirstOrderWithTrailers/bugtrap_0.yaml",
+             "../test/carFirstOrderWithTrailers/guess_bugtrap_0_sol0.yaml",
+             "tmp.yaml")

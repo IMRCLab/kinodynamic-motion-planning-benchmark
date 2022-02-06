@@ -95,9 +95,11 @@ def run_komo_with_T_scaling(filename_env, filename_initial_guess, filename_resul
 				return False
 			print("Trying T ", T)
 			# utils_sol_file.save_rescaled(filename_modified_guess, int(utils_sol_file.T() * 1.1))
-			utils_sol_file.save_rescaled(filename_modified_guess, T)
-
-			result = _run_komo(filename_g, filename_env, filename_modified_guess, filename_result, filename_cfg, robot_type)
+			if factor == 1.0:
+				result = _run_komo(filename_g, filename_env, filename_initial_guess, filename_result, filename_cfg, robot_type)
+			else:
+				utils_sol_file.save_rescaled(filename_modified_guess, T)
+				result = _run_komo(filename_g, filename_env, filename_modified_guess, filename_result, filename_cfg, robot_type)
 			# shutil.copyfile(filename_modified_guess, filename_result)
 			# return True
 			if result:
