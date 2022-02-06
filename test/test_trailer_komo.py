@@ -41,3 +41,11 @@ def test_yaml_to_komo():
     out = sp.run(cmd.split())
     print("Running DONE", cmd)
     assert out.returncode == 0
+
+
+def test_bugtrap():
+    cmd = "./main_rai -model \"../test/env_debug_bugtrap_trailer.g\"  -waypoints \"../test/carFirstOrderWithTrailers/guess_bugtrap_0_sol0.yaml\" -N -1 -display 0 -animate 0 -order 1 -robot car_first_order_with_1_trailers_0 -cfg rai.cfg -env \"../benchmark/carFirstOrderWithTrailers/bugtrap_0.yaml\" -out \"tmp.yaml\""
+    print("Running", cmd)
+    out = sp.run(cmd.split())
+    print("Running DONE", cmd)
+    assert out.returncode == 0

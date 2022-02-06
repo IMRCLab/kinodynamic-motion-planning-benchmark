@@ -1,6 +1,7 @@
 #include "KOMO/komo.h"
 #include "Kin/F_qFeatures.h"
 #include "car_utils.h"
+#include <Kin/F_pose.h>
 #include <Kin/kin.h>
 #include <cassert>
 
@@ -103,17 +104,19 @@ struct FirstCarRotation : Feature {
     F_qItself().setOrder(1).eval(rdot, Jrdot,
                                  FrameL{F(0, 0), F(1, 0)}.reshape(-1, 1));
 
+    // NOTE: double check
+    arr ang_vel, Jang_vel;
+    F_AngVel().phi2(ang_vel, Jang_vel, FrameL{F(0, 0), F(1, 0)}.reshape(-1, 1));
+
+    // NOTE: rdot(2) = -ang_vel(2). why?
+    // std::cout << "rdot(2) " << rdot(2) << std::endl;
+    // std::cout << "ang_vel " << ang_vel << std::endl;
+
     // phi
     arr phi;
     arr Jphi;
     F_qItself().setOrder(0).eval(phi, Jphi, F(1, {1, 1}).reshape(1, -1));
 
-    // std::cout << "r " << r << std::endl;
-    // std::cout << "Jr " << Jr << std::endl;
-    // std::cout << "rdot " << rdot << std::endl;
-    // std::cout << "Jdot " << Jrdot << std::endl;
-    // std::cout << "phi " << phi << std::endl;
-    // std::cout << "Jphi " << Jphi << std::endl;
 
     arr vel, Jvel;
     FrameL Fvel = {F(0, 0), F(1, 0)}; // First column
@@ -123,6 +126,7 @@ struct FirstCarRotation : Feature {
     double tphi = std::tan(phi(0));
     double cphi = std::cos(phi(0));
     y(0) = rdot(2) - vel(0) / L * tphi;
+    // y(0) = ang_vel(2) - vel(0) / L * tphi;
 
     if (!!J) {
       // ROWS = 1 equations ; COLUMNS= 3 rdot + 1 vel + 1 phi
@@ -133,6 +137,7 @@ struct FirstCarRotation : Feature {
       Jl(0, 4) = -vel(0) / (L * cphi * cphi);
 
       arr block_, block;
+      // block_.setBlockMatrix(Jang_vel, Jvel);
       block_.setBlockMatrix(Jrdot, Jvel);
       block.setBlockMatrix(block_, Jphi);
 
@@ -154,7 +159,7 @@ static arrA getPath_qAll_with_prefix(KOMO &komo, int order) {
   return q;
 }
 
-static double velocity(const arrA& results, int t, double dt) {
+static double velocity(const arrA &results, int t, double dt) {
   const double tol = 0.1; // tolerance to avoid division by zero
 
   arr v = results(t) - results(t - 1);
@@ -215,27 +220,51 @@ int main_trailer() {
   arrA waypoints;
   if (waypoints_file != "none") {
     // load initial guess
-    YAML::Node env = YAML::LoadFile((const char*)waypoints_file);
-    const auto& node = env["result"][0];
+    YAML::Node env = YAML::LoadFile((const char *)waypoints_file);
+    const auto &node = env["result"][0];
     size_t num_states = node["states"].size();
 
     // the initial guess has states: x,y,theta0,theta1v and actions: v, phi
     // KOMO uses 5 states: x,y,theta0,phi,theta1q
+
+    double latest_theta = 3.14;
     for (size_t i = 1; i < num_states; ++i) {
       const auto &state = node["states"][i];
 
       auto x = state[0].as<double>();
       auto y = state[1].as<double>();
       auto theta0 = state[2].as<double>();
+
+      //
+      double theta0_plus = theta0 + 2. * M_PI;
+      double theta0_minus = theta0 - 2. * M_PI;
+      // check the difference in abs value
+      double dif = std::abs(latest_theta - theta0);
+      double dif_plus = std::abs(latest_theta - theta0_plus);
+      double dif_minus = std::abs(latest_theta - theta0_minus);
+
+      if (dif_plus < dif) {
+        theta0 = theta0_plus;
+        dif = dif_plus;
+      }
+      if (dif_minus < dif) {
+        theta0 = theta0_minus;
+        dif = dif_minus;
+      }
+
       auto theta1v = state[3].as<double>();
+
       // see drawing
       double theta1q = M_PI / 2 - theta0 + theta1v;
+      // put beween -pi, pi
+      theta1q = std::atan2(sin(theta1q), cos(theta1q));
       double phi = 0;
       if (node["actions"]) {
-        const auto &action = env["result"][0]["actions"][i-1];
+        const auto &action = env["result"][0]["actions"][i - 1];
         phi = action[1].as<double>();
       }
       waypoints.append({x, y, theta0, phi, theta1q});
+      latest_theta = theta0;
     }
     N = waypoints.N;
   }
@@ -243,7 +272,42 @@ int main_trailer() {
   double duration_phase = N * dt;
   komo.setTiming(1, N, duration_phase, order);
 
-  komo.add_qControlObjective({}, order, 1);
+  komo.add_qControlObjective({}, order, .5);
+
+  bool regularize_traj = true;
+  if (regularize_traj && waypoints_file != "none") {
+    double scale_regularization = .1; // try different scales
+    int it = 1;
+    // ways -> N+1
+    // N
+    for (const arr &a : waypoints) // i take from index=1 because we
+                                   // are ignoring the first waypoint.
+    {
+      komo.addObjective(double(it) * arr{1. / N, 1. / N}, FS_qItself, {},
+                        OT_sos, {scale_regularization}, a, 0);
+      it++;
+    }
+  }
+
+  // komo.addObjective({}, FS_qItself, {}, OT_sos, {1., 1., 1., 1., 1.}, {}, 1);
+  // komo.addObjective({}, make_shared<F_LinVel>(), {car_name}, OT_sos, {.1},
+  // {},
+  //                   1);
+
+  // komo.addObjective({}, make_shared<F_AngVel>(), {car_name}, OT_sos, {.1},
+  // {},
+  //                   1);
+
+  // komo.addObjective({}, make_shared<F_AngVel>(), {arm_name}, OT_sos, {.1},
+  // {},
+  //                   1);
+
+  // komo.addObjective({}, make_shared<F_AngVel>(), {wheel_name}, OT_sos, {.1},
+  // {},
+  //                   1);
+
+  // komo.addObjective({}, make_shared<UnicycleDynamics>(), {car_name}, OT_eq,
+  //                   {1e1}, {0}, 1);
 
   double action_factor = rai::getParameter<double>("action_factor", 1.0);
 
@@ -291,7 +355,8 @@ int main_trailer() {
                       {-1}, {-max_velocity}, 1);
 
     // Bound angle on wheel
-    komo.addObjective({}, FS_qItself, {wheel_name}, OT_ineq, {1}, {max_phi}, -1);
+    komo.addObjective({}, FS_qItself, {wheel_name}, OT_ineq, {1}, {max_phi},
+                      -1);
 
     komo.addObjective({}, FS_qItself, {wheel_name}, OT_ineq, {-1}, {-max_phi},
                       -1);
@@ -302,7 +367,7 @@ int main_trailer() {
     NIY;
   }
 
-  komo.run_prepare(0.01); // TODO: is this necessary?
+  komo.run_prepare(0.02); // TODO: is this necessary?
   if (waypoints_file != "none") {
     komo.initWithWaypoints(waypoints, N);
 
@@ -334,6 +399,18 @@ int main_trailer() {
 
   // komo.run_prepare(0.01);
   // komo.reportProblem();
+
+  if (display) {
+    // komo.view(true);
+    // komo.view_play(true);
+    // komo.view_play(true, 1,"vid/car");
+    komo.plotTrajectory();
+
+    do {
+      cout << '\n' << "Press a key to continue...";
+    } while (std::cin.get() != '\n');
+  }
+  // throw -1;
 
   komo.run();
 
@@ -378,14 +455,13 @@ int main_trailer() {
     // theta1v = theta1q - 90 + theta0
     out << "      - [" << v(0) << "," << v(1) << ","
         << std::remainder(v(2), 2 * M_PI) << ","
-        << std::remainder(v(4) - M_PI / 2 + v(2), 2 * M_PI) << "]"
-        << std::endl;
+        << std::remainder(v(4) - M_PI / 2 + v(2), 2 * M_PI) << "]" << std::endl;
   }
   out << "    actions:" << std::endl;
   for (size_t t = order; t < results.N; ++t) {
     auto &v = results(t);
-    out << "      - [" << velocity(results, t, dt) << ","
-        << v(3) << "]" << std::endl;
+    out << "      - [" << velocity(results, t, dt) << "," << v(3) << "]"
+        << std::endl;
   }
 
   return 0;
