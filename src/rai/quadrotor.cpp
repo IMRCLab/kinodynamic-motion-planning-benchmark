@@ -97,16 +97,30 @@ int main_quadrotor() {
   // rai::String waypoints_file =
   //     rai::getParameter<rai::String>("waypoints", STRING("none"));
 
-  // bool display = rai::getParameter<bool>("display", false);
+  int N = rai::getParameter<int>("N", -1);
+
+  N += 2;
+
+  bool display = rai::getParameter<bool>("display", false);
   // int animate = rai::getParameter<int>("animate", 0);
   rai::String out_file =
       rai::getParameter<rai::String>("out", STRING("out.yaml"));
 
   
-  // rai::String env_file =
-  //     rai::getParameter<rai::String>("env", STRING("none"));
+  rai::String env_file =
+      rai::getParameter<rai::String>("env", STRING("none"));
 
   // arrA waypoints = load_waypoints(waypoints_file);
+
+  // load env file for dynamic limits (those are not in the *.g file)
+  YAML::Node env = YAML::LoadFile((const char *)env_file);
+  const auto& start_node = env["robots"][0]["start"];
+  arr start_v({start_node[7].as<double>(), start_node[8].as<double>(), start_node[9].as<double>()});
+  arr start_w({start_node[10].as<double>(), start_node[11].as<double>(), start_node[12].as<double>()});
+
+  const auto& goal_node = env["robots"][0]["goal"];
+  arr target_v({goal_node[7].as<double>(), goal_node[8].as<double>(), goal_node[9].as<double>()});
+  arr target_w({goal_node[10].as<double>(), goal_node[11].as<double>(), goal_node[12].as<double>()});
 
   // load G file
   rai::Configuration C;
@@ -126,7 +140,6 @@ int main_quadrotor() {
 
   KOMO komo;
   const double dt = 0.01;
-  const int N = 50;
   double duration_phase = N * dt;
   komo.setTiming(1, N, duration_phase, /*order*/2);
 
@@ -156,14 +169,26 @@ int main_quadrotor() {
   komo.setModel(C);
   komo.addSquaredQuaternionNorms();
 
-  //target
-  komo.addObjective({.9,1.}, FS_positionDiff, {"drone", "target"}, OT_eq, {1e2});
-  komo.addObjective({1.}, FS_qItself, {"drone"}, OT_eq, {1e2}, {}, 1);
+  // match start state
+  // pose
+  komo.addObjective({2./N}, FS_poseDiff, {"drone", "start"}, OT_eq, {1e2});
+  // velocity
+  komo.addObjective({2./N}, FS_position, {"drone"}, OT_eq, {}, start_v, 1);
+  // angular velocity
+  komo.addObjective({2./N}, FS_angularVel, {"drone"}, OT_eq, {}, start_w, 1);
+
+  // match target pose
+  komo.addObjective({1.}, FS_poseDiff, {"drone", "target"}, OT_eq, {1e2});
+  // match target velocity
+  komo.addObjective({1.}, FS_position, {"drone"}, OT_eq, {}, target_v, 1);
+  // match target angular velocity
+  komo.addObjective({1.}, FS_angularVel, {"drone"}, OT_eq, {}, target_w, 1);
+
 
   //NE & starting smoothly
-  komo.addObjective({0.}, FS_pose, {"drone"}, OT_eq, {1e2}, {}, 1, +0, +1);
+  // komo.addObjective({0.}, FS_pose, {"drone"}, OT_eq, {1e2}, {}, 1, +0, +1);
 //  komo.addObjective({0.}, make_shared<F_LinAngVel>(), {"drone"}, OT_eq, {1e2}, {}, 1, +0, +1);
-  komo.addObjective({}, make_shared<F_NewtonEuler>(true), {"drone"}, OT_eq, {1e0}, {}, 2, +2, -1);
+  komo.addObjective({}, make_shared<F_NewtonEuler>(true), {"drone"}, OT_eq, {1e0}, {}, 2, +3, 2);
 
   //force z-aligned
   //obsolete by construction
@@ -184,7 +209,7 @@ int main_quadrotor() {
   komo.addObjective({}, make_shared<F_fex_Force>(), {"world", "m4"}, OT_sos, {1e-2}, {}, 2, +2);
 
   //limits using lagrange terms instead of bounds (is softer, somtimes converges better)
-  komo.addObjective({}, make_shared<F_qLimits>(), {"world"}, OT_ineq, {1e3});
+  komo.addObjective({}, make_shared<F_qLimits>(), {"world"}, OT_ineq, {1e3}, {}, -1, 2, 2);
 
   //force inequalities
   //obsolete by limits
@@ -196,18 +221,17 @@ int main_quadrotor() {
 
 //  komo.animateOptimization=1;
   komo.optimize(0.);
-//  komo.plotTrajectory();
-  cout <<komo.getReport(true);
-//  komo.checkGradients();
 
+  auto report = komo.getReport(display, 0, std::cout);
+  std::cout << "report " << report << std::endl;
+  double ineq = report.get<double>("ineq") / komo.T;
+  double eq = report.get<double>("eq") / komo.T;
+  if (ineq > 0.01 || eq > 0.01) {
+    // Optimization failed (constraint violations)
+    std::cout << "Optimization failed (constraint violation)!" << std::endl;
+    return 1;
+  }
 
-  //pick a 'drone' frame-triplet in the middle of the path
-  // evaluate NE - and debug into it to look into numbers...
-  uint t=komo.T/2;
-  uint droneId = C["drone"]->ID;
-  FrameL drones = komo.timeSlices.sub(komo.k_order + t-2, komo.k_order+t, droneId, droneId);
-  Value ne = F_NewtonEuler(true).eval(drones);
-  cout <<ne.y <<endl;
 
   arr allDofs = komo.x;
   allDofs.reshape(komo.T, 4+7);
@@ -238,7 +262,7 @@ int main_quadrotor() {
   out << "    actions:" << std::endl;
   for (size_t t = 1; t < komo.T - 1; ++t) {
     const arr u = allDofs(t,{0, 4});
-    out << "      - [" << u(0) << "," << u(1) << "," << u(2) << "," << u(3) << "]\n";
+    out << "      - [" << fabs(u(0))/dt << "," << fabs(u(1))/dt << "," << fabs(u(2))/dt << "," << fabs(u(3))/dt << "]\n";
   }
 
 

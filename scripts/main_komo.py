@@ -18,6 +18,8 @@ def _run_komo(filename_g, filename_env, filename_initial_guess, filename_result,
 		order = 2
 	elif "car_first_order_with_1_trailers" in robot_type:
 		order = 1
+	elif "quadrotor" in robot_type:
+		order = 2
 	else:
 		raise "No known robot_type!"
 

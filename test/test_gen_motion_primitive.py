@@ -8,11 +8,14 @@ import tempfile
 from pathlib import Path
 import yaml
 import numpy as np
+import rowan
 
 
 def _run_check(robot_type: str, start: list, goal: list):
 	with tempfile.TemporaryDirectory() as tmpdirname:
 		p = Path(tmpdirname)
+		# p = Path("../results/test")
+
 
 		# generate motion
 		motions = gen_motion(robot_type, start, goal)
@@ -69,3 +72,34 @@ def test_car_first_order_with_1_trailers():
 # 	_run_check("car_first_order_with_1_trailers_0",
 # 			 [1,1,np.pi/4,np.pi/4],
 # 			 [2,2,np.pi/4,np.pi/4])
+
+def test_quadrotor():
+	# fly 0.5 upwards
+	_run_check("quadrotor_0",
+			 [1,1,1, 0,0,0,1, 0,0,0, 0,0,0], # x,y,z, qx, qy, qz, qw, vx, vy, vz, wx, wy, wz,
+			 [1,1,1.5, 0,0,0,1, 0,0,0, 0,0,0] # x,y,z, qx, qy, qz, qw, vx, vy, vz, wx, wy, wz
+	)
+
+	# # initial & final yaw
+	# qs = rowan.from_euler(np.radians(0),np.radians(0),np.radians(45), "xyz").tolist()
+	# qf = rowan.from_euler(np.radians(0),np.radians(0),np.radians(-45), "xyz").tolist()
+	# _run_check("quadrotor_0",
+	# 		 [1,1,1, qs[1], qs[2], qs[3], qs[0], 0,0,0, 0,0,0], # x,y,z, qx, qy, qz, qw, vx, vy, vz, wx, wy, wz,
+	# 		 [1,1,1, qf[1], qf[2], qf[3], qf[0], 0,0,0, 0,0,0] # x,y,z, qx, qy, qz, qw, vx, vy, vz, wx, wy, wz
+	# )
+
+	# # initial & final roll
+	# qs = rowan.from_euler(np.radians(30),np.radians(0),np.radians(0), "xyz").tolist()
+	# qf = rowan.from_euler(np.radians(-30),np.radians(0),np.radians(0), "xyz").tolist()
+	# _run_check("quadrotor_0",
+	# 		 [1,1,1, qs[1], qs[2], qs[3], qs[0], 0,0,0, 0,0,0], # x,y,z, qx, qy, qz, qw, vx, vy, vz, wx, wy, wz,
+	# 		 [1,1,1, qf[1], qf[2], qf[3], qf[0], 0,0,0, 0,0,0] # x,y,z, qx, qy, qz, qw, vx, vy, vz, wx, wy, wz
+	# )
+
+	# # initial & final roll
+	# qs = rowan.from_euler(np.radians(0),np.radians(0),np.radians(0), "xyz").tolist()
+	# qf = rowan.from_euler(np.radians(0),np.radians(0),np.radians(0), "xyz").tolist()
+	# _run_check("quadrotor_0",
+	# 		 [1,1,1, qs[1], qs[2], qs[3], qs[0], 0.5,0,0, 0,0,0], # x,y,z, qx, qy, qz, qw, vx, vy, vz, wx, wy, wz,
+	# 		 [1,1,1, qf[1], qf[2], qf[3], qf[0], 0,0,0, 0,0,0] # x,y,z, qx, qy, qz, qw, vx, vy, vz, wx, wy, wz
+	# )
