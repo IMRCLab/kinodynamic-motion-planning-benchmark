@@ -3,7 +3,6 @@ import math
 import yaml
 import pathlib
 from typing import List
-from translate_utils import Box
 
 # example of input:
 # environment:
