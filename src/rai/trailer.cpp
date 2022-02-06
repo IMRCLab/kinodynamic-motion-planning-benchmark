@@ -31,6 +31,10 @@ struct Trailer : Feature {
                                  FrameL{F(0, 0), F(1, 0)}.reshape(-1, 1));
 
     // trailer
+    arr ang_vel, Jang_vel;
+    F_AngVel().phi2(ang_vel, Jang_vel, FrameL{F(0, 0), F(1, 0)}.reshape(-1, 1));
+
+    // trailer
     arr t, Jt;
     arr tdot, Jtdot;
     F_qItself().setOrder(0).eval(t, Jt, FrameL{F(1, 1)}.reshape(1, -1));
@@ -44,7 +48,8 @@ struct Trailer : Feature {
 
     double ct = std::cos(t(0));
     double st = std::sin(t(0));
-    y(0) = tdot(0) + rdot(2) - vel(0) / d1 * ct;
+    // y(0) = tdot(0) + rdot(2) - vel(0) / d1 * ct;
+    y(0) = tdot(0) -ang_vel(2) - vel(0) / d1 * ct;
 
     if (!!J) {
       // ROWS = 1 equations ; COLUMNS= 1 t +  1 tdot + 1 vel + 3 rdot
@@ -54,12 +59,14 @@ struct Trailer : Feature {
       Jl(0, 0) = vel(0) / d1 * st;
       Jl(0, 1) = 1;
       Jl(0, 2) = -1 / d1 * ct;
-      Jl(0, 5) = 1;
+      // Jl(0, 5) = 1;
+      Jl(0, 5) = -1;
 
       arr block_, block_2, block;
       block_.setBlockMatrix(Jt, Jtdot);
       block_2.setBlockMatrix(block_, Jvel);
-      block.setBlockMatrix(block_2, Jrdot);
+      // block.setBlockMatrix(block_2, Jrdot);
+      block.setBlockMatrix(block_2, Jang_vel);
       J = Jl * block;
     }
   }
@@ -117,7 +124,6 @@ struct FirstCarRotation : Feature {
     arr Jphi;
     F_qItself().setOrder(0).eval(phi, Jphi, F(1, {1, 1}).reshape(1, -1));
 
-
     arr vel, Jvel;
     FrameL Fvel = {F(0, 0), F(1, 0)}; // First column
     get_speed(vel, Jvel, Fvel.reshape(-1, 1));
@@ -125,20 +131,21 @@ struct FirstCarRotation : Feature {
     y.resize(1);
     double tphi = std::tan(phi(0));
     double cphi = std::cos(phi(0));
-    y(0) = rdot(2) - vel(0) / L * tphi;
-    // y(0) = ang_vel(2) - vel(0) / L * tphi;
+    // y(0) = rdot(2) - vel(0) / L * tphi;
+    y(0) = -1 * ang_vel(2) - vel(0) / L * tphi;
 
     if (!!J) {
       // ROWS = 1 equations ; COLUMNS= 3 rdot + 1 vel + 1 phi
       arr Jl;
       Jl.resize(1, 5);
-      Jl(0, 2) = 1;             // w.r.t rdot(2)
+      // Jl(0, 2) = 1;             // w.r.t rdot(2)
+      Jl(0, 2) = -1;             // w.r.t angvel(2)
       Jl(0, 3) = -1 / L * tphi; //
       Jl(0, 4) = -vel(0) / (L * cphi * cphi);
 
       arr block_, block;
-      // block_.setBlockMatrix(Jang_vel, Jvel);
-      block_.setBlockMatrix(Jrdot, Jvel);
+      block_.setBlockMatrix(Jang_vel, Jvel);
+      // block_.setBlockMatrix(Jrdot, Jvel);
       block.setBlockMatrix(block_, Jphi);
 
       J = Jl * block;
@@ -239,18 +246,18 @@ int main_trailer() {
       double theta0_plus = theta0 + 2. * M_PI;
       double theta0_minus = theta0 - 2. * M_PI;
       // check the difference in abs value
-      double dif = std::abs(latest_theta - theta0);
-      double dif_plus = std::abs(latest_theta - theta0_plus);
-      double dif_minus = std::abs(latest_theta - theta0_minus);
+      // double dif = std::abs(latest_theta - theta0);
+      // double dif_plus = std::abs(latest_theta - theta0_plus);
+      // double dif_minus = std::abs(latest_theta - theta0_minus);
 
-      if (dif_plus < dif) {
-        theta0 = theta0_plus;
-        dif = dif_plus;
-      }
-      if (dif_minus < dif) {
-        theta0 = theta0_minus;
-        dif = dif_minus;
-      }
+      // if (dif_plus < dif) {
+      //   theta0 = theta0_plus;
+      //   dif = dif_plus;
+      // }
+      // if (dif_minus < dif) {
+      //   theta0 = theta0_minus;
+      //   dif = dif_minus;
+      // }
 
       auto theta1v = state[3].as<double>();
 
@@ -272,7 +279,8 @@ int main_trailer() {
   double duration_phase = N * dt;
   komo.setTiming(1, N, duration_phase, order);
 
-  komo.add_qControlObjective({}, order, .5);
+  // komo.add_qControlObjective({}, order, .5);
+  // komo.add_qControlObjective({}, order, .5);
 
   bool regularize_traj = true;
   if (regularize_traj && waypoints_file != "none") {
@@ -289,10 +297,11 @@ int main_trailer() {
     }
   }
 
-  // komo.addObjective({}, FS_qItself, {}, OT_sos, {1., 1., 1., 1., 1.}, {}, 1);
-  // komo.addObjective({}, make_shared<F_LinVel>(), {car_name}, OT_sos, {.1},
-  // {},
-  //                   1);
+  komo.addObjective({}, FS_qItself, {arm_name}, OT_sos, {.1}, {}, 1);
+  komo.addObjective({}, FS_qItself, {wheel_name}, OT_sos, {.1}, {}, 1);
+  komo.addObjective({}, make_shared<F_LinAngVel>(), {car_name}, OT_sos, {.1},
+  {},
+                    1);
 
   // komo.addObjective({}, make_shared<F_AngVel>(), {car_name}, OT_sos, {.1},
   // {},
