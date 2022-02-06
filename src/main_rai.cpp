@@ -4,6 +4,7 @@
 
 extern int main_unicycle();
 extern int main_trailer();
+extern int main_quadrotor();
 
 int main(int argn, char **argv) {
 
@@ -16,6 +17,8 @@ int main(int argn, char **argv) {
     return main_unicycle();
   } else if (robot_type.contains("trailer")) {
     return main_trailer();
+  } else if (robot_type.contains("quadrotor")) {
+    return main_quadrotor();
   } else {
     std::cerr << "Unknown robot type: " << robot_type << std::endl;
   }

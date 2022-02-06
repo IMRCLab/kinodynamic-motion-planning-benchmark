@@ -10,7 +10,7 @@
 #include <yaml-cpp/yaml.h>
 
 
-arr velocity(const arr& results, int t, double dt) {
+static arr velocity(const arr& results, int t, double dt) {
   arr v = (results(t,{4,7}) - results(t - 1, {4,7})) / dt;
   return v;
 }
@@ -71,7 +71,7 @@ arr velocity(const arr& results, int t, double dt) {
 //   return angular_vel_numeric(q1, q2, dt);
 // }
 
-rai::Vector angularVelocity(const arr& results, int t, double dt) {
+static rai::Vector angularVelocity(const arr& results, int t, double dt) {
   // numerically estimate qdot
   arr qdot_arr = (results(t - 1, {7,-1}) - results(t, {7,-1})) / dt;
   rai::Quaternion qdot(qdot_arr);
@@ -90,10 +90,7 @@ rai::Vector angularVelocity(const arr& results, int t, double dt) {
 // OUT_FILE: Write down the trajectory
 // ONE_EVERY_N: take only one every N waypoints
 
-int main(int argn, char **argv) {
-
-  rai::initCmdLine(argn, argv);
-  rnd.clockSeed();
+int main_quadrotor() {
 
   rai::String model_file =
       rai::getParameter<rai::String>("model", STRING("none"));

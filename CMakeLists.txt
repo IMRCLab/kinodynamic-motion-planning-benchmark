@@ -132,17 +132,9 @@ add_executable(main_rai
   src/rai/car_utils.cpp
   src/rai/unicycle.cpp
   src/rai/trailer.cpp
+  src/rai/quadrotor.cpp
 )
 target_link_libraries(main_rai
-  rai
-  yaml-cpp
-)
-
-## main_rai_quadrotor
-add_executable(main_rai_quadrotor
-  src/main_rai_quadrotor.cpp
-)
-target_link_libraries(main_rai_quadrotor
   rai
   yaml-cpp
 )
