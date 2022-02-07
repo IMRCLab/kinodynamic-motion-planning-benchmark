@@ -121,6 +121,11 @@ public:
     return reals;
   }
 
+  bool is2D() const
+  {
+    return robot_->is2D();
+  }
+
 private: 
   std::shared_ptr<Robot> robot_;
   ob::StateSamplerPtr state_sampler_;
@@ -244,5 +249,6 @@ PYBIND11_MODULE(motionplanningutils, m)
       .def("sampleUniform", &RobotHelper::sampleStateUniform)
       .def("sampleControlUniform", &RobotHelper::sampleControlUniform)
       .def("step", &RobotHelper::step)
-      .def("interpolate", &RobotHelper::interpolate);
+      .def("interpolate", &RobotHelper::interpolate)
+      .def("is2D", &RobotHelper::is2D);
 }

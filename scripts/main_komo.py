@@ -132,6 +132,8 @@ def run_komo_standalone(filename_env, folder, timelimit, cfg = "",
 			robot_type_guess = "unicycle_first_order_0"
 		elif "trailer" in robot_type:
 			robot_type_guess = "car_first_order_with_1_trailers_0"
+		elif "quadrotor" in robot_type:
+			robot_type_guess = "TODO" # define a generic SE(3) type
 		else:
 			raise "No known robot_type!"
 

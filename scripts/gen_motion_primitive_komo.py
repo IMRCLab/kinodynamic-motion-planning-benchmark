@@ -17,7 +17,7 @@ import checker
 import sys, os
 sys.path.append(os.getcwd())
 
-def gen_motion(robot_type, start, goal):
+def gen_motion(robot_type, start, goal, is2D):
 	dbg = False
 	with tempfile.TemporaryDirectory() as tmpdirname:
 		if dbg:
@@ -26,8 +26,8 @@ def gen_motion(robot_type, start, goal):
 			p = Path(tmpdirname)
 		env = {
 			"environment":{
-				"min": [0, 0],
-				"max": [4, 4],
+				"min": [-2, -2],
+				"max": [2, 2],
 				"obstacles": []
 			},
 			"robots": [{
@@ -36,23 +36,27 @@ def gen_motion(robot_type, start, goal):
 				"goal": list(goal),
 			}]
 		}
+		if not is2D:
+			env["environment"]["min"].append(-2)
+			env["environment"]["max"].append(2)
 
 		filename_env = str(p / "env.yaml")
 		with open(filename_env, 'w') as f:
 			yaml.dump(env, f, Dumper=yaml.CSafeDumper)
 
-		success = run_komo_standalone(filename_env, str(p), 120, "action_factor: 1.0", search="linear", initialguess="none")
+		success = run_komo_standalone(filename_env, str(p), 5 * 60, "action_factor: 1.0", search="linear", initialguess="none")
 		if not success:
 			return []
 
 		filename_result = p / "result_komo.yaml"
-		checker.check(str(filename_env), str(filename_result))
+		# checker.check(str(filename_env), str(filename_result))
 
 		if dbg:
 			subprocess.run(["python3",
 						# "../benchmark/unicycleFirstOrder/visualize.py",
-						"../benchmark/unicycleSecondOrder/visualize.py",
+						# "../benchmark/unicycleSecondOrder/visualize.py",
 						# "../benchmark/carFirstOrderWithTrailers/visualize.py",
+						"../benchmark/quadrotor/visualize.py",
 						str(filename_env),
 						"--result", str(filename_result),
 						"--video", str(filename_result.with_suffix(".mp4"))])
@@ -106,12 +110,14 @@ def gen_random_motion(robot_type):
 	rh = RobotHelper(robot_type)
 	start = rh.sampleUniform()
 	goal = rh.sampleUniform()
-	# shift to center (at 2,2)
-	start[0] = 2
-	start[1] = 2
-	goal[0] += 2
-	goal[1] += 2
-	motions =  gen_motion(robot_type, start, goal)
+	# shift to position = zeros
+	start[0] = 0
+	start[1] = 0
+	if not rh.is2D():
+		start[2] = 0
+	#TODO:
+	goal[0:3] = np.random.uniform(-0.25, 0.25, 3).tolist()
+	motions =  gen_motion(robot_type, start, goal, rh.is2D())
 	for motion in motions:
 		motion['distance'] = rh.distance(motion['x0'], motion['xf'])
 	return motions
@@ -120,7 +126,6 @@ def gen_random_motion(robot_type):
 def main():
 	parser = argparse.ArgumentParser()
 	parser.add_argument("robot_type", help="name of robot type to generate motions for")
-	parser.add_argument("output", help="output file (YAML)")
 	parser.add_argument("--N", help="number of motions", default=100, type=int)
 	args = parser.parse_args()
 
@@ -170,7 +175,7 @@ def main():
 
 	print("Generated {}".format(len(motions)))
 
-	with open(args.output, 'w') as file:
+	with open("motions_{}.yaml".format(args.robot_type), 'w') as file:
 		yaml.dump(motions, file)
 
 

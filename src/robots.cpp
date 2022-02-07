@@ -39,6 +39,7 @@ public:
     si_ = std::make_shared<oc::SpaceInformation>(space, cspace);
 
     dt_ = 0.1;
+    is2D_ = true;
   }
 
   void propagate(
@@ -144,6 +145,7 @@ public:
     si_ = std::make_shared<oc::SpaceInformation>(space, cspace);
 
     dt_ = 0.1;
+    is2D_ = true;
   }
 
   void propagate(
@@ -402,6 +404,7 @@ public:
     si_ = std::make_shared<oc::SpaceInformation>(space, cspace);
 
     dt_ = 0.1;
+    is2D_ = true;
   }
 
   virtual size_t numParts()
@@ -688,6 +691,7 @@ public:
     si_ = std::make_shared<oc::SpaceInformation>(space, cspace);
 
     dt_ = 0.01;
+    is2D_ = false;
   }
 
   void propagate(

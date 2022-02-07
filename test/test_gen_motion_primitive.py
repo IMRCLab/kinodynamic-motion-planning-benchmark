@@ -11,14 +11,14 @@ import numpy as np
 import rowan
 
 
-def _run_check(robot_type: str, start: list, goal: list):
+def _run_check(robot_type: str, start: list, goal: list, is2D: bool = False):
 	with tempfile.TemporaryDirectory() as tmpdirname:
 		p = Path(tmpdirname)
 		# p = Path("../results/test")
 
 
 		# generate motion
-		motions = gen_motion(robot_type, start, goal)
+		motions = gen_motion(robot_type, start, goal, is2D)
 		assert len(motions) > 0
 
 		for motion in motions:
@@ -35,8 +35,8 @@ def _run_check(robot_type: str, start: list, goal: list):
 			# generate environment file (to be used with the checker)
 			env = {
 				"environment":{
-					"min": [0, 0],
-					"max": [4, 4],
+					"min": [-2, -2],
+					"max": [2, 2],
 					"obstacles": []
 				},
 				"robots": [{
@@ -45,6 +45,9 @@ def _run_check(robot_type: str, start: list, goal: list):
 					"goal": list(motion["states"][-1]),
 				}]
 			}
+			if not is2D:
+				env["environment"]["min"].append(-2)
+				env["environment"]["max"].append(2)
 
 			filename_env = str(p / "env.yaml")
 			with open(filename_env, 'w') as f:
@@ -77,7 +80,8 @@ def test_quadrotor():
 	# fly 0.5 upwards
 	_run_check("quadrotor_0",
 			 [1,1,1, 0,0,0,1, 0,0,0, 0,0,0], # x,y,z, qx, qy, qz, qw, vx, vy, vz, wx, wy, wz,
-			 [1,1,1.5, 0,0,0,1, 0,0,0, 0,0,0] # x,y,z, qx, qy, qz, qw, vx, vy, vz, wx, wy, wz
+			 [1,1,1.5, 0,0,0,1, 0,0,0, 0,0,0], # x,y,z, qx, qy, qz, qw, vx, vy, vz, wx, wy, wz
+			 is2D=False
 	)
 
 	# # initial & final yaw
