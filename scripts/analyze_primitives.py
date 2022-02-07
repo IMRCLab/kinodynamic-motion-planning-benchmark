@@ -123,7 +123,8 @@ def main() -> None:
 			# generate environment file
 			env = {
 				"environment":{
-					"dimensions": [4, 4],
+					"min": [0, 0],
+					"max": [4, 4],
 					"obstacles": []
 				},
 				"robots": [{

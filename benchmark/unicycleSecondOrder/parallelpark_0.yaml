@@ -1,5 +1,6 @@
 environment:
-  dimensions: [3.0, 1.0]
+  min: [0.0, 0.0]
+  max: [3.0, 1.0]
   obstacles:
     - type: box
       center: [0.3, 0.2]

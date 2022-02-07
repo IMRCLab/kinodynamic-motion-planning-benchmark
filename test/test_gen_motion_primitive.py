@@ -32,7 +32,8 @@ def _run_check(robot_type: str, start: list, goal: list):
 			# generate environment file (to be used with the checker)
 			env = {
 				"environment":{
-					"dimensions": [4, 4],
+					"min": [0, 0],
+					"max": [4, 4],
 					"obstacles": []
 				},
 				"robots": [{

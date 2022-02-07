@@ -6,7 +6,8 @@ from typing import List
 
 # example of input:
 # environment:
-#   dimensions: [3.5, 1.5]
+#   min: [0, 0]
+#   max: [3.5, 1.5]
 #   obstacles:
 #     - type: box
 #       center: [0.7, 0.2]

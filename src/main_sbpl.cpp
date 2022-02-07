@@ -93,7 +93,8 @@ int main(int argc, char* argv[]) {
   //Initialize Environment (should be called before initializing anything else)
   EnvironmentNAVXYTHETAMLEVLAT environment_navxythetalat;
 
-  const auto &dims = env["environment"]["dimensions"];
+  // NOTE: This assumes that "min" is zero!
+  const auto &dims = env["environment"]["max"];
   double cellsize_m = 0.025;// needs to match mprim file
   int width = dims[0].as<double>() / cellsize_m;
   int height = dims[1].as<double>() / cellsize_m;

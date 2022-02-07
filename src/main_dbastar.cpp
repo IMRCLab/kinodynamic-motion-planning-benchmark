@@ -227,11 +227,13 @@ int main(int argc, char* argv[]) {
 
   const auto& robot_node = env["robots"][0];
   auto robotType = robot_node["type"].as<std::string>();
-  const auto &dims = env["environment"]["dimensions"];
-  ob::RealVectorBounds position_bounds(2);
-  position_bounds.setLow(0);
-  position_bounds.setHigh(0, dims[0].as<double>());
-  position_bounds.setHigh(1, dims[1].as<double>());
+  const auto &env_min = env["environment"]["min"];
+  const auto &env_max = env["environment"]["max"];
+  ob::RealVectorBounds position_bounds(env_min.size());
+  for (size_t i = 0; i < env_min.size(); ++i) {
+    position_bounds.setLow(i, env_min[i].as<double>());
+    position_bounds.setHigh(i, env_max[i].as<double>());
+  }
   std::shared_ptr<Robot> robot = create_robot(robotType, position_bounds);
 
   auto si = robot->getSpaceInformation();

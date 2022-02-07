@@ -19,7 +19,8 @@ def _run_check(robot_type: str, start: list, goal: list, expected_T: int):
 		# generate environment file
 		env = {
 			"environment":{
-				"dimensions": [4, 4],
+				"min": [0, 0],
+				"max": [4, 4],
 				"obstacles": []
 			},
 			"robots": [{

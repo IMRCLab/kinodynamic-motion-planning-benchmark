@@ -32,8 +32,8 @@ class Animation:
 
     self.fig = plt.figure()  # frameon=False, figsize=(4 * aspect, 4))
     self.ax = self.fig.add_subplot(111, aspect='equal')
-    self.ax.set_xlim(0, env["environment"]["dimensions"][0])
-    self.ax.set_ylim(0, env["environment"]["dimensions"][1])
+    self.ax.set_xlim(env["environment"]["min"][0], env["environment"]["max"][0])
+    self.ax.set_ylim(env["environment"]["min"][1], env["environment"]["max"][1])
 
     for obstacle in env["environment"]["obstacles"]:
       if obstacle["type"] == "box":
@@ -113,8 +113,8 @@ def visualize(filename_env, filename_result = None, filename_video=None):
 
   # fig = plt.figure()  # frameon=False, figsize=(4 * aspect, 4))
   # ax = fig.add_subplot(111, aspect='equal')
-  # ax.set_xlim(0, env["environment"]["dimensions"][0])
-  # ax.set_ylim(0, env["environment"]["dimensions"][1])
+  # ax.set_xlim(0, env["environment"]["max"][0])
+  # ax.set_ylim(0, env["environment"]["max"][1])
 
   # for obstacle in env["environment"]["obstacles"]:
   #   if obstacle["type"] == "box":
