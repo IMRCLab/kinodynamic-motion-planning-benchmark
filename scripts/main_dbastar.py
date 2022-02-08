@@ -12,7 +12,6 @@ import shutil
 from collections import defaultdict
 import tempfile
 from pathlib import Path
-from analyze_primitives import sort_primitives
 
 import sys
 import os
@@ -125,7 +124,7 @@ def run_dbastar(filename_env, folder, timelimit, cfg, opt_alg="scp", motions_sta
 
 
 		# load existing motions
-		with open('motions_{}_sorted.yaml'.format(robot_node["type"])) as f:
+		with open('../cloud/motions/{}_sorted.yaml'.format(robot_node["type"])) as f:
 			all_motions = yaml.load(f, Loader=yaml.CSafeLoader)
 		# all_motions = sort_primitives(all_motions, robot_type, 100)
 		# all_motions = all_motions[0:300]

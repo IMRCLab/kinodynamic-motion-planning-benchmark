@@ -1,6 +1,7 @@
 import numpy as np
 # from scp import SCP
 from main_komo import run_komo_standalone
+from utils_motion_primitives import sort_primitives, visualize_motion
 import robots
 import yaml
 import multiprocessing as mp
@@ -12,6 +13,7 @@ import tempfile
 from pathlib import Path
 import psutil
 import checker
+import time
 
 
 import sys, os
@@ -26,8 +28,8 @@ def gen_motion(robot_type, start, goal):
 			p = Path(tmpdirname)
 		env = {
 			"environment":{
-				"min": [0, 0],
-				"max": [4, 4],
+				"min": [-2, -2],
+				"max": [2, 2],
 				"obstacles": []
 			},
 			"robots": [{
@@ -46,13 +48,11 @@ def gen_motion(robot_type, start, goal):
 			return []
 
 		filename_result = p / "result_komo.yaml"
-		checker.check(str(filename_env), str(filename_result))
+		# checker.check(str(filename_env), str(filename_result))
 
 		if dbg:
 			subprocess.run(["python3",
-						# "../benchmark/unicycleFirstOrder/visualize.py",
-						"../benchmark/unicycleSecondOrder/visualize.py",
-						# "../benchmark/carFirstOrderWithTrailers/visualize.py",
+						"../benchmark/{}/visualize.py".format(robot_type),
 						str(filename_env),
 						"--result", str(filename_result),
 						"--video", str(filename_result.with_suffix(".mp4"))])
@@ -106,11 +106,9 @@ def gen_random_motion(robot_type):
 	rh = RobotHelper(robot_type)
 	start = rh.sampleUniform()
 	goal = rh.sampleUniform()
-	# shift to center (at 2,2)
-	start[0] = 2
-	start[1] = 2
-	goal[0] += 2
-	goal[1] += 2
+	# shift to center (at 0,0)
+	start[0] = 0
+	start[1] = 0
 	motions =  gen_motion(robot_type, start, goal)
 	for motion in motions:
 		motion['distance'] = rh.distance(motion['x0'], motion['xf'])
@@ -120,7 +118,6 @@ def gen_random_motion(robot_type):
 def main():
 	parser = argparse.ArgumentParser()
 	parser.add_argument("robot_type", help="name of robot type to generate motions for")
-	parser.add_argument("output", help="output file (YAML)")
 	parser.add_argument("--N", help="number of motions", default=100, type=int)
 	args = parser.parse_args()
 
@@ -128,6 +125,22 @@ def main():
 
 	motions = []
 	tasks = itertools.repeat(args.robot_type, args.N)
+
+	tmp_path = Path("../results/tmp/motions/{}".format(args.robot_type))
+	tmp_path.mkdir(parents=True, exist_ok=True)
+
+	def add_motions(additional_motions):
+		motions.extend(additional_motions)
+		print("Generated {} motions".format(len(motions)), flush=True)
+		# Store intermediate results, in case we need to interupt the generation
+		i = 0
+		while True:
+			p = tmp_path / "{}.yaml".format(i)
+			if not p.exists():
+				with open(p, 'w') as f:
+					yaml.dump(additional_motions, f)
+				break
+			i = i + 1
 
 	# if args.N <= 10:
 	if False:
@@ -139,39 +152,33 @@ def main():
 		use_cpus = psutil.cpu_count(logical=False)
 		async_results = []
 		with mp.Pool(use_cpus) as p:
-			len_motions_last_printed = 0
 			while len(motions) < args.N:
 				# clean up async_results
 				async_results = [x for x in async_results if not x.ready()]
 				# run some more workers
 				while len(async_results) < use_cpus:
-					ar = p.apply_async(gen_random_motion, (args.robot_type,), callback=lambda r: motions.extend(r))
+					ar = p.apply_async(gen_random_motion, (args.robot_type,), callback=add_motions)
 					async_results.append(ar)
-				if len(motions) > len_motions_last_printed:
-					print("Generated {} motions".format(len(motions)))
-					len_motions_last_printed = len(motions)
+				time.sleep(1)
 			p.terminate()
-			# r.get()
-			# p.close()
-			# p.join()
-
-			# for multiple_motions in tqdm.tqdm(p.imap_unordered(gen_random_motion, tasks)):
-			# 	for motion in multiple_motions:
-			# 		motion['distance'] = rh.distance(motion['x0'], motion['xf'])
-			# 		motion['name'] = 'm{}'.format(len(motions))
-			# 		motions.append(motion)
-			# 		if len(motions) >= args.N:
-			# 			break
-			# 	if len(motions) >= args.N:
-			# 		break
 
 	for k, motion in enumerate(motions):
 		motion['name'] = 'm{}'.format(k)
 
-	print("Generated {}".format(len(motions)))
+	out_path = Path("../cloud/motions")
+	out_path.mkdir(parents=True, exist_ok=True)
 
-	with open(args.output, 'w') as file:
-		yaml.dump(motions, file)
+	# with open(out_path / "{}.yaml".format(args.robot_type), 'w') as file:
+		# yaml.dump(motions, file, Dumper=yaml.CSafeDumper)
+
+	# now sort the primitives
+	sorted_motions = sort_primitives(motions, args.robot_type)
+	with open(out_path / "{}_sorted.yaml".format(args.robot_type), 'w') as file:
+		yaml.dump(sorted_motions, file, Dumper=yaml.CSafeDumper)
+
+	# visualize the top 100
+	for k, m in enumerate(sorted_motions[0:100]):
+		visualize_motion(m, args.robot_type, tmp_path / "top_{}.mp4".format(k))
 
 
 if __name__ == '__main__':

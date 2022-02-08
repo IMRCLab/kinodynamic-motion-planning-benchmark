@@ -1,16 +1,27 @@
 # kinodynamic-motion-planning-benchmark
-This repository aims to compare different motion planners for dynamical systems, namely search-based, sampling-based, and optimization-based
+This repository compares different motion planners for dynamical systems, namely search-based, sampling-based, and optimization-based.
+
+It also includes db-A*, an algorithm that combines ideas from those classical planners.
 
 ## Building
 
 Tested on Ubuntu 20.04.
 
 ```
-mkdir build
-cd build
-cmake -DCMAKE_BUILD_TYPE=RelWithDebugInfo ..
+mkdir buildRelease
+cd buildRelease
+cmake -DCMAKE_BUILD_TYPE=Release ..
 make
 ```
+
+## Cloud
+
+Large files are stored on the (TUB) cloud. Use the client to sync the cloud folder with the cloud subfolder in this repository.
+
+Sync Client: https://www.campusmanagement.tu-berlin.de/menue/dienste/daten_server/tubcloud/tubcloud_sync_client/parameter/en/
+
+To add a synchronization, open the client, go to settings, and select "Add Folder Sync Connection"
+
 
 ## Tests
 
@@ -34,7 +45,17 @@ cd build
 python3 ../scripts/benchmark_stats.py
 ```
 
+Edit benchmark.py and benchmark_stats.py in order to run a subset (or a single) experiment, only.
+
 ## Planners
+
+### db-A*
+
+db-A* requires motion primitives to operate. Currently, these primitives are generated in preprocessing, by solving many small optimal motion planning problems in free space. The resulting primitives can be sorted to maximize their exploration capabilities.
+
+```
+python3 ../scripts/gen_motion_primitive_komo.py --N 1000 unicycle_first_order_0 | grep Generated
+```
 
 ### SBPL
 
