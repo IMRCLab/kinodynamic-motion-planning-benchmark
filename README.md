@@ -39,7 +39,7 @@ python3 ../scripts/benchmark_stats.py
 ### SBPL
 
 ```
-python3 ../scripts/gen_sbpl_prim.py ../deps/sbpl/matlab/mprim/unicycle_noturninplace.mprim ../tuning/carFirstOrder/car_first_order_0.mprim ../tuning/carFirstOrder/car_first_order_0_mprim.yaml
+python3 ../scripts/gen_sbpl_prim.py ../deps/sbpl/matlab/mprim/unicycle_noturninplace.mprim ../tuning/car_first_order_0/car_first_order_0.mprim ../tuning/car_first_order_0/car_first_order_0_mprim.yaml
 ```
 
 ### main_ompl
@@ -52,47 +52,47 @@ python3 ../scripts/gen_sbpl_prim.py ../deps/sbpl/matlab/mprim/unicycle_noturninp
 Optimize Trajectories
 
 ```
-./main_rai -model  \"../benchmark/carFirstOrder/parallelpark_0.g\" -waypoints \"../benchmark/carFirstOrder/initGuess/result_dbastar_parallelpark.yaml\"  -one_every 2 -display 1 -out out.yaml -animate 0
+./main_rai -model  \"../benchmark/car_first_order_0/parallelpark_0.g\" -waypoints \"../benchmark/car_first_order_0/initGuess/result_dbastar_parallelpark.yaml\"  -one_every 2 -display 1 -out out.yaml -animate 0
 ```
 
 ```
-./main_rai -model  \" ../benchmark/carFirstOrder/parallelpark_0.g \" -waypoints \" ../benchmark/carFirstOrder/initGuess/result_dbastar_parallelpark.yaml \"  -one_every 2 -display 1 -out out.yaml -animate 0
+./main_rai -model  \" ../benchmark/car_first_order_0/parallelpark_0.g \" -waypoints \" ../benchmark/car_first_order_0/initGuess/result_dbastar_parallelpark.yaml \"  -one_every 2 -display 1 -out out.yaml -animate 0
  ```
 
 ```
-./main_rai -model  \"../benchmark/carFirstOrder/bugtrap_0.g \" -waypoints \"../benchmark/carFirstOrder/initGuess/result_dbastar_bugtrap.yaml\"  -one_every 2 -display 0 -out out.yaml -animate 0
+./main_rai -model  \"../benchmark/car_first_order_0/bugtrap_0.g \" -waypoints \"../benchmark/car_first_order_0/initGuess/result_dbastar_bugtrap.yaml\"  -one_every 2 -display 0 -out out.yaml -animate 0
 ```
 
 Translate yaml environments to g
 
 ```
-python3 translate_g.py --fin ../benchmark/carFirstOrder/parallelpark_0.yaml  --fout ../benchmark/carFirstOrder/parallelpark_0.g
+python3 translate_g.py --fin ../benchmark/car_first_order_0/parallelpark_0.yaml  --fout ../benchmark/car_first_order_0/parallelpark_0.g
 ```
 
 ```
-python3 translate_g.py --fin ../benchmark/carFirstOrder/kink_0.yaml  --fout ../benchmark/carFirstOrder/kink_0.g
+python3 translate_g.py --fin ../benchmark/car_first_order_0/kink_0.yaml  --fout ../benchmark/car_first_order_0/kink_0.g
 ```
 
 ```
-python3 translate_g.py --fin ../benchmark/carFirstOrder/bugtrap_0.yaml  --fout ../benchmark/carFirstOrder/bugtrap_0.g
+python3 translate_g.py --fin ../benchmark/car_first_order_0/bugtrap_0.yaml  --fout ../benchmark/car_first_order_0/bugtrap_0.g
 ```
 
 #### Issues
 
 ```
 cd build
-python3 ../scripts/translate_g.py --fin ../benchmark/unicycleFirstOrder/bugtrap_0.yaml  --fout env.g
+python3 ../scripts/translate_g.py --fin ../benchmark/unicycle_first_order_0/bugtrap_0.yaml  --fout env.g
 ```
 
 The following fails with high eq/ineq:
 
 ```
-./main_rai -model "env.g" -waypoints \"../test/unicycleFirstOrder/guess_bugtrap_0_sol1.yaml\" -one_every 1 -display 0 -animate 0 -out "komo.yaml" -order 1
+./main_rai -model "env.g" -waypoints \"../test/unicycle_first_order_0/guess_bugtrap_0_sol1.yaml\" -one_every 1 -display 0 -animate 0 -out "komo.yaml" -order 1
 ```
 
 However, the following (using sol2.yaml from a pure geometric planner) works just fine:
 ```
-./main_rai -model "env.g" -waypoints \"../test/unicycleFirstOrder/guess_bugtrap_0_sol2.yaml\" -one_every 1 -display 0 -animate 0 -out "komo.yaml" -order 1
+./main_rai -model "env.g" -waypoints \"../test/unicycle_first_order_0/guess_bugtrap_0_sol2.yaml\" -one_every 1 -display 0 -animate 0 -out "komo.yaml" -order 1
 ```
 
 Note that T of the first solution is significantly higher than the T of the second solution.

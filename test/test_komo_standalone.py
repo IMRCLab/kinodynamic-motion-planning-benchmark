@@ -42,7 +42,7 @@ def _run_check(robot_type: str, start: list, goal: list, expected_T: int):
 		if dbg:
 			import subprocess
 			subprocess.run(["python3",
-				"../benchmark/unicycleSecondOrder/visualize.py",
+				"../benchmark/unicycle_second_order_0/visualize.py",
 				str(filename_env),
 				"--result", str(filename_result),
 				"--video", str(filename_result.with_suffix(".mp4"))])

@@ -29,7 +29,7 @@ def test_trailer_komo2():
 
 def test_yaml_to_komo():
     # generate from yaml file
-    cmd = "python3 ../scripts/translate_g.py  --fin  ../benchmark/carFirstOrderWithTrailers/parallelpark_0.yaml --fout tmp_trailer.g"
+    cmd = "python3 ../scripts/translate_g.py  --fin  ../benchmark/car_first_order_with_1_trailers_0/parallelpark_0.yaml --fout tmp_trailer.g"
     print("Running", cmd)
     out = sp.run(cmd.split())
     print("Running DONE", cmd)
@@ -44,7 +44,7 @@ def test_yaml_to_komo():
 
 
 def test_bugtrap():
-    cmd = "./main_rai -model \"../test/env_debug_bugtrap_trailer.g\"  -waypoints \"../test/carFirstOrderWithTrailers/guess_bugtrap_0_sol0.yaml\" -N -1 -display 0 -animate 0 -order 1 -robot car_first_order_with_1_trailers_0 -cfg rai.cfg -env \"../benchmark/carFirstOrderWithTrailers/bugtrap_0.yaml\" -out \"tmp.yaml\""
+    cmd = "./main_rai -model \"../test/env_debug_bugtrap_trailer.g\"  -waypoints \"../test/car_first_order_with_1_trailers_0/guess_bugtrap_0_sol0.yaml\" -N -1 -display 0 -animate 0 -order 1 -robot car_first_order_with_1_trailers_0 -cfg rai.cfg -env \"../benchmark/car_first_order_with_1_trailers_0/bugtrap_0.yaml\" -out \"tmp.yaml\""
     print("Running", cmd)
     out = sp.run(cmd.split())
     print("Running DONE", cmd)
