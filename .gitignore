@@ -3,4 +3,5 @@ buildDebug/
 buildRelease/
 buildProfile/
 results/
+cloud/
 *.pyc

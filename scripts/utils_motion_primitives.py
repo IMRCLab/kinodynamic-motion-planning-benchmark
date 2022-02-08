@@ -4,6 +4,7 @@ import sys, os
 import numpy as np
 import tempfile
 from pathlib import Path
+import subprocess
 
 sys.path.append(os.getcwd())
 from motionplanningutils import RobotHelper
@@ -52,6 +53,45 @@ def sort_primitives(motions: list, robot_type: str, top_k=None) -> list:
 		unused_motions.remove(best_motion)
 		print("sorting ", k)
 	return used_motions
+
+def visualize_motion(motion: dict, robot_type: str, output_file: str):
+	with tempfile.TemporaryDirectory() as tmpdirname:
+		p = Path(tmpdirname)
+
+
+		# convert to result file format
+		result = {
+			"result": [{
+					"states": motion["states"],
+					"actions": motion["actions"],
+			}]}
+		filename_result = str(p / "result.yaml")
+		with open(filename_result, 'w') as f:
+			yaml.dump(result, f, Dumper=yaml.CSafeDumper)
+
+		# generate environment file
+		env = {
+			"environment":{
+				"min": [-2, -2],
+				"max": [2, 2],
+				"obstacles": []
+			},
+			"robots": [{
+				"type": robot_type,
+				"start": list(motion["states"][0]),
+				"goal": list(motion["states"][-1]),
+			}]
+		}
+		filename_env = str(p / "env.yaml")
+		with open(filename_env, 'w') as f:
+			yaml.dump(env, f, Dumper=yaml.CSafeDumper)
+
+		subprocess.run(["python3",
+			"../benchmark/{}/visualize.py".format(robot_type),
+			str(filename_env),
+			"--result", str(filename_result),
+			"--video", str(output_file)])
+
 
 def main() -> None:
 	parser = argparse.ArgumentParser()
@@ -139,7 +179,7 @@ def main() -> None:
 
 			import subprocess
 			subprocess.run(["python3",
-				"../benchmark/unicycleSecondOrder/visualize.py",
+				"../benchmark/unicycle_second_order_0/visualize.py",
 				str(filename_env),
 				"--result", str(filename_result),
 				"--video", "../results/test/{}.mp4".format(k)])
