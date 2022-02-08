@@ -12,6 +12,7 @@ import tempfile
 from pathlib import Path
 import psutil
 import checker
+import time
 
 
 import sys, os
@@ -134,6 +135,18 @@ def main():
 	motions = []
 	tasks = itertools.repeat(args.robot_type, args.N)
 
+	def add_motions(additional_motions):
+		motions.extend(additional_motions)
+		print("Generated {} motions".format(len(motions)), flush=True)
+		i = 0
+		while True:
+			p = Path("motions_{}_intermediate_{}.yaml".format(args.robot_type, i))
+			if not p.exists():
+				with open(p, 'w') as f:
+					yaml.dump(additional_motions, f)
+				break
+			i = i + 1
+
 	# if args.N <= 10:
 	if False:
 		while len(motions) < args.N:
@@ -144,17 +157,15 @@ def main():
 		use_cpus = psutil.cpu_count(logical=False)
 		async_results = []
 		with mp.Pool(use_cpus) as p:
-			len_motions_last_printed = 0
 			while len(motions) < args.N:
+				print("Gen2 ", len(motions), flush=True)
 				# clean up async_results
 				async_results = [x for x in async_results if not x.ready()]
 				# run some more workers
 				while len(async_results) < use_cpus:
-					ar = p.apply_async(gen_random_motion, (args.robot_type,), callback=lambda r: motions.extend(r))
+					ar = p.apply_async(gen_random_motion, (args.robot_type,), callback=add_motions)
 					async_results.append(ar)
-				if len(motions) > len_motions_last_printed:
-					print("Generated {} motions".format(len(motions)))
-					len_motions_last_printed = len(motions)
+				time.sleep(1)
 			p.terminate()
 			# r.get()
 			# p.close()
@@ -172,8 +183,6 @@ def main():
 
 	for k, motion in enumerate(motions):
 		motion['name'] = 'm{}'.format(k)
-
-	print("Generated {}".format(len(motions)))
 
 	with open("motions_{}.yaml".format(args.robot_type), 'w') as file:
 		yaml.dump(motions, file)
