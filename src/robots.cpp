@@ -14,8 +14,8 @@ class RobotUnicycleFirstOrder : public Robot
 public:
   RobotUnicycleFirstOrder(
     const ompl::base::RealVectorBounds& position_bounds,
-    float v_limit,
-    float w_limit)
+    float v_min, float v_max,
+    float w_min, float w_max)
   {
     geom_.emplace_back(new fcl::Boxf(0.5, 0.25, 1.0));
 
@@ -28,10 +28,10 @@ public:
 
     // set the bounds for the control space
     ob::RealVectorBounds cbounds(2);
-    cbounds.setLow(0, -v_limit);
-    cbounds.setHigh(0, v_limit);
-    cbounds.setLow(1, -w_limit);
-    cbounds.setHigh(1, w_limit);
+    cbounds.setLow(0, v_min);
+    cbounds.setHigh(0, v_max);
+    cbounds.setLow(1, w_min);
+    cbounds.setHigh(1, w_max);
 
     cspace->setBounds(cbounds);
 
@@ -1031,8 +1031,30 @@ std::shared_ptr<Robot> create_robot(
   {
     robot.reset(new RobotUnicycleFirstOrder(
         positionBounds,
-        /*v_limit*/ 0.5 /* m/s*/,
-        /*w_limit*/ 0.5 /*rad/s*/));
+        /*v_min*/ -0.5 /* m/s*/,
+        /*v_max*/ 0.5 /* m/s*/,
+        /*w_min*/ -0.5 /*rad/s*/,
+        /*w_max*/ 0.5 /*rad/s*/));
+  }
+  else if (robotType == "unicycle_first_order_1")
+  {
+    // 2D plane-like (with a minimum positive speed)
+    robot.reset(new RobotUnicycleFirstOrder(
+        positionBounds,
+        /*v_min*/ 0.25 /* m/s*/,
+        /*v_max*/ 0.5 /* m/s*/,
+        /*w_min*/ -0.5 /*rad/s*/,
+        /*w_max*/ 0.5 /*rad/s*/));
+  }
+  else if (robotType == "unicycle_first_order_2")
+  {
+    // only forward movement, with easier right turns
+    robot.reset(new RobotUnicycleFirstOrder(
+        positionBounds,
+        /*v_min*/ 0.0 /* m/s*/,
+        /*v_max*/ 0.5 /* m/s*/,
+        /*w_min*/ -0.25 /*rad/s*/,
+        /*w_max*/ 0.5 /*rad/s*/));
   }
   else if (robotType == "unicycle_second_order_0")
   {
