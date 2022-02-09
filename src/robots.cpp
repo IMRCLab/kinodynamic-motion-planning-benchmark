@@ -1051,7 +1051,7 @@ std::shared_ptr<Robot> create_robot(
     // only forward movement, with easier right turns
     robot.reset(new RobotUnicycleFirstOrder(
         positionBounds,
-        /*v_min*/ 0.0 /* m/s*/,
+        /*v_min*/ 0.25 /* m/s*/,
         /*v_max*/ 0.5 /* m/s*/,
         /*w_min*/ -0.25 /*rad/s*/,
         /*w_max*/ 0.5 /*rad/s*/));

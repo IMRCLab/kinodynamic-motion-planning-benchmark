@@ -17,7 +17,7 @@ int main(int argn, char **argv) {
   } else if (robot_type.contains("unicycle_first_order_1")) {
     return main_unicycle(0.25, 0.5, -0.5, 0.5);
   } else if (robot_type.contains("unicycle_first_order_2")) {
-    return main_unicycle(0.0, 0.5, -0.25, 0.5);
+    return main_unicycle(0.25, 0.5, -0.25, 0.5);
   } else if (robot_type.contains("unicycle_second_order_0")) {
     return main_unicycle(-0.5, 0.5, -0.5, 0.5);
   } else if (robot_type.contains("trailer")) {
