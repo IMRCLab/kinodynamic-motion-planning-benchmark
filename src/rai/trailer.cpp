@@ -5,6 +5,72 @@
 #include <Kin/kin.h>
 #include <cassert>
 
+#include <map>
+#include <numeric>
+#include <vector>
+
+// Some code i found on the internet. Super easy,
+// seems to be OK
+/**
+ * Provides a basic interpolation mechanism in C++ using the STL.
+ * Maybe not the fastest or most elegant method, but it works (for
+ * linear interpolation!!), and is fast enough for a great deal of
+ * purposes. It's also super easy to use, so that's a bonus.
+ */
+
+template <typename Point> class LinearInterpolator {
+public:
+  using Map = std::map<double, Point>;
+  LinearInterpolator() {}
+
+  void addDataPoint(double x, const Point &d) { data[x] = d; }
+
+  // template <typename AddOperator> Point interpolate(double x, AddOperator add)
+  Point interpolate(double x) {
+    // loop through all the keys in the map
+    // to find one that is greater than our intended value
+    typename Map::iterator it = data.begin();
+    bool found = false;
+    while (it != data.end() && !found) {
+      if (it->first >= x) {
+        found = true;
+        break;
+      }
+
+      // advance the iterator
+      it++;
+    }
+
+    // check to see if we're outside the data range
+    if (it == data.begin()) {
+      return data.begin()->second;
+    } else if (it == data.end()) {
+      // move the point back one, as end() points past the list
+      it--;
+      return it->second;
+    }
+    // check to see if we landed on a given point
+    else if (it->first == x) {
+      return it->second;
+    }
+
+    // nope, we're in the range somewhere
+    // collect some values
+    double xb = it->first;
+    Point yb = it->second;
+    it--;
+    double xa = it->first;
+    Point ya = it->second;
+
+    // and calculate the result!
+    // formula from Wikipedia
+    double r = (x - xa) / (xb - xa);
+    return r * yb + (1. - r) * ya;
+  }
+
+  Map data;
+};
+
 struct Trailer : Feature {
   // IMPORTANT: See Quim's Drawing:
 
@@ -298,8 +364,16 @@ void create_komo(KOMO &komo, const TrailerOpt &opt) {
   }
 };
 
+// running parallel park with
+// quim@fourier ~/s/w/k/b/debug.10-02-2022--11-18-40 (time_sos)
+// ../main_rai -model env.g -waypoints init.yaml -N -1 -display 1
+//  -animate 2 -order 1 -robot car_first_order_with_1_trailers_0
+// -cfg "rai.cfg" -env \"../benchmark/car_first_order_with_1_trai
+// lers_0/parallelpark_0.yaml\" -out out.yaml
+
 int main_trailer() {
 
+  rnd.clockSeed();
   double action_factor = rai::getParameter<double>("action_factor", 1.0);
   // path to *.g file
   rai::String model_file =
@@ -437,6 +511,7 @@ int main_trailer() {
   komo.run();
 
   komo.reportProblem();
+  arrA newwaypoints = komo.getPath_qAll();
 
   if (display) {
     komo.view(true);
@@ -491,9 +566,89 @@ int main_trailer() {
       std::max_element(actions.begin(), actions.end(), [](auto &v, auto &v2) {
         return std::abs(v.at(0)) < std::abs(v2.at(0));
       });
+
+  const double max_velocity = 0.5 * action_factor - 0.01; // m/s
+  std::vector<double> factors_vel;
+  std::transform(actions.begin(), actions.end(),
+                 std::back_inserter(factors_vel),
+                 [&](auto &a) { return std::abs(a.at(0)) / max_velocity; });
+
+  std::cout << "Factors" << std::endl;
+  for (auto &s : factors_vel) {
+    std::cout << s << " " << std::endl;
+  }
+
+  std::vector<double> factors_vel_smoothed(factors_vel.size());
+
+  for (size_t i = 0; i < factors_vel.size(); i++) {
+
+    if (i == 0) {
+      // factors_vel_smoothed[i] = .5 * (factors_vel[i] + factors_vel[i + 1]);
+      factors_vel_smoothed[i] = std::max(factors_vel[i], factors_vel[i + 1]);
+
+    } else if (i == factors_vel.size() - 1) {
+      factors_vel_smoothed[i] = std::max(factors_vel[i - 1], factors_vel[i]);
+      // factors_vel_smoothed[i] = .5 * (factors_vel[i - 1] + factors_vel[i]);
+    } else {
+      // factors_vel_smoothed[i] =
+      //     (factors_vel[i] + factors_vel[i + 1] + factors_vel[i - 1]) / 3.0;
+      //
+      factors_vel_smoothed[i] = std::max(
+          factors_vel[i], std::max(factors_vel[i + 1], factors_vel[i - 1]));
+    }
+  }
+  std::cout << "Factors smoothed" << std::endl;
+  for (auto &s : factors_vel_smoothed) {
+    std::cout << s << " " << std::endl;
+  }
+
+  double total_time = std::accumulate(factors_vel_smoothed.begin(),
+                                      factors_vel_smoothed.end(), 0);
+  std::cout << "total time " << total_time << std::endl;
+
+  std::cout << "Convert to time indices" << std::endl;
+
+  std::vector<double> times_(factors_vel_smoothed.size());
+  std::vector<double> times(factors_vel_smoothed.size());
+  std::partial_sum(factors_vel_smoothed.begin(), factors_vel_smoothed.end(),
+                   times_.begin());
+  std::cout << "Partial  sum" << std::endl;
+  for (auto &s : times_) {
+    std::cout << s << " " << std::endl;
+  }
+
+  std::transform(times_.begin(), times_.end(), times.begin(),
+                 [&](auto &s) { return dt * s; });
+
+  std::cout << "Partial  sum 2" << std::endl;
+  for (auto &s : times) {
+    std::cout << s << " " << std::endl;
+  }
+
+  LinearInterpolator<arr> lerp;
+
+  for (size_t i = 0; i < times.size(); i++) {
+    lerp.addDataPoint(times.at(i), newwaypoints(i));
+  }
+  // TAKE the full time:
+  // interpolate the numbers.
+
+  int num_steps = std::ceil(times_.back());
+  arrA new_waypoints_scaled;
+  for (size_t i = 0; i < num_steps; i++) {
+    // int nx = waypoints(0).N;
+    // arr point(nx);
+    // for (size_t j = 0; j < nx; j++)
+    //   point(j) = lerp.interpolate(i * dt, j);
+    new_waypoints_scaled.append(lerp.interpolate(i * dt));
+  }
+
+  std::cout << "new waypoints scaled" << std::endl;
+  std::cout << new_waypoints_scaled << std::endl;
+
+  // return 0;
   double max_vel = it_v0->at(0);
   std::cout << "max vel is " << max_vel << std::endl;
-  const double max_velocity = 0.5 * action_factor - 0.01; // m/s
   std::cout << "bound vel is  " << max_velocity << std::endl;
   double factor = std::abs(max_vel) / max_velocity;
   std::cout << "Factor is " << factor << std::endl;
@@ -503,28 +658,30 @@ int main_trailer() {
 
   // can I solve this with more time?
 
-  arrA newwaypoints = komo.getPath_qAll();
-
   KOMO komo2;
   komo2.setModel(C, true);
 
+#if 0
   double duration_phase2 = 5 * N * dt;
   komo2.setTiming(1, 5 * N, duration_phase2, order);
+#endif
+
+  double duration_phase2 = new_waypoints_scaled.N * dt;
+  komo2.setTiming(1, new_waypoints_scaled.N, duration_phase2, order);
 
   TrailerOpt opt2;
   opt2.goal_eq = true;
   opt2.velocity_bound = true;
   // opt2.regularize_traj = fa;
   opt2.regularize_traj = true;
-  opt2.waypoints = newwaypoints;
+  opt2.waypoints = new_waypoints_scaled;
   create_komo(komo2, opt2);
-  komo2.initWithWaypoints(newwaypoints, N);
+  komo2.initWithWaypoints(new_waypoints_scaled, new_waypoints_scaled.N);
 
   std::cout << "before second optimization" << std::endl;
   if (display) {
     komo2.view(true);
     komo2.view_play(true);
-    // komo2.view_play(true, 1,"vid/car");
     komo2.plotTrajectory();
 
     do {
@@ -569,7 +726,6 @@ int main_trailer() {
     return 1;
   }
 
-
   arrA results2 = getPath_qAll_with_prefix(komo2, order);
   std::cout << "(N,T): " << results2.N << " " << komo2.T << std::endl;
 
@@ -592,6 +748,18 @@ int main_trailer() {
   std::cout << "Estimated time " << komo2.T * dt * factor2 << std::endl;
   std::cout << "Repeat and make sure that it is solvable " << std::endl;
 
+  // Hey, I could reescale better right?
+  // I only need to enlarge a local path?
+
+  // IDEA 1: Better rescaling of dt.
+  // create array of velocity factors. Compute the new time from that .
+  // Mapping to generate initial guess.
+
+  // IDEA 2: lets try the reciding horizon. How long?
+  // Lets say 1 second.
+
+
+  // lets try ideas about the receding horizon.
 
 
   return 0;
