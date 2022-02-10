@@ -154,9 +154,11 @@ class RobotQuadrotor:
         ))
         # states are: x,y,z, qx, qy, qz, qw, vx, vy, vz, wx, wy, wz
         start_q = np.array([self.start[6], self.start[3], self.start[4], self.start[5]])
+        start_q = rowan.normalize(start_q)
         saxis, sangle  = rowan.to_axis_angle(start_q)
 
         goal_q = np.array([self.goal[6], self.goal[3], self.goal[4], self.goal[5]])
+        goal_q = rowan.normalize(goal_q)
         gaxis, gangle  = rowan.to_axis_angle(goal_q)
 
         result = t.substitute(

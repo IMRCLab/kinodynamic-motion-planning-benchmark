@@ -113,7 +113,8 @@ def run_komo_standalone(filename_env, folder, timelimit, cfg = "",
 		search = "binarySearch",
 		initialguess = "ompl",
 		T_range_rel=None,
-		T_range_abs=None):
+		T_range_abs=None,
+		use_T=None):
 
 	# search = "linear"
 	# search = "binarySearch"
@@ -178,8 +179,14 @@ def run_komo_standalone(filename_env, folder, timelimit, cfg = "",
 			max_T = None
 
 		if T_range_abs is not None:
-			min_T = max(T_range_abs[0], min_T)
-			max_T = min(T_range_abs[1], max_T)
+			if min_T is not None:
+				min_T = max(T_range_abs[0], min_T)
+			else:
+				min_T = T_range_abs[0]
+			if max_T is not None:
+				max_T = min(T_range_abs[1], max_T)
+			else:
+				max_T = T_range_abs[1]
 
 		print("T range: ", min_T, max_T)
 
@@ -193,14 +200,26 @@ def run_komo_standalone(filename_env, folder, timelimit, cfg = "",
 			best_T = None
 			if search == "linear":
 				T = min_T - 1
-			else:
+			if search == "linearReverse":
+				T = T_range_abs[1] + 1
+			elif search == "none":
+				T = use_T
+			elif search == "binarySearch":
 				# modified binary search
 				T = None
 			while time.time() - start < timelimit:
 				if search == "linear":
+					if max_T is not None:
+						if min_T >= max_T:
+							break
 					T = T + 1
 					print("TRYING ", T)
-				else:
+				elif search == "linearReverse":
+					if T <= 1:
+						break
+					T = T - 1
+					print("Trying ", T)
+				elif search == "binarySearch":
 					if max_T is not None:
 						if min_T >= max_T:
 							break
@@ -226,7 +245,10 @@ def run_komo_standalone(filename_env, folder, timelimit, cfg = "",
 					print("KOMO failed with T", T)
 					min_T = T + 1
 
-					# return False
+					if search == "none":
+						break
+					if search == "linearReverse":
+						break
 				else:
 					print("KOMO SUCCESS with T", T)
 					now = time.time()
@@ -236,7 +258,12 @@ def run_komo_standalone(filename_env, folder, timelimit, cfg = "",
 					if search == "linear":
 						best_T = T
 						break
-					else:
+					elif search == "linearReverse":
+						best_T = T
+					elif search == "none":
+						best_T = T
+						break
+					elif search == "binarySearch":
 						max_T = T - 1
 						if best_T is None or T < best_T:
 							best_T = T

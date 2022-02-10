@@ -45,12 +45,32 @@ def gen_motion(robot_type, start, goal, is2D):
 		filename_env = str(p / "env.yaml")
 		with open(filename_env, 'w') as f:
 			yaml.dump(env, f, Dumper=yaml.CSafeDumper)
+		
+		filename_result = p / "result_komo.yaml"
 
-		success = run_komo_standalone(filename_env, str(p), 5 * 60, "", search="linear", initialguess="none")
-		if not success:
+		# success = run_komo_standalone(filename_env, str(p), 5 * 60, "", search="linear", initialguess="none")
+		use_T = np.random.randint(20, 100)
+		success = run_komo_standalone(filename_env, str(p), 5 * 60, "soft_goal: 1", search="none", initialguess="none", use_T=use_T)
+		print("SDF", success)
+		if success:
+			print("PPPPSDF")
+			# read the result
+			with open(filename_result) as f:
+				result = yaml.load(f, Loader=yaml.CSafeLoader)
+			xf = result["result"][0]["states"][-1]
+			# update env
+			env["robots"][0]["goal"] = xf
+			with open(filename_env, 'w') as f:
+				yaml.dump(env, f, Dumper=yaml.CSafeDumper)
+			# try to find a solution with lower T
+			success = run_komo_standalone(filename_env, str(p), 5 * 60, "", search="linearReverse", initialguess="none", T_range_abs=[1, use_T-1])
+		else:
 			return []
 
-		filename_result = p / "result_komo.yaml"
+
+		# if not success:
+			# return []
+
 		# checker.check(str(filename_env), str(filename_result))
 
 		if dbg:
@@ -114,8 +134,8 @@ def gen_random_motion(robot_type):
 	start[1] = 0
 	if not rh.is2D():
 		start[2] = 0
-	#TODO:
-	goal[0:3] = np.random.uniform(-0.25, 0.25, 3).tolist()
+	# TODO:
+	# goal[0:3] = np.random.uniform(-0.25, 0.25, 3).tolist()
 	motions =  gen_motion(robot_type, start, goal, rh.is2D())
 	for motion in motions:
 		motion['distance'] = rh.distance(motion['x0'], motion['xf'])

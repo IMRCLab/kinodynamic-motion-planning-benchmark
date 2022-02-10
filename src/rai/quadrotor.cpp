@@ -110,6 +110,8 @@ int main_quadrotor() {
   rai::String env_file =
       rai::getParameter<rai::String>("env", STRING("none"));
 
+  bool soft_goal = rai::getParameter<bool>("soft_goal", false);
+
   // arrA waypoints = load_waypoints(waypoints_file);
 
   // load env file for dynamic limits (those are not in the *.g file)
@@ -177,18 +179,29 @@ int main_quadrotor() {
   // angular velocity
   komo.addObjective({2./N}, FS_angularVel, {"drone"}, OT_eq, {}, start_w, 1);
 
-  // match target pose
-  komo.addObjective({1.}, FS_poseDiff, {"drone", "target"}, OT_eq, {1e2});
-  // match target velocity
-  komo.addObjective({1.}, FS_position, {"drone"}, OT_eq, {}, target_v, 1);
-  // match target angular velocity
-  komo.addObjective({1.}, FS_angularVel, {"drone"}, OT_eq, {}, target_w, 1);
 
+  if (soft_goal) {
+    // soft constraints
+    komo.addObjective({1.}, FS_poseDiff, {"drone", "target"}, OT_sos, {100});
+    // match target velocity
+    komo.addObjective({1.}, FS_position, {"drone"}, OT_sos, {0.5}, target_v, 1);
+    // match target angular velocity
+    komo.addObjective({1.}, FS_angularVel, {"drone"}, OT_sos, {0.1}, target_w, 1);
+
+  } else {
+    // hard constraints final pose
+    // match target pose
+    komo.addObjective({1.}, FS_poseDiff, {"drone", "target"}, OT_eq, {1e2});
+    // match target velocity
+    komo.addObjective({1.}, FS_position, {"drone"}, OT_eq, {}, target_v, 1);
+    // match target angular velocity
+    komo.addObjective({1.}, FS_angularVel, {"drone"}, OT_eq, {}, target_w, 1);
+  }
 
   //NE & starting smoothly
   // komo.addObjective({0.}, FS_pose, {"drone"}, OT_eq, {1e2}, {}, 1, +0, +1);
 //  komo.addObjective({0.}, make_shared<F_LinAngVel>(), {"drone"}, OT_eq, {1e2}, {}, 1, +0, +1);
-  komo.addObjective({}, make_shared<F_NewtonEuler>(true), {"drone"}, OT_eq, {1e0}, {}, 2, +3, 2);
+  komo.addObjective({}, make_shared<F_NewtonEuler>(true), {"drone"}, OT_eq, {0.1}, {}, 2, +3, 2);
 
   //force z-aligned
   //obsolete by construction
