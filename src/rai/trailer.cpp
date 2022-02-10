@@ -185,11 +185,122 @@ static double velocity(const arrA &results, int t, double dt) {
   return speed / dt;
 }
 
-int main_trailer() {
+struct TrailerOpt {
+  bool goal_eq = true;
+  bool velocity_bound = true;
+  bool regularize_traj = true;
+  int order = 1;
+  arrA waypoints;
+};
 
+// note: KOMO komo; komo.setModel( ); komo.setTiming should be done before
+void create_komo(KOMO &komo, const TrailerOpt &opt) {
+
+  double action_factor = rai::getParameter<double>("action_factor", 1.0);
   const double L = .4;  // distance  rear-front wheels
   const double d1 = .5; // distance between car centers
+  const double max_velocity = 0.5 * action_factor - 0.01; // m/s
+  const double max_phi = M_PI / 3;
 
+  auto robot_collision = "R_robot_shape";
+  auto car_name = "R_robot";
+  auto goal_name = "GOAL_robot";
+  auto arm_name = "R_arm";
+  auto wheel_name = "R_front_wheel";
+  auto trailer_name = "R_trailer";
+  auto trailer_goal = "GOAL_trailer";
+
+  bool regularize_traj = true;
+  if (regularize_traj && opt.waypoints.N) {
+    double scale_regularization = .1; // try different scales
+    int it = 1;
+    // ways -> N+1
+    // N
+    for (const arr &a : opt.waypoints) // i take from index=1 because we
+                                       // are ignoring the first waypoint.
+    {
+      komo.addObjective(double(it) *
+                            arr{1. / opt.waypoints.N, 1. / opt.waypoints.N},
+                        FS_qItself, {}, OT_sos, {scale_regularization}, a, 0);
+      it++;
+    }
+  }
+
+  komo.addObjective({}, FS_qItself, {arm_name}, OT_sos, {.1}, {}, 1);
+  komo.addObjective({}, FS_qItself, {wheel_name}, OT_sos, {.1}, {}, 1);
+  komo.addObjective({}, make_shared<F_LinAngVel>(), {car_name}, OT_sos, {.1},
+                    {}, 1);
+
+  // add the goal
+  if (!opt.goal_eq) {
+    komo.addObjective({1., 1.}, FS_poseDiff, {car_name, goal_name}, OT_sos,
+                      {10});
+    komo.addObjective({1., 1.}, FS_poseDiff, {trailer_name, trailer_goal},
+                      OT_sos, {10});
+  } else {
+    komo.addObjective({1., 1.}, FS_poseDiff, {car_name, goal_name}, OT_eq,
+                      {1e2});
+    komo.addObjective({1., 1.}, FS_poseDiff, {trailer_name, trailer_goal},
+                      OT_eq, {1e2});
+  }
+
+  // add collisions
+  StringA obstacles;
+  for (auto &frame : komo.world.frames) {
+    std::cout << *frame << std::endl;
+    if (frame->shape && frame->name.startsWith("obs")) {
+      obstacles.append(frame->name);
+    }
+  }
+
+  for (auto &obs : obstacles) {
+    komo.addObjective({}, FS_distance, {robot_collision, obs}, OT_ineq, {1e2});
+    komo.addObjective({}, FS_distance, {trailer_name, obs}, OT_ineq, {1e2});
+  }
+
+  if (opt.order == 1) {
+
+    // Linear velocity First Car
+    komo.addObjective({}, make_shared<UnicycleDynamics>(), {car_name}, OT_eq,
+                      {1e1}, {0}, 1);
+
+    // Rotation First Car
+    komo.addObjective({}, make_shared<FirstCarRotation>(L),
+                      {car_name, wheel_name}, OT_eq, {1e1}, {0}, 1);
+
+    // Rotation Trailer
+    komo.addObjective({}, make_shared<Trailer>(d1), {car_name, arm_name}, OT_eq,
+                      {1e1}, {0}, 1);
+
+    if (opt.velocity_bound)
+    // Bound Linear Velocity
+    {
+      komo.addObjective({}, make_shared<UnicycleVelocity>(), {car_name},
+                        OT_ineq, {1}, {max_velocity}, 1);
+
+      komo.addObjective({}, make_shared<UnicycleVelocity>(), {car_name},
+                        OT_ineq, {-1}, {-max_velocity}, 1);
+      // Bound angle on wheel
+    } else {
+      komo.addObjective({}, make_shared<UnicycleVelocity>(), {car_name}, OT_sos,
+                        {100}, {}, 1);
+      komo.addObjective({}, FS_qItself, {wheel_name}, OT_sos, {100}, {}, 1);
+    }
+
+    komo.addObjective({}, FS_qItself, {wheel_name}, OT_ineq, {1}, {max_phi},
+                      -1);
+
+    komo.addObjective({}, FS_qItself, {wheel_name}, OT_ineq, {-1}, {-max_phi},
+                      -1);
+
+  } else {
+    NIY;
+  }
+};
+
+int main_trailer() {
+
+  double action_factor = rai::getParameter<double>("action_factor", 1.0);
   // path to *.g file
   rai::String model_file =
       rai::getParameter<rai::String>("model", STRING("none"));
@@ -215,14 +326,6 @@ int main_trailer() {
 
   KOMO komo;
   komo.setModel(C, true);
-
-  auto robot_collision = "R_robot_shape";
-  auto car_name = "R_robot";
-  auto goal_name = "GOAL_robot";
-  auto arm_name = "R_arm";
-  auto wheel_name = "R_front_wheel";
-  auto trailer_name = "R_trailer";
-  auto trailer_goal = "GOAL_trailer";
 
   arrA waypoints;
   if (waypoints_file != "none") {
@@ -276,124 +379,14 @@ int main_trailer() {
     N = waypoints.N;
   }
 
-  // Receding Horizon:
-
-
   double dt = 0.1;
   double duration_phase = N * dt;
   komo.setTiming(1, N, duration_phase, order);
 
-  // komo.add_qControlObjective({}, order, .5);
-  // komo.add_qControlObjective({}, order, .5);
-
-  bool regularize_traj = true;
-  if (regularize_traj && waypoints_file != "none") {
-    double scale_regularization = .1; // try different scales
-    int it = 1;
-    // ways -> N+1
-    // N
-    for (const arr &a : waypoints) // i take from index=1 because we
-                                   // are ignoring the first waypoint.
-    {
-      komo.addObjective(double(it) * arr{1. / N, 1. / N}, FS_qItself, {},
-                        OT_sos, {scale_regularization}, a, 0);
-      it++;
-    }
-  }
-
-  komo.addObjective({}, FS_qItself, {arm_name}, OT_sos, {.1}, {}, 1);
-  komo.addObjective({}, FS_qItself, {wheel_name}, OT_sos, {.1}, {}, 1);
-  komo.addObjective({}, make_shared<F_LinAngVel>(), {car_name}, OT_sos, {.1},
-                    {}, 1);
-
-  // komo.addObjective({}, make_shared<F_AngVel>(), {car_name}, OT_sos, {.1},
-  // {},
-  //                   1);
-
-  // komo.addObjective({}, make_shared<F_AngVel>(), {arm_name}, OT_sos, {.1},
-  // {},
-  //                   1);
-
-  // komo.addObjective({}, make_shared<F_AngVel>(), {wheel_name}, OT_sos, {.1},
-  // {},
-  //                   1);
-
-  // komo.addObjective({}, make_shared<UnicycleDynamics>(), {car_name}, OT_eq,
-  //                   {1e1}, {0}, 1);
-
-  double action_factor = rai::getParameter<double>("action_factor", 1.0);
-
-  // add the goal
-  bool goal_as_sos = true;
-  if (goal_as_sos) {
-  komo.addObjective({1., 1.}, FS_poseDiff, {car_name, goal_name}, OT_sos, {10});
-  komo.addObjective({1., 1.}, FS_poseDiff, {trailer_name, trailer_goal}, OT_sos,
-                    {10});
-  }
-  else {
-  komo.addObjective({1., 1.}, FS_poseDiff, {car_name, goal_name}, OT_eq, {1e2});
-  komo.addObjective({1., 1.}, FS_poseDiff, {trailer_name, trailer_goal}, OT_eq,
-                    {1e2});
-  }
-
-  // add collisions
-  StringA obstacles;
-  for (auto &frame : C.frames) {
-    std::cout << *frame << std::endl;
-    if (frame->shape && frame->name.startsWith("obs")) {
-      obstacles.append(frame->name);
-    }
-  }
-
-  for (auto &obs : obstacles) {
-    komo.addObjective({}, FS_distance, {robot_collision, obs}, OT_ineq, {1e2});
-    komo.addObjective({}, FS_distance, {trailer_name, obs}, OT_ineq, {1e2});
-  }
-  bool use_bounds = true;
-
-  const double max_velocity = 0.5 * action_factor - 0.01; // m/s
-  const double max_phi = M_PI / 3;
-  if (order == 1) {
-
-    // Linear velocity First Car
-    komo.addObjective({}, make_shared<UnicycleDynamics>(), {car_name}, OT_eq,
-                      {1e1}, {0}, 1);
-
-    // Rotation First Car
-    komo.addObjective({}, make_shared<FirstCarRotation>(L),
-                      {car_name, wheel_name}, OT_eq, {1e1}, {0}, 1);
-
-    // Rotation Trailer
-    komo.addObjective({}, make_shared<Trailer>(d1), {car_name, arm_name}, OT_eq,
-                      {1e1}, {0}, 1);
-
-    if (use_bounds)
-    // Bound Linear Velocity
-    {
-      komo.addObjective({}, make_shared<UnicycleVelocity>(), {car_name},
-                        OT_ineq, {1}, {max_velocity}, 1);
-
-      komo.addObjective({}, make_shared<UnicycleVelocity>(), {car_name},
-                        OT_ineq, {-1}, {-max_velocity}, 1);
-
-      // Bound angle on wheel
-    } else {
-      komo.addObjective({}, make_shared<UnicycleVelocity>(), {car_name}, OT_sos,
-                        {100}, {}, 1);
-      komo.addObjective({}, FS_qItself, {wheel_name}, OT_sos, {100}, {}, 1);
-    }
-
-    komo.addObjective({}, FS_qItself, {wheel_name}, OT_ineq, {1}, {max_phi},
-                      -1);
-
-    komo.addObjective({}, FS_qItself, {wheel_name}, OT_ineq, {-1}, {-max_phi},
-                      -1);
-
-    // TODO: Wolfgang, do you want bounds on the angular velocity?
-
-  } else {
-    NIY;
-  }
+  TrailerOpt opt;
+  opt.goal_eq = true;
+  opt.velocity_bound = false;
+  create_komo(komo, opt);
 
   komo.run_prepare(0.02); // TODO: is this necessary?
   if (waypoints_file != "none") {
@@ -500,12 +493,106 @@ int main_trailer() {
       });
   double max_vel = it_v0->at(0);
   std::cout << "max vel is " << max_vel << std::endl;
+  const double max_velocity = 0.5 * action_factor - 0.01; // m/s
   std::cout << "bound vel is  " << max_velocity << std::endl;
   double factor = std::abs(max_vel) / max_velocity;
   std::cout << "Factor is " << factor << std::endl;
-  std::cout << "Estimated time " <<  komo.T * dt * factor << std::endl;
+  std::cout << "Estimated time " << komo.T * dt * factor << std::endl;
   std::cout << "Repeat and make sure that it is solvable " << std::endl;
   // const double max_velocity = 0.5 * action_factor - 0.01; // m/s
+
+  // can I solve this with more time?
+
+  arrA newwaypoints = komo.getPath_qAll();
+
+  KOMO komo2;
+  komo2.setModel(C, true);
+
+  double duration_phase2 = 5 * N * dt;
+  komo2.setTiming(1, 5 * N, duration_phase2, order);
+
+  TrailerOpt opt2;
+  opt2.goal_eq = true;
+  opt2.velocity_bound = true;
+  // opt2.regularize_traj = fa;
+  opt2.regularize_traj = true;
+  opt2.waypoints = newwaypoints;
+  create_komo(komo2, opt2);
+  komo2.initWithWaypoints(newwaypoints, N);
+
+  std::cout << "before second optimization" << std::endl;
+  if (display) {
+    komo2.view(true);
+    komo2.view_play(true);
+    // komo2.view_play(true, 1,"vid/car");
+    komo2.plotTrajectory();
+
+    do {
+      cout << '\n' << "Press a key to continue...";
+    } while (std::cin.get() != '\n');
+  }
+
+  komo2.run_prepare(.05);
+  komo2.run();
+
+  if (display) {
+    komo2.view(true);
+    komo2.view_play(true);
+    // komo2.view_play(true, 1,"vid/car");
+    komo2.plotTrajectory();
+
+    do {
+      cout << '\n' << "Press a key to continue...";
+    } while (std::cin.get() != '\n');
+  }
+
+  komo2.reportProblem();
+
+  if (display) {
+    komo2.view(true);
+    komo2.view_play(true);
+    // komo2.view_play(true, 1,"vid/car");
+    komo2.plotTrajectory();
+
+    do {
+      cout << '\n' << "Press a key to continue...";
+    } while (std::cin.get() != '\n');
+  }
+
+  auto report2 = komo2.getReport(display, 0, std::cout);
+  std::cout << "report " << report2 << std::endl;
+  ineq = report2.get<double>("ineq") / komo.T;
+  eq = report2.get<double>("eq") / komo.T;
+  if (ineq > 0.01 || eq > 0.01) {
+    // Optimization failed (constraint violations)
+    std::cout << "Optimization failed (constraint violation)!" << std::endl;
+    return 1;
+  }
+
+
+  arrA results2 = getPath_qAll_with_prefix(komo2, order);
+  std::cout << "(N,T): " << results2.N << " " << komo2.T << std::endl;
+
+  std::vector<std::vector<double>> actions2;
+  for (size_t t = order; t < results2.N; ++t) {
+    auto &v = results2(t);
+    actions2.push_back({velocity(results2, t, dt), v(3)});
+    out << "      - [" << velocity(results2, t, dt) << "," << v(3) << "]"
+        << std::endl;
+  }
+  auto it_v02 =
+      std::max_element(actions2.begin(), actions2.end(), [](auto &v, auto &v2) {
+        return std::abs(v.at(0)) < std::abs(v2.at(0));
+      });
+  double max_vel2 = it_v02->at(0);
+  std::cout << "max vel is " << max_vel2 << std::endl;
+  std::cout << "bound vel is  " << max_velocity << std::endl;
+  double factor2 = std::abs(max_vel2) / max_velocity;
+  std::cout << "Factor is " << factor2 << std::endl;
+  std::cout << "Estimated time " << komo2.T * dt * factor2 << std::endl;
+  std::cout << "Repeat and make sure that it is solvable " << std::endl;
+
+
 
   return 0;
 }
