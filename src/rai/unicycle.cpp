@@ -187,8 +187,8 @@ int main_unicycle(float min_v, float max_v, float min_w, float max_w) {
   double x_max = env["environment"]["max"][0].as<double>();
   double y_max = env["environment"]["max"][1].as<double>();
 
-  komo.addObjective({}, FS_position, {"robot0"}, OT_ineq, {1, 1, 0}, {x_max, y_max, 0}, 1);
-  komo.addObjective({}, FS_position, {"robot0"}, OT_ineq, {-1, -1, 0}, {x_min, y_min, 0}, 1);
+  komo.addObjective({}, FS_position, {"robot0"}, OT_ineq, {1, 1, 0}, {x_max, y_max, 0});
+  komo.addObjective({}, FS_position, {"robot0"}, OT_ineq, {-1, -1, 0}, {x_min, y_min, 0});
 
 
   if (car_order == ONE) {
