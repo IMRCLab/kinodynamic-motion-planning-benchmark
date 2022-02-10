@@ -180,6 +180,17 @@ int main_unicycle(float min_v, float max_v, float min_w, float max_w) {
   // komo.addObjective({1./N, 1./N}, FS_poseDiff, {"robot0", "start0"}, OT_eq,
   // {1e2});
 
+  // Workspace bounds
+  YAML::Node env = YAML::LoadFile((const char *)env_file);
+  double x_min = env["environment"]["min"][0].as<double>();
+  double y_min = env["environment"]["min"][1].as<double>();
+  double x_max = env["environment"]["max"][0].as<double>();
+  double y_max = env["environment"]["max"][1].as<double>();
+
+  komo.addObjective({}, FS_position, {"robot0"}, OT_ineq, {1, 1, 0}, {x_max, y_max, 0}, 1);
+  komo.addObjective({}, FS_position, {"robot0"}, OT_ineq, {-1, -1, 0}, {x_min, y_min, 0}, 1);
+
+
   if (car_order == ONE) {
     // robot dynamics
     komo.addObjective({}, make_shared<UnicycleDynamics>(), {"robot0"}, OT_eq,
@@ -244,7 +255,6 @@ int main_unicycle(float min_v, float max_v, float min_w, float max_w) {
     // NOTE: {0,0} seems to be ok for velocity.
     // But why not {1/N,1/N},as in the position case?
 
-    YAML::Node env = YAML::LoadFile((const char *)env_file);
     double v0 = env["robots"][0]["start"][3].as<double>();
     double w0 = env["robots"][0]["start"][4].as<double>();
 
