@@ -68,7 +68,7 @@ static arrA getPath_qAll_with_prefix(KOMO &komo, int order) {
 // OUT_FILE: Write down the trajectory
 // ONE_EVERY_N: take only one every N waypoints
 
-int main_unicycle() {
+int main_unicycle(float min_v, float max_v, float min_w, float max_w) {
 
   rai::String model_file =
       rai::getParameter<rai::String>("model", STRING("none"));
@@ -85,8 +85,6 @@ int main_unicycle() {
 
   rai::String env_file = rai::getParameter<rai::String>("env", STRING("none"));
 
-  double action_factor = rai::getParameter<double>("action_factor", 1.0);
-  
   enum CAR_ORDER {
     ZERO = 0, // no bounds
     ONE = 1,  // bounds velocity
@@ -182,27 +180,35 @@ int main_unicycle() {
   // komo.addObjective({1./N, 1./N}, FS_poseDiff, {"robot0", "start0"}, OT_eq,
   // {1e2});
 
+  // Workspace bounds
+  YAML::Node env = YAML::LoadFile((const char *)env_file);
+  double x_min = env["environment"]["min"][0].as<double>();
+  double y_min = env["environment"]["min"][1].as<double>();
+  double x_max = env["environment"]["max"][0].as<double>();
+  double y_max = env["environment"]["max"][1].as<double>();
+
+  komo.addObjective({}, FS_position, {"robot0"}, OT_ineq, {1, 1, 0}, {x_max, y_max, 0});
+  komo.addObjective({}, FS_position, {"robot0"}, OT_ineq, {-1, -1, 0}, {x_min, y_min, 0});
+
+
   if (car_order == ONE) {
     // robot dynamics
     komo.addObjective({}, make_shared<UnicycleDynamics>(), {"robot0"}, OT_eq,
                       {1e1}, {0}, 1);
 
-    const double max_velocity = 0.5*action_factor-0.01; // m/s
-    const double max_omega = 0.5*action_factor-0.01; // rad/s
-
     // angular velocity limit
     komo.addObjective({}, make_shared<UnicycleAngularVelocity>(), {"robot0"},
-                      OT_ineq, {1}, {max_omega}, 1);
+                      OT_ineq, {10}, {max_w}, 1);
 
     komo.addObjective({}, make_shared<UnicycleAngularVelocity>(), {"robot0"},
-                      OT_ineq, {-1}, {-max_omega}, 1);
+                      OT_ineq, {-10}, {min_w}, 1);
 
     // velocity limit
     komo.addObjective({}, make_shared<UnicycleVelocity>(), {"robot0"}, OT_ineq,
-                      {1}, {max_velocity}, 1);
+                      {10}, {max_v}, 1);
 
     komo.addObjective({}, make_shared<UnicycleVelocity>(), {"robot0"}, OT_ineq,
-                      {-1}, {-max_velocity}, 1);
+                      {-10}, {min_v}, 1);
   }
   if (car_order == TWO) {
     const double max_acceleration = 0.25 - 0.01; // m s^-2
@@ -249,7 +255,6 @@ int main_unicycle() {
     // NOTE: {0,0} seems to be ok for velocity.
     // But why not {1/N,1/N},as in the position case?
 
-    YAML::Node env = YAML::LoadFile((const char *)env_file);
     double v0 = env["robots"][0]["start"][3].as<double>();
     double w0 = env["robots"][0]["start"][4].as<double>();
 

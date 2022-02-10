@@ -46,7 +46,7 @@ def gen_motion(robot_type, start, goal, is2D):
 		with open(filename_env, 'w') as f:
 			yaml.dump(env, f, Dumper=yaml.CSafeDumper)
 
-		success = run_komo_standalone(filename_env, str(p), 5 * 60, "action_factor: 1.0", search="linear", initialguess="none")
+		success = run_komo_standalone(filename_env, str(p), 5 * 60, "", search="linear", initialguess="none")
 		if not success:
 			return []
 

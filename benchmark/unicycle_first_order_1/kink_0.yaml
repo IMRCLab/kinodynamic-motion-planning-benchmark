@@ -1,0 +1,21 @@
+environment:
+  min: [0.0, 0.0]
+  max: [6.0, 6.0]
+  obstacles:
+    - type: box
+      center: [3.0, 5.2]
+      size: [3.0, 1.6]
+    - type: box
+      center: [3.9, 4.0]
+      size: [1.2, 0.8]
+    - type: box
+      center: [2.1, 3.4]
+      size: [1.2, 0.8]
+    - type: box
+      center: [3.0, 2.0]
+      size: [3.0, 2.0]
+
+robots:
+  - type: unicycle_first_order_1
+    start: [0.5,4.5,1.55] # x,y,theta
+    goal: [5.5,4.0,1.55] # x,y,theta

@@ -318,8 +318,6 @@ int main_trailer() {
   // komo.addObjective({}, make_shared<UnicycleDynamics>(), {car_name}, OT_eq,
   //                   {1e1}, {0}, 1);
 
-  double action_factor = rai::getParameter<double>("action_factor", 1.0);
-
   // add the goal
   komo.addObjective({1., 1.}, FS_poseDiff, {car_name, goal_name}, OT_eq, {1e2});
   komo.addObjective({1., 1.}, FS_poseDiff, {trailer_name, trailer_goal}, OT_eq,
@@ -341,7 +339,7 @@ int main_trailer() {
 
   if (order == 1) {
 
-    const double max_velocity = 0.5 * action_factor - 0.01; // m/s
+    const double max_velocity = 0.5 - 0.01; // m/s
     const double max_phi = M_PI / 3;
 
     // Linear velocity First Car

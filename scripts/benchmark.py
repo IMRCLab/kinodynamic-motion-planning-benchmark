@@ -116,6 +116,8 @@ def main():
 		"car_first_order_with_1_trailers_0/parallelpark_0",
 		"car_first_order_with_1_trailers_0/kink_0",
 		"car_first_order_with_1_trailers_0/bugtrap_0",
+		"unicycle_first_order_1/kink_0",
+		"unicycle_first_order_2/wall_0",
 	]
 	algs = [
 		"sst",

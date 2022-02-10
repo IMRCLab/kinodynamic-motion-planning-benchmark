@@ -52,10 +52,10 @@ def qnormalize(q):
 
 class RobotUnicycleFirstOrder:
 
-	def __init__(self, v_limit, w_limit):
+	def __init__(self, v_min, v_max, w_min, w_max):
 		self.action_desc = ["v [m/s]", "w [rad/s]"]
-		self.min_u = np.array([-v_limit, -w_limit])
-		self.max_u = np.array([v_limit, w_limit])
+		self.min_u = np.array([v_min, -w_min])
+		self.max_u = np.array([v_max, w_max])
 
 		self.state_desc = ["x [m]", "y [m]", "yaw [rad]"]
 		self.min_x = np.array([-np.inf, -np.inf, -np.pi])
@@ -249,7 +249,11 @@ class Quadrotor:
 
 def create_robot(robot_type):
 	if robot_type == "unicycle_first_order_0":
-		return RobotUnicycleFirstOrder(0.5, 0.5)
+		return RobotUnicycleFirstOrder(-0.5, 0.5, -0.5, 0.5)
+	elif robot_type == "unicycle_first_order_1":
+		return RobotUnicycleFirstOrder(0.25, 0.5, -0.5, 0.5)
+	elif robot_type == "unicycle_first_order_2":
+		return RobotUnicycleFirstOrder(0.25, 0.5, -0.25, 0.5)
 	elif robot_type == "unicycle_second_order_0":
 		return RobotUnicycleSecondOrder(0.5, 0.5, 0.25, 0.25)
 	elif robot_type == "car_first_order__0":
