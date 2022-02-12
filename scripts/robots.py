@@ -54,7 +54,7 @@ class RobotUnicycleFirstOrder:
 
 	def __init__(self, v_min, v_max, w_min, w_max):
 		self.action_desc = ["v [m/s]", "w [rad/s]"]
-		self.min_u = np.array([v_min, -w_min])
+		self.min_u = np.array([v_min, w_min])
 		self.max_u = np.array([v_max, w_max])
 
 		self.state_desc = ["x [m]", "y [m]", "yaw [rad]"]
