@@ -178,13 +178,13 @@ class Quadrotor:
 			"vx [m/s]", "vy [m/s]", "vz [m/s]",
 			"w_x", "w_y", "w_z"]
 		min_x = [-np.inf, -np.inf, -np.inf,
-				-0.5, -0.5, -0.5,
 				-1.001, -1.001, -1.001, -1.001,
-				-5, -5, -5]
+				-5, -5, -5,
+				-35, -35, -35]
 		max_x = [np.inf, np.inf, np.inf,
-				0.5, 0.5, 0.5,
 				1.001, 1.001, 1.001, 1.001,
-				5, 5, 5]
+				5, 5, 5,
+				35, 35, 35]
 		self.min_x = np.array(min_x)
 		self.max_x = np.array(max_x)
 

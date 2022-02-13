@@ -96,7 +96,7 @@ public:
   float cost;
 
   size_t idx;
-  std::string name;
+  // std::string name;
   bool disabled;
 };
 
@@ -267,13 +267,19 @@ int main(int argc, char* argv[]) {
     Motion m;
     for (const auto& state : motion["states"]) {
       m.states.push_back(allocAndFillState(si, state));
+      if (!si->isValid(m.states.back())) {
+        std::cout << "State in motion primitive is invalid! Enforcing bounds!\n";
+        si->printState(m.states.back());
+        si->enforceBounds(m.states.back());
+        si->printState(m.states.back());
+      }
     }
     for (const auto& action : motion["actions"]) {
       m.actions.push_back(allocAndFillControl(si, action));
     }
     m.cost = m.actions.size() / 10.0f; // time in seconds
     m.idx = motions.size();
-    m.name = motion["name"].as<std::string>();
+    // m.name = motion["name"].as<std::string>();
 
     // generate collision objects and collision manager
     for (const auto &state : m.states)
@@ -332,12 +338,17 @@ int main(int argc, char* argv[]) {
     auto state_sampler = si->allocStateSampler();
     float sum_delta = 0.0;
     for (size_t k = 0; k < num_samples; ++k) {
-      state_sampler->sampleUniform(fakeMotion.states[0]);
+      // state_sampler->sampleUniform(fakeMotion.states[0]);
+      si->copyState(fakeMotion.states[0], motions[k].states.front());
       robot->setPosition(fakeMotion.states[0], fcl::Vector3f(0, 0, 0));
 
-      T_m->nearestK(&fakeMotion, num_desired_neighbors, neighbors_m);
+      T_m->nearestK(&fakeMotion, num_desired_neighbors+1, neighbors_m);
 
       float max_delta = si->distance(fakeMotion.states[0], neighbors_m.back()->states.front());
+      // std::cout << "k " << k << std::endl;
+      // si->printState(fakeMotion.states[0]);
+      // si->printState(neighbors_m[1]->states.front());
+      // std::cout << "dist " << si->distance(fakeMotion.states[0], neighbors_m.front()->states.front()) << std::endl;
       sum_delta += max_delta;
     }
     float adjusted_delta = (sum_delta / num_samples) * 2;
@@ -468,7 +479,7 @@ int main(int argc, char* argv[]) {
         out << "      # ";
         printState(out, si, node_state);
         out << std::endl;
-        out << "      # motion " << motion.name << " with cost " << motion.cost << std::endl;
+        out << "      # motion " << motion.idx << " with cost " << motion.cost << std::endl;
         // skip last state each
         for (size_t k = 0; k < motion.states.size(); ++k)
         {
@@ -494,7 +505,7 @@ int main(int argc, char* argv[]) {
       for (size_t i = 0; i < result.size() - 1; ++i)
       {
         const auto &motion = motions[result[i+1]->used_motion];
-        out << "      # motion " << motion.name << " with cost " << motion.cost << std::endl;
+        out << "      # motion " << motion.idx << " with cost " << motion.cost << std::endl;
         for (size_t k = 0; k < motion.actions.size(); ++k)
         {
           const auto& action = motion.actions[k];
@@ -518,7 +529,7 @@ int main(int argc, char* argv[]) {
       }
       out << "    motion_stats:" << std::endl;
       for (const auto& kv : motionsCount) {
-        out << "      " << motions[kv.first].name << ": " << kv.second << std::endl;
+        out << "      " << motions[kv.first].idx << ": " << kv.second << std::endl;
       }
 
       // {
@@ -554,6 +565,9 @@ int main(int argc, char* argv[]) {
     current->is_in_open = false;
     open.pop();
 
+    // std::cout << "top " << std::endl;
+    // si->printState(current->state);
+
     // find relevant motions (within delta/2 of current state)
     si->copyState(fakeMotion.states[0], current->state);
     robot->setPosition(fakeMotion.states[0], fcl::Vector3f(0,0,0));
@@ -567,6 +581,7 @@ int main(int argc, char* argv[]) {
       if (motion->disabled) {
         continue;
       }
+      // si->printState(motion->states.front());
 
 #if 1
       fcl::Vector3f computed_offset(0, 0, 0);
@@ -619,6 +634,7 @@ int main(int argc, char* argv[]) {
       if (tentative_fScore > maxCost || !si->satisfiesBounds(tmpState))
       {
         // std::cout << "skip " << tentative_fScore << " " << maxCost << std::endl;
+        // si->printState(tmpState);
         continue;
       }
 
@@ -634,12 +650,12 @@ int main(int argc, char* argv[]) {
         const auto relative_pos = robot->getTransform(state).translation();
         robot->setPosition(tmpState, offset + relative_pos);
 
-        // std::cout << "check";
-        // si->printState(tmpState);
+        std::cout << "check";
+        si->printState(tmpState);
 
         if (!si->isValid(tmpState)) {
           motionValid = false;
-          // std::cout << "invalid";
+          std::cout << "invalid";
           break;
         }
       }
@@ -779,7 +795,7 @@ int main(int argc, char* argv[]) {
     out << "      # ";
     printState(out, si, node_state);
     out << std::endl;
-    out << "      # motion " << motion.name << " with cost " << motion.cost << std::endl;
+    out << "      # motion " << motion.idx << " with cost " << motion.cost << std::endl;
     // skip last state each
     for (size_t k = 0; k < motion.states.size(); ++k)
     {
@@ -805,7 +821,7 @@ int main(int argc, char* argv[]) {
   for (size_t i = 0; i < result.size() - 1; ++i)
   {
     const auto &motion = motions[result[i+1]->used_motion];
-    out << "      # motion " << motion.name << " with cost " << motion.cost << std::endl;
+    out << "      # motion " << motion.idx << " with cost " << motion.cost << std::endl;
     for (size_t k = 0; k < motion.actions.size(); ++k)
     {
       const auto& action = motion.actions[k];
@@ -829,7 +845,7 @@ int main(int argc, char* argv[]) {
   }
   out << "    motion_stats:" << std::endl;
   for (const auto& kv : motionsCount) {
-    out << "      " << motions[kv.first].name << ": " << kv.second << std::endl;
+    out << "      " << motions[kv.first].idx << ": " << kv.second << std::endl;
   }
 
   return 0;

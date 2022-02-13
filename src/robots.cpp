@@ -646,20 +646,20 @@ public:
     space->setPositionBounds(position_bounds);
 
     ob::RealVectorBounds vbounds(3);
-    // vbounds.setLow(-3); // m/s
-    // vbounds.setHigh(3); // m/s
+    vbounds.setLow(-5); // m/s
+    vbounds.setHigh(5); // m/s
 
-    vbounds.setLow(-0.5); // m/s
-    vbounds.setHigh(0.5); // m/s
+    // vbounds.setLow(-0.5); // m/s
+    // vbounds.setHigh(0.5); // m/s
 
     space->setVelocityBounds(vbounds);
 
     ob::RealVectorBounds wbounds(3);
-    // wbounds.setLow(-35); // rad/s
-    // wbounds.setHigh(35); // rad/s
+    wbounds.setLow(-35); // rad/s
+    wbounds.setHigh(35); // rad/s
 
-    wbounds.setLow(-5); // rad/s
-    wbounds.setHigh(5); // rad/s
+    // wbounds.setLow(-5); // rad/s
+    // wbounds.setHigh(5); // rad/s
     space->setAngularVelocityBounds(wbounds);
 
     // create a control space
@@ -680,7 +680,7 @@ public:
     // cbounds.setHigh(0, 4.0 * 12.0 / 1000.0 * g_);
 
     // version to control force
-    cbounds.setLow(3.0 / 1000.0 * g_);
+    cbounds.setLow(0);//3.0 / 1000.0 * g_);
     cbounds.setHigh(12.0 / 1000.0 * g_);
     // const float t2w = 3.0; // thrust-to-weight
     // cbounds.setHigh(t2w * mass_ / 4.0 * g_);

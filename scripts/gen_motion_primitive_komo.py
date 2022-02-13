@@ -1,7 +1,7 @@
 import numpy as np
 # from scp import SCP
 from main_komo import run_komo_standalone
-from utils_motion_primitives import sort_primitives, visualize_motion
+from utils_motion_primitives import sort_primitives, visualize_motion, plot_stats
 import robots
 import yaml
 import multiprocessing as mp
@@ -105,7 +105,7 @@ def gen_motion(robot_type, start, goal, is2D):
 			start_k = split[idx-1]
 			k = split[idx]
 			# shift states
-			states[start_k:, 0:2] -= states[start_k, 0:2]
+			states[start_k:, 0:3] -= states[start_k, 0:3]
 			# create motion
 			motion = dict()
 			motion['x0'] = states[start_k].tolist()
@@ -157,17 +157,18 @@ def main():
 	tmp_path.mkdir(parents=True, exist_ok=True)
 
 	def add_motions(additional_motions):
-		motions.extend(additional_motions)
-		print("Generated {} motions".format(len(motions)), flush=True)
-		# Store intermediate results, in case we need to interupt the generation
-		i = 0
-		while True:
-			p = tmp_path / "{}.yaml".format(i)
-			if not p.exists():
-				with open(p, 'w') as f:
-					yaml.dump(additional_motions, f)
-				break
-			i = i + 1
+		if len(additional_motions) > 0:
+			motions.extend(additional_motions)
+			print("Generated {} motions".format(len(motions)), flush=True)
+			# Store intermediate results, in case we need to interupt the generation
+			i = 0
+			while True:
+				p = tmp_path / "{}.yaml".format(i)
+				if not p.exists():
+					with open(p, 'w') as f:
+						yaml.dump(additional_motions, f)
+					break
+				i = i + 1
 
 	# if args.N <= 10:
 	if False:
@@ -206,6 +207,9 @@ def main():
 	# visualize the top 100
 	for k, m in enumerate(sorted_motions[0:100]):
 		visualize_motion(m, args.robot_type, tmp_path / "top_{}.mp4".format(k))
+
+	# plot statistics
+	plot_stats(sorted_motions, args.robot_type, tmp_path / "stats.pdf")
 
 
 if __name__ == '__main__':

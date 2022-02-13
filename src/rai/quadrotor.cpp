@@ -198,6 +198,14 @@ int main_quadrotor() {
     komo.addObjective({1.}, FS_angularVel, {"drone"}, OT_eq, {}, target_w, 1);
   }
 
+  // limit velocity
+  komo.addObjective({2./N, 1}, FS_position, {"drone"}, OT_ineq, {1}, {5,5,5}, 1);
+  komo.addObjective({2./N, 1}, FS_position, {"drone"}, OT_ineq, {-1}, {-5,-5,-5}, 1);
+  // limit angular velocity
+  komo.addObjective({2./N, 1}, FS_angularVel, {"drone"}, OT_ineq, {0.1}, {35,35,35}, 1);
+  komo.addObjective({2./N, 1}, FS_angularVel, {"drone"}, OT_ineq, {-0.1}, {-35,-35,-35}, 1);
+
+
   //NE & starting smoothly
   // komo.addObjective({0.}, FS_pose, {"drone"}, OT_eq, {1e2}, {}, 1, +0, +1);
 //  komo.addObjective({0.}, make_shared<F_LinAngVel>(), {"drone"}, OT_eq, {1e2}, {}, 1, +0, +1);

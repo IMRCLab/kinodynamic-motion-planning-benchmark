@@ -103,6 +103,7 @@ def run_dbastar(filename_env, folder, timelimit, cfg, opt_alg="scp", motions_sta
 
 	with tempfile.TemporaryDirectory() as tmpdirname:
 		p = Path(tmpdirname)
+		# p = Path("../results/tmp")
 		filename_motions = p / "motions.yaml"
 
 		sol = 0
