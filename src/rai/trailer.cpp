@@ -282,7 +282,7 @@ int main_trailer() {
   // komo.add_qControlObjective({}, order, .5);
   // komo.add_qControlObjective({}, order, .5);
 
-  bool regularize_traj = true;
+  bool regularize_traj = false;
   if (regularize_traj && waypoints_file != "none") {
     double scale_regularization = .1; // try different scales
     int it = 1;
@@ -319,9 +319,9 @@ int main_trailer() {
   //                   {1e1}, {0}, 1);
 
   // add the goal
-  komo.addObjective({1., 1.}, FS_poseDiff, {car_name, goal_name}, OT_eq, {1e2});
-  komo.addObjective({1., 1.}, FS_poseDiff, {trailer_name, trailer_goal}, OT_eq,
-                    {1e2});
+  komo.addObjective({1., 1.}, FS_poseDiff, {car_name, goal_name}, OT_sos, {1e1});
+  komo.addObjective({1., 1.}, FS_poseDiff, {trailer_name, trailer_goal}, OT_sos,
+                    {1e1});
 
   // add collisions
   StringA obstacles;
@@ -438,11 +438,6 @@ int main_trailer() {
   std::cout << "report " << report << std::endl;
   double ineq = report.get<double>("ineq") / komo.T;
   double eq = report.get<double>("eq") / komo.T;
-  if (ineq > 0.01 || eq > 0.01) {
-    // Optimization failed (constraint violations)
-    std::cout << "Optimization failed (constraint violation)!" << std::endl;
-    return 1;
-  }
 
   // write the results.
   arrA results = getPath_qAll_with_prefix(komo, order);
@@ -469,6 +464,12 @@ int main_trailer() {
     auto &v = results(t);
     out << "      - [" << velocity(results, t, dt) << "," << v(3) << "]"
         << std::endl;
+  }
+
+  if (ineq > 0.01 || eq > 0.01) {
+    // Optimization failed (constraint violations)
+    std::cout << "Optimization failed (constraint violation)!" << std::endl;
+    return 1;
   }
 
   return 0;

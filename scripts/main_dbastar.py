@@ -206,6 +206,13 @@ def run_dbastar(filename_env, folder, timelimit, cfg, opt_alg="scp", motions_sta
 					else:
 						raise Exception("Unknown optimization algorithm {}!".format(opt_alg))
 
+					# extract solution, independent of success
+					opt_motions = checker.extract_valid_motions(filename_env, filename_result_opt)
+					print("Extracted {} motions from optimization".format(len(opt_motions)))
+					motions.extend(opt_motions)
+
+					checker_success = checker.check(filename_env, filename_result_opt)
+					success = success and checker_success
 					if not success:
 						# print("Optimization failed; Reducing delta")
 						# delta = delta * 0.9

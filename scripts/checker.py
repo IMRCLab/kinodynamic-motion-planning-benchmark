@@ -9,6 +9,71 @@ from motionplanningutils import CollisionChecker, RobotHelper
 import robots
 
 
+def extract_valid_motions(filename_env: str, filename_result: str):
+	# read robot type
+	with open(filename_env) as f:
+		env = yaml.safe_load(f)
+
+	robot_node = env["robots"][0]
+	robot = robots.create_robot(robot_node["type"])
+
+	def check_array(a, b):
+		return np.allclose(a, b, rtol=0.01, atol=1e-2)
+
+	# load result
+	with open(filename_result) as f:
+		result = yaml.safe_load(f)
+
+	states = np.array(result["result"][0]["states"])
+	actions = np.array(result["result"][0]["actions"])
+
+	# dynamics
+	T = states.shape[0]
+	valid = np.full((T,), True)
+
+	for t in range(T-1):
+		state_desired = robot.step(states[t], actions[t])
+		valid[t] &= check_array(states[t+1], state_desired)
+	# state limits
+	for t in range(T):
+		if (states[t] > robot.max_x).any() or (states[t] < robot.min_x).any():
+			valid[t] = False
+	# action limits
+	for t in range(T-1):
+		if (actions[t] > robot.max_u + 1e-2).any() or (actions[t] < robot.min_u - 1e-2).any():
+			valid[t] = False
+
+	motions = []
+	start_t = 0
+	eucledian_distance = 0
+
+	for t in range(T):
+		if t > 0:
+			eucledian_distance += np.linalg.norm(states[t-1][0:2] - states[t][0:2])
+		if not valid[t] or t == T-1 or eucledian_distance > 0.5:
+			if t - start_t > 5:
+				# shift states
+				states[start_t:, 0:2] -= states[start_t, 0:2]
+				# create motion
+				motion = dict()
+				motion['x0'] = states[start_t].tolist()
+				motion['xf'] = states[t].tolist()
+				motion['states'] = states[start_t:t+1].tolist()
+				motion['actions'] = actions[start_t:t].tolist()
+				motion['T'] = t-start_t
+				motions.append(motion)
+				start_t = t
+				eucledian_distance = 0
+		if not valid[t]:
+			start_t = t
+			eucledian_distance = 0
+
+	print(motions)
+
+	return motions
+	
+
+
 def check(filename_env: str, filename_result: str, file = None, expected_T=None) -> bool:
 
 	with open(filename_env) as f:
@@ -30,7 +95,7 @@ def check(filename_env: str, filename_result: str, file = None, expected_T=None)
 	actions = np.array(result["result"][0]["actions"])
 
 	def check_array(a, b, msg):
-		success = np.allclose(a, b, rtol=0.01, atol=1e-3)
+		success = np.allclose(a, b, rtol=0.01, atol=1e-2)
 		if not success:
 			print("{} Is: {} Should: {} Delta: {}".format(msg, a, b, a-b), file=file)
 		return success

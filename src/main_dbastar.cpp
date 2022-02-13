@@ -96,7 +96,7 @@ public:
   float cost;
 
   size_t idx;
-  std::string name;
+  // std::string name;
   bool disabled;
 };
 
@@ -273,7 +273,7 @@ int main(int argc, char* argv[]) {
     }
     m.cost = m.actions.size() / 10.0f; // time in seconds
     m.idx = motions.size();
-    m.name = motion["name"].as<std::string>();
+    // m.name = motion["name"].as<std::string>();
 
     // generate collision objects and collision manager
     for (const auto &state : m.states)
@@ -468,7 +468,7 @@ int main(int argc, char* argv[]) {
         out << "      # ";
         printState(out, si, node_state);
         out << std::endl;
-        out << "      # motion " << motion.name << " with cost " << motion.cost << std::endl;
+        out << "      # motion " << motion.idx << " with cost " << motion.cost << std::endl;
         // skip last state each
         for (size_t k = 0; k < motion.states.size(); ++k)
         {
@@ -494,7 +494,7 @@ int main(int argc, char* argv[]) {
       for (size_t i = 0; i < result.size() - 1; ++i)
       {
         const auto &motion = motions[result[i+1]->used_motion];
-        out << "      # motion " << motion.name << " with cost " << motion.cost << std::endl;
+        out << "      # motion " << motion.idx << " with cost " << motion.cost << std::endl;
         for (size_t k = 0; k < motion.actions.size(); ++k)
         {
           const auto& action = motion.actions[k];
@@ -518,7 +518,7 @@ int main(int argc, char* argv[]) {
       }
       out << "    motion_stats:" << std::endl;
       for (const auto& kv : motionsCount) {
-        out << "      " << motions[kv.first].name << ": " << kv.second << std::endl;
+        out << "      " << motions[kv.first].idx << ": " << kv.second << std::endl;
       }
 
       // {
@@ -779,7 +779,7 @@ int main(int argc, char* argv[]) {
     out << "      # ";
     printState(out, si, node_state);
     out << std::endl;
-    out << "      # motion " << motion.name << " with cost " << motion.cost << std::endl;
+    out << "      # motion " << motion.idx << " with cost " << motion.cost << std::endl;
     // skip last state each
     for (size_t k = 0; k < motion.states.size(); ++k)
     {
@@ -805,7 +805,7 @@ int main(int argc, char* argv[]) {
   for (size_t i = 0; i < result.size() - 1; ++i)
   {
     const auto &motion = motions[result[i+1]->used_motion];
-    out << "      # motion " << motion.name << " with cost " << motion.cost << std::endl;
+    out << "      # motion " << motion.idx << " with cost " << motion.cost << std::endl;
     for (size_t k = 0; k < motion.actions.size(); ++k)
     {
       const auto& action = motion.actions[k];
@@ -829,7 +829,7 @@ int main(int argc, char* argv[]) {
   }
   out << "    motion_stats:" << std::endl;
   for (const auto& kv : motionsCount) {
-    out << "      " << motions[kv.first].name << ": " << kv.second << std::endl;
+    out << "      " << motions[kv.first].idx << ": " << kv.second << std::endl;
   }
 
   return 0;
