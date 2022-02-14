@@ -49,27 +49,28 @@ def gen_motion(robot_type, start, goal, is2D):
 		filename_result = p / "result_komo.yaml"
 
 		# success = run_komo_standalone(filename_env, str(p), 5 * 60, "", search="linear", initialguess="none")
-		use_T = np.random.randint(20, 100)
-		success = run_komo_standalone(filename_env, str(p), 5 * 60, "soft_goal: 1", search="none", initialguess="none", use_T=use_T)
-		print("SDF", success)
-		if success:
-			print("PPPPSDF")
-			# read the result
-			with open(filename_result) as f:
-				result = yaml.load(f, Loader=yaml.CSafeLoader)
-			xf = result["result"][0]["states"][-1]
-			# update env
-			env["robots"][0]["goal"] = xf
-			with open(filename_env, 'w') as f:
-				yaml.dump(env, f, Dumper=yaml.CSafeDumper)
-			# try to find a solution with lower T
-			success = run_komo_standalone(filename_env, str(p), 5 * 60, "", search="linearReverse", initialguess="none", T_range_abs=[1, use_T-1])
-		else:
+		# use_T = np.random.randint(20, 100)
+		# success = run_komo_standalone(filename_env, str(p), 5 * 60, "soft_goal: 1", search="none", initialguess="none", use_T=use_T)
+		success = run_komo_standalone(filename_env, str(p), 5 * 60, "plan_recovery: 1", search="binarySearch", initialguess="none")
+		# print("SDF", success)
+		# if success:
+		# 	print("PPPPSDF")
+		# 	# read the result
+		# 	with open(filename_result) as f:
+		# 		result = yaml.load(f, Loader=yaml.CSafeLoader)
+		# 	xf = result["result"][0]["states"][-1]
+		# 	# update env
+		# 	env["robots"][0]["goal"] = xf
+		# 	with open(filename_env, 'w') as f:
+		# 		yaml.dump(env, f, Dumper=yaml.CSafeDumper)
+		# 	# try to find a solution with lower T
+		# 	success = run_komo_standalone(filename_env, str(p), 5 * 60, "", search="linearReverse", initialguess="none", T_range_abs=[1, use_T-1])
+		# else:
+		# 	return []
+
+
+		if not success:
 			return []
-
-
-		# if not success:
-			# return []
 
 		# checker.check(str(filename_env), str(filename_result))
 
@@ -90,7 +91,7 @@ def gen_motion(robot_type, start, goal, is2D):
 		eucledian_distance = 0
 		split = [0]
 		for k in range(1, len(states)):
-			eucledian_distance += np.linalg.norm(states[k-1][0:2] - states[k][0:2])
+			eucledian_distance += np.linalg.norm(states[k-1][0:3] - states[k][0:3])
 			if eucledian_distance >= 0.5:
 				split.append(k)
 				eucledian_distance = 0
@@ -136,6 +137,7 @@ def gen_random_motion(robot_type):
 		start[2] = 0
 	# TODO:
 	# goal[0:3] = np.random.uniform(-0.25, 0.25, 3).tolist()
+	goal = [0,0,0, 0,0,0,1, 0,0,0, 0,0,0]
 	motions =  gen_motion(robot_type, start, goal, rh.is2D())
 	for motion in motions:
 		motion['distance'] = rh.distance(motion['x0'], motion['xf'])

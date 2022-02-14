@@ -181,30 +181,30 @@ def main() -> None:
 	tmp_path = Path("../results/tmp/motions/{}".format(args.robot_type))
 	tmp_path.mkdir(parents=True, exist_ok=True)
 
-	# motions = merge_motions(tmp_path, 10000)
+	motions = merge_motions(tmp_path, 1000)
 
-	# # # Hack to fix bad quadrotor motions (z wasn't shifted)
-	# # for m in motions:
-	# # 	x0 = list(m["states"][0])
-	# # 	for s in m["states"]:
-	# # 		s[0] -= x0[0]
-	# # 		s[1] -= x0[1]
-	# # 		s[2] -= x0[2]
-	# # 	m["x0"] = list(m["states"][0])
-	# # 	m["xf"] = list(m["states"][-1])
+	# # Hack to fix bad quadrotor motions (z wasn't shifted)
+	# for m in motions:
+	# 	x0 = list(m["states"][0])
+	# 	for s in m["states"]:
+	# 		s[0] -= x0[0]
+	# 		s[1] -= x0[1]
+	# 		s[2] -= x0[2]
+	# 	m["x0"] = list(m["states"][0])
+	# 	m["xf"] = list(m["states"][-1])
 
-	# # now sort the primitives
-	# # sorted_motions = motions #sort_primitives(motions, args.robot_type)
+	# now sort the primitives
+	sorted_motions = motions
 	# sorted_motions = sort_primitives(motions, args.robot_type, 1000)
-	# with open(out_path / "{}_sorted.yaml".format(args.robot_type), 'w') as file:
-	# 	yaml.dump(sorted_motions, file, Dumper=yaml.CSafeDumper)
+	with open(out_path / "{}_sorted.yaml".format(args.robot_type), 'w') as file:
+		yaml.dump(sorted_motions, file, Dumper=yaml.CSafeDumper)
 
-	# # visualize the top 100
-	# for k, m in enumerate(sorted_motions[0:100]):
-	# 	visualize_motion(m, args.robot_type, tmp_path / "top_{}.mp4".format(k))
+	# visualize the top 100
+	for k, m in enumerate(sorted_motions[0:10]):
+		visualize_motion(m, args.robot_type, tmp_path / "top_{}.mp4".format(k))
 
-	with open(out_path / "{}_sorted.yaml".format(args.robot_type)) as f:
-		sorted_motions = yaml.load(f, Loader=yaml.CSafeLoader)
+	# with open(out_path / "{}_sorted.yaml".format(args.robot_type)) as f:
+	# 	sorted_motions = yaml.load(f, Loader=yaml.CSafeLoader)
 
 	print(len(sorted_motions))
 

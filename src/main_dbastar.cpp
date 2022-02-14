@@ -263,17 +263,21 @@ int main(int argc, char* argv[]) {
   // load motion primitives
   YAML::Node motions_node = YAML::LoadFile(motionsFile);
   std::vector<Motion> motions;
+  size_t num_states = 0;
+  size_t num_invalid_states = 0;
   for (const auto& motion : motions_node) {
     Motion m;
     for (const auto& state : motion["states"]) {
       m.states.push_back(allocAndFillState(si, state));
       if (!si->isValid(m.states.back())) {
-        std::cout << "State in motion primitive is invalid! Enforcing bounds!\n";
-        si->printState(m.states.back());
+        // std::cout << "State in motion primitive is invalid! Enforcing bounds!\n";
+        // si->printState(m.states.back());
         si->enforceBounds(m.states.back());
-        si->printState(m.states.back());
+        ++num_invalid_states;
+        // si->printState(m.states.back());
       }
     }
+    num_states += m.states.size();
     for (const auto& action : motion["actions"]) {
       m.actions.push_back(allocAndFillControl(si, action));
     }
@@ -301,6 +305,7 @@ int main(int argc, char* argv[]) {
 
     motions.push_back(m);
   }
+  std::cout << "Info: " << num_invalid_states << " states are invalid of " << num_states << std::endl;
 
   auto rng = std::default_random_engine{};
   std::shuffle(std::begin(motions), std::end(motions), rng);
