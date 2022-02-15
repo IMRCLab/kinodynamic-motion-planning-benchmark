@@ -132,6 +132,7 @@ add_executable(main_rai
   src/rai/car_utils.cpp
   src/rai/unicycle.cpp
   src/rai/trailer.cpp
+  src/rai/solvers.cpp
 )
 target_link_libraries(main_rai
   rai

@@ -12,7 +12,7 @@ arm(arm_pivot) {joint:hingeZ, shape:marker, size:[.2]}
 
 arm_(arm) { Q:<t(.25 0 0)> , shape:ssBox, size:[.5 .05 .5 0.01] color:[.3 .3 .3 .8] }
 
-trailer(arm_) { Q:<t(.2 0 0)> , shape:ssBox, size:[.3 .25 .5 0.01] color:[.3 .3 .3 .5] }
+trailer(arm_) { Q:<t(.2 0 0)> , shape:ssBox, size:[.3 .25 .5 0.01] color:[.3 .3 .8 .5] }
 
 pivot_arm2(arm){ Q:<t(.5 0 0)> }
 
