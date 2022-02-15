@@ -304,7 +304,7 @@ std::pair<bool, arrA> iterative_komo_solver(
   // lb = 3 = ub = 5
   while (!finished && horizon * it < int(waypoints.N) && it < it_max &&
          feasible) {
-    if (!project) {
+    if (!project || it == 0) {
       lb = it * horizon;
     } else {
       auto it = std::min_element(
