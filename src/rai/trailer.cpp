@@ -342,7 +342,35 @@ void create_komo_trailer(KOMO &komo, const TrailerOpt &opt) {
 // returns pair { feasible, waypoints }
 // waypoints: biggest feasible starting trajectory
 
+void write_results_tailer_1(const arrA &results, const char *out_file) {
+
+  std::ofstream out(out_file);
+  // out << std::setprecision(std::numeric_limits<double>::digits10 + 1);
+  out << "result:" << std::endl;
+  out << "  - states:" << std::endl;
+  for (size_t t = order - 1; t < results.N; ++t) {
+    auto &v = results(t);
+    // v(2) = theta0
+    // v(4) = theta1q
+    // theta1v = theta1q - 90 + theta0
+    out << "      - [" << v(0) << "," << v(1) << ","
+        << std::remainder(v(2), 2 * M_PI) << ","
+        << std::remainder(v(4) - M_PI / 2 + v(2), 2 * M_PI) << "]" << std::endl;
+  }
+  out << "    actions:" << std::endl;
+  std::vector<std::vector<double>> actions;
+  for (size_t t = order; t < results.N; ++t) {
+    auto &v = results(t);
+    actions.push_back({velocity(results, t, dt), v(3)});
+    out << "      - [" << velocity(results, t, dt) << "," << v(3) << "]"
+        << std::endl;
+  }
+};
+
 int main_trailer() {
+
+  arrA results;
+  bool feasible;
 
   rnd.clockSeed();
   double action_factor = rai::getParameter<double>("action_factor", 1.0);
@@ -535,45 +563,13 @@ int main_trailer() {
       } while (std::cin.get() != '\n');
     }
 
-    auto report = komo.getReport(display, 0, std::cout);
-    std::cout << "report " << report << std::endl;
-    double ineq = report.get<double>("ineq") / komo.T;
-    double eq = report.get<double>("eq") / komo.T;
-    if (ineq > 0.01 || eq > 0.01) {
-      // Optimization failed (constraint violations)
-      std::cout << "Optimization failed (constraint violation)!" << std::endl;
-      return 1;
-    }
+    feasible = is_feasible(komo);
+    results = getPath_qAll_with_prefix(komo, order);
 
-    // write the results.
-    arrA results = getPath_qAll_with_prefix(komo, order);
     std::cout << "results: " << std::endl;
     std::cout << C.getFrameNames() << std::endl;
     std::cout << results << std::endl;
     std::cout << "(N,T): " << results.N << " " << komo.T << std::endl;
-
-    std::ofstream out(out_file);
-    // out << std::setprecision(std::numeric_limits<double>::digits10 + 1);
-    out << "result:" << std::endl;
-    out << "  - states:" << std::endl;
-    for (size_t t = order - 1; t < results.N; ++t) {
-      auto &v = results(t);
-      // v(2) = theta0
-      // v(4) = theta1q
-      // theta1v = theta1q - 90 + theta0
-      out << "      - [" << v(0) << "," << v(1) << ","
-          << std::remainder(v(2), 2 * M_PI) << ","
-          << std::remainder(v(4) - M_PI / 2 + v(2), 2 * M_PI) << "]"
-          << std::endl;
-    }
-    out << "    actions:" << std::endl;
-    std::vector<std::vector<double>> actions;
-    for (size_t t = order; t < results.N; ++t) {
-      auto &v = results(t);
-      actions.push_back({velocity(results, t, dt), v(3)});
-      out << "      - [" << velocity(results, t, dt) << "," << v(3) << "]"
-          << std::endl;
-    }
   }
 
   if (time_trick) {
@@ -690,12 +686,17 @@ int main_trailer() {
     std::cout << out.second.N << std::endl;
   }
 
-  int horizon = rai::getParameter<int>("num_h",100);
+  int horizon = rai::getParameter<int>("num_h", 100);
   if (horizon_mode) {
     // TODO: last waypoint should be goal, right?
     arr start;
     KOMO komoh, komo_hard;
-
+    arr prefix = C.getJointState();
+    // get the waypint
+    // TODO: Get the waypoint from somewhere. Important,
+    throw std::runtime_error(
+        "we need the goal as the last waypoints. Be careful with SO2");
+    waypoints(-1) = arr{};
     {
       komoh.setModel(C, true);
       komoh.setTiming(1, horizon, dt * horizon, 1);
@@ -726,7 +727,7 @@ int main_trailer() {
                               set_start, [&](auto &komo, const auto &arr) {
                                 return set_goal(C, komo, arr, horizon);
                               });
-    bool feasible = out_iterative.first;
+    feasible = out_iterative.first;
     std::cout << "feasible " << feasible << std::endl;
     std::cout << "NUM waypoints " << out_iterative.second.N << std::endl;
     std::cout << "result " << out_iterative.second << std::endl;
@@ -734,20 +735,38 @@ int main_trailer() {
       std::cout << a << std::endl;
     }
 
-    // if (display) {
-    //   for (auto &a : out_iterative.second) {
-    //     C.setJointState(a);
-    //     C.watch(true);
-    //   }
-    // }
+    bool double_check = true;
+    if (feasible && double_check) {
+      {
+        std::cout << "DOUBLE CHECK SOLUTION OF ITERATIVE" << std::endl;
+        auto ways = out_iterative.second;
+        KOMO komoh;
+        C.setJointState(start);
+        komoh.setModel(C, true);
+        komoh.setTiming(1, ways.N, dt * ways.N, 1);
+        TrailerOpt opth;
+        opth.goal_eq = true;
+        opth.velocity_bound = true;
+        create_komo_trailer(komoh, opth);
+        komoh.initWithWaypoints(ways, ways.N);
+        komoh.run_prepare(0);
+        komoh.view(true);
+        komoh.view_play(true);
+        komoh.plotTrajectory();
 
-    if (feasible) {
-      return 0;
-    } else {
-      return 1;
+        do {
+          cout << '\n' << "Press a key to continue...";
+        } while (std::cin.get() != '\n');
+      }
+
+      auto sparse = komoh.nlp_SparseNonFactored();
+      arr phi;
+      sparse->evaluate(phi, NoArr, komoh.x);
+      CHECK(is_feasible(komoh), "");
     }
 
-    // lets create a full komo object to check the velocity.
+    results.append(prefix);
+    results.append(out_iterative.second);
   }
 
   // this will do horizon, and then a binary search with the last N steps.
@@ -827,7 +846,7 @@ int main_trailer() {
                                   opt.velocity_bound = true;
                                   create_komo_trailer(komo, opt);
                                 });
-    bool feasible = out.first;
+    feasible = out.first;
     std::cout << "out.first " << feasible << std::endl;
     std::cout << "out.second.N " << out.second.N << std::endl;
 
@@ -845,15 +864,14 @@ int main_trailer() {
         C.watch(true);
       }
     }
-
-    if (feasible) {
-      return 0;
-    } else {
-      return 1;
-    }
   }
 
-  return 0;
+  if (feasible) {
+    write_results_tailer_1(results, out_file);
+    return 0;
+  } else {
+    return 1;
+  }
 
   // TODO: test everything here and in bugtrap.
   // Binary Search
