@@ -369,8 +369,8 @@ void write_results_tailer_1(const arrA &results, const char *out_file) {
 
 int main_trailer() {
 
-  arrA results;
-  bool feasible;
+  arrA results = {};
+  bool feasible = false;
 
   rnd.clockSeed();
   double action_factor = rai::getParameter<double>("action_factor", 1.0);
@@ -694,9 +694,6 @@ int main_trailer() {
     arr prefix = C.getJointState();
     // get the waypint
     // TODO: Get the waypoint from somewhere. Important,
-    throw std::runtime_error(
-        "we need the goal as the last waypoints. Be careful with SO2");
-    waypoints(-1) = arr{};
     {
       komoh.setModel(C, true);
       komoh.setTiming(1, horizon, dt * horizon, 1);
@@ -722,11 +719,11 @@ int main_trailer() {
     std::cout << "calling solver" << std::endl;
     komoh.run_prepare(0);
     // komoh.view(true);
-    auto out_iterative =
-        iterative_komo_solver(waypoints, horizon, komoh, komo_hard, start,
-                              set_start, [&](auto &komo, const auto &arr) {
-                                return set_goal(C, komo, arr, horizon);
-                              });
+    auto out_iterative = iterative_komo_solver(
+        waypoints, horizon, komoh, komo_hard, start, set_start,
+        [&](auto &komo, const auto &arr, bool true_goal) {
+          return set_goal(C, komo, arr, horizon, true_goal);
+        });
     feasible = out_iterative.first;
     std::cout << "feasible " << feasible << std::endl;
     std::cout << "NUM waypoints " << out_iterative.second.N << std::endl;
@@ -804,8 +801,8 @@ int main_trailer() {
     }
     auto out_iterative =
         iterative_komo_solver(waypoints, horizon, komoh, komo_hard, start,
-                              set_start, [&](auto &komo, const auto &arr) {
-                                return set_goal(C, komo, arr, horizon);
+                              set_start, [&](auto &komo, const auto &arr, bool true_goal) {
+                                return set_goal(C, komo, arr, horizon, true_goal);
                               });
     std::cout << "feasible " << out_iterative.first << std::endl;
     std::cout << "NUM waypoints " << out_iterative.second.N << std::endl;

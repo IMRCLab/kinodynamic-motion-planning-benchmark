@@ -162,7 +162,8 @@ void update_reg(KOMO &komo) {
   // komo.view(true);
 }
 
-void set_goal(rai::Configuration &Cref, KOMO &komo, const arr &s, int horizon) {
+void set_goal(rai::Configuration &Cref, KOMO &komo, const arr &s, int horizon,
+              bool use_true_goal) {
 
   // compute the configuration of
 
@@ -187,6 +188,11 @@ void set_goal(rai::Configuration &Cref, KOMO &komo, const arr &s, int horizon) {
   std::cout << "Xcar " << Xcar << std::endl;
   std::cout << "Xtrailer " << Xtrailer << std::endl;
 
+  if (use_true_goal) {
+    Xcar = Cref[goal_name]->ensure_X().getArr7d();
+    Xarm = Cref[arm_goal]->ensure_X().getArr7d();
+  }
+
   for (int i = -1; i < horizon; i++) {
     komo_setConfiguration_X_name(komo, i, Xcar.reshape(1, -1), goal_name);
   }
@@ -203,7 +209,6 @@ void set_goal(rai::Configuration &Cref, KOMO &komo, const arr &s, int horizon) {
   //                                trailer_goal);
   // }
   // komo.view(true);
-
 }
 
 std::pair<bool, arrA> komo_binary_search_time(
@@ -278,7 +283,7 @@ std::pair<bool, arrA> komo_binary_search_time(
 std::pair<bool, arrA> iterative_komo_solver(
     const arrA &waypoints, int horizon, KOMO &komo, KOMO &komo_hard,
     const arr &start, std::function<void(KOMO &, const arr &)> set_start,
-    std::function<void(KOMO &, const arr &)> set_goal,
+    std::function<void(KOMO &, const arr &, bool)> set_goal,
     std::function<double(const arr &, const arr &)> distance_fun) {
 
   arrA results_out;
@@ -324,15 +329,9 @@ std::pair<bool, arrA> iterative_komo_solver(
     }
 
     arrA ways = waypoints({lb, ub});
-    if (finished) {
-      std::cout << "waypoints" << std::endl;
-      for (auto &w : ways) {
-        std::cout << w << std::endl;
-      }
-    }
 
     set_start(*kptr, pos_start);
-    set_goal(*kptr, pos_goal);
+    set_goal(*kptr, pos_goal, finished);
 
     std::cout << "lb, ub " << lb << " " << ub << std::endl;
 
@@ -362,14 +361,10 @@ std::pair<bool, arrA> iterative_komo_solver(
       kptr->view_play(true);
     }
 
-    auto report = kptr->getReport(false, 0, std::cout);
-    std::cout << "report " << report << std::endl;
-    double ineq = report.get<double>("ineq") / kptr->T;
-    double eq = report.get<double>("eq") / kptr->T;
-    if (ineq > 0.01 || eq > 0.01) {
+    feasible = is_feasible(*kptr);
+    if (!feasible) {
       // Optimization failed (constraint violations)
       std::cout << "Optimization failed (constraint violation)!" << std::endl;
-      feasible = false;
     } else {
       arrA sol = kptr->getPath_qAll();
       results_out.append(sol);

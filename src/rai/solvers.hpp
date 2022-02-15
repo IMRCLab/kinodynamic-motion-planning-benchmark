@@ -95,7 +95,7 @@ void set_start(KOMO &komo, const arr &s);
 
 void update_reg(KOMO &komo);
 
-void set_goal(rai::Configuration &Cref, KOMO &komo, const arr &s, int horizon);
+void set_goal(rai::Configuration &Cref, KOMO &komo, const arr &s, int horizon, bool use_true_goal);
 
 std::pair<bool, arrA> komo_binary_search_time(
     const arrA &waypoints, int min_waypoints, int max_waypoints, int increment,
@@ -104,6 +104,6 @@ std::pair<bool, arrA> komo_binary_search_time(
 std::pair<bool, arrA> iterative_komo_solver(
     const arrA &waypoints, int horizon, KOMO &komo, KOMO &komo_hard,
     const arr &start, std::function<void(KOMO &, const arr &)> set_start,
-    std::function<void(KOMO &, const arr &)> set_goal,
+    std::function<void(KOMO &, const arr &, bool )> set_goal,
     std::function<double(const arr &, const arr &)> distance_fun =
         euclideanDistance<double>);
