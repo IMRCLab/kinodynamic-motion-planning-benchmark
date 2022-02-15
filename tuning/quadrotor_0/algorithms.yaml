@@ -17,3 +17,11 @@ dbAstar-komo:
       opt/verbose: 4
       KOMO/verbose: 3
       opt/stopTolerance: 0.0001
+
+komo:
+  default:
+    # Config file (rai.cfg) that will be used
+    rai_cfg: |
+      opt/verbose: 4
+      KOMO/verbose: 3
+      opt/stopTolerance: 0.0001

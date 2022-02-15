@@ -134,7 +134,7 @@ def run_komo_standalone(filename_env, folder, timelimit, cfg = "",
 		elif "trailer" in robot_type:
 			robot_type_guess = "car_first_order_with_1_trailers_0"
 		elif "quadrotor" in robot_type:
-			robot_type_guess = "TODO" # define a generic SE(3) type
+			robot_type_guess = "none" # define a generic SE(3) type
 		else:
 			raise "No known robot_type!"
 
@@ -160,7 +160,7 @@ def run_komo_standalone(filename_env, folder, timelimit, cfg = "",
 		else:
 			filename_initial_guess = initialguess
 
-		if filename_initial_guess != "none":
+		if filename_initial_guess != "none" and robot_type_guess != "none":
 			utils_sol_file = UtilsSolutionFile(robot_type_guess)
 			utils_sol_file.load(filename_initial_guess)
 
@@ -232,7 +232,7 @@ def run_komo_standalone(filename_env, folder, timelimit, cfg = "",
 
 					print("TRYING ", T, min_T, max_T)
 
-				if filename_initial_guess != "none":
+				if filename_initial_guess != "none" and robot_type_guess != "none":
 					filename_modified_guess = p / "guess_{}.yaml".format(T)
 					utils_sol_file.save_rescaled(filename_modified_guess, T)
 				else:
@@ -271,7 +271,7 @@ def run_komo_standalone(filename_env, folder, timelimit, cfg = "",
 			
 		if best_T is not None:
 			shutil.copyfile(p / "result_{}.yaml".format(best_T), filename_result)
-			if filename_initial_guess != "none":
+			if filename_initial_guess != "none" and robot_type_guess != "none":
 				shutil.copyfile(p / "guess_{}.yaml".format(best_T), filename_initial_guess)
 			return True
 		return False

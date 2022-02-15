@@ -155,7 +155,7 @@ float heuristic(std::shared_ptr<Robot> robot, const ob::State *s, const ob::Stat
   const auto current_pos = robot->getTransform(s).translation();
   const auto goal_pos = robot->getTransform(g).translation();
   float dist = (current_pos - goal_pos).norm();
-  const float max_vel = 0.5; // m/s
+  const float max_vel = 8.67;//0.5; // m/s
   const float time = dist * max_vel;
   return time;
 }

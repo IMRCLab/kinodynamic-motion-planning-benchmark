@@ -94,8 +94,9 @@ int main_quadrotor() {
 
   rai::String model_file =
       rai::getParameter<rai::String>("model", STRING("none"));
-  // rai::String waypoints_file =
-  //     rai::getParameter<rai::String>("waypoints", STRING("none"));
+
+  rai::String waypoints_file =
+      rai::getParameter<rai::String>("waypoints", STRING("none"));
 
   int N = rai::getParameter<int>("N", -1);
 
@@ -141,8 +142,49 @@ int main_quadrotor() {
   const float force_to_torque = 0.006; // force-to-torque ratio
   const float max_force_per_motor = 12. / 1000. * 9.81;
 
-  KOMO komo;
   const double dt = 0.01;
+
+  arrA waypoints;
+  if (waypoints_file != "none") {
+    // load initial guess
+    YAML::Node env = YAML::LoadFile((const char *)waypoints_file);
+    const auto &node = env["result"][0];
+    size_t num_states = node["states"].size();
+
+    // the initial guess has states: x,y,z, qx, qy, qz, qw, vx, vy, vz, wx, wy, wz 
+    //                  and actions: f1, f2, f3, f4
+    // KOMO uses the states: f1, f2, f3, f4, x, y, z, qw, qx, qy, qz
+
+    for (size_t i = 1; i < num_states; ++i) {
+      const auto &state = node["states"][i];
+
+      auto x = state[0].as<double>();
+      auto y = state[1].as<double>();
+      auto z = state[2].as<double>();
+      auto qx = state[3].as<double>();
+      auto qy = state[4].as<double>();
+      auto qz = state[5].as<double>();
+      auto qw = state[6].as<double>();
+
+      double f1 = 0;
+      double f2 = 0;
+      double f3 = 0;
+      double f4 = 0;
+
+      if (node["actions"]) {
+        const auto &action = env["result"][0]["actions"][i - 1];
+        f1 = action[0].as<double>();
+        f2 = action[1].as<double>();
+        f3 = action[2].as<double>();
+        f4 = action[3].as<double>();
+      }
+      // waypoints.append({f1, f2, f3, f4, x, y, z, qw, qx, qy, qz});
+      waypoints.append({x, y, z, qw, qx, qy, qz, -f1*dt, -f2*dt, -f3*dt, -f4*dt});
+    }
+    N = waypoints.N;
+  }
+
+  KOMO komo;
   double duration_phase = N * dt;
   komo.setTiming(1, N, duration_phase, /*order*/2);
 
@@ -253,7 +295,25 @@ int main_quadrotor() {
   // bounded control effort
   //obsolete by limits
 
-  komo.reportProblem();
+  // komo.reportProblem();
+  if (waypoints_file != "none") {
+    komo.initWithWaypoints(waypoints, N);
+
+    bool report_before = true;
+    if (report_before) {
+      std::cout << "report before solve" << std::endl;
+      auto sparse = komo.nlp_SparseNonFactored();
+      arr phi;
+      sparse->evaluate(phi, NoArr, komo.x);
+
+      komo.reportProblem();
+      rai::Graph report = komo.getReport(display, 0, std::cout);
+      std::cout << "report " << report << std::endl;
+      if (display) {
+        komo.view_play(true, 0.3);
+      }
+    }
+  }
 
 //  komo.animateOptimization=1;
   komo.optimize(0.);
