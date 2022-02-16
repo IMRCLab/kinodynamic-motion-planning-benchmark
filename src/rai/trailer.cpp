@@ -207,6 +207,8 @@ int main_trailer() {
   rai::String out_file =
       rai::getParameter<rai::String>("out", STRING("out.yaml"));
 
+  rai::String env_file = rai::getParameter<rai::String>("env", STRING("none"));
+
   rai::Configuration C;
   C.addFile(model_file);
 
@@ -282,7 +284,7 @@ int main_trailer() {
   // komo.add_qControlObjective({}, order, .5);
   // komo.add_qControlObjective({}, order, .5);
 
-  bool regularize_traj = true;
+  bool regularize_traj = false;
   if (regularize_traj && waypoints_file != "none") {
     double scale_regularization = .1; // try different scales
     int it = 1;
@@ -337,38 +339,56 @@ int main_trailer() {
     komo.addObjective({}, FS_distance, {trailer_name, obs}, OT_ineq, {1e2});
   }
 
+  // Workspace bounds
+  YAML::Node env = YAML::LoadFile((const char *)env_file);
+  double x_min = env["environment"]["min"][0].as<double>();
+  double y_min = env["environment"]["min"][1].as<double>();
+  double x_max = env["environment"]["max"][0].as<double>();
+  double y_max = env["environment"]["max"][1].as<double>();
+
+  komo.addObjective({}, FS_position, {car_name}, OT_ineq, {1, 1, 0}, {x_max, y_max, 0});
+  komo.addObjective({}, FS_position, {car_name}, OT_ineq, {-1, -1, 0}, {x_min, y_min, 0});
+
   if (order == 1) {
 
-    const double max_velocity = 0.5 - 0.01; // m/s
+    const double min_velocity = -0.1; // m/s
+    const double max_velocity = 0.5; // m/s
+    const double min_phi = -M_PI / 3;
     const double max_phi = M_PI / 3;
+    const double min_theta1quim = M_PI / 2. - M_PI / 4.;
+    const double max_theta1quim = M_PI / 2. + M_PI / 4.;
 
     // Linear velocity First Car
     komo.addObjective({}, make_shared<UnicycleDynamics>(), {car_name}, OT_eq,
-                      {1e1}, {0}, 1);
+                      {10}, {0}, 1);
 
     // Rotation First Car
     komo.addObjective({}, make_shared<FirstCarRotation>(L),
-                      {car_name, wheel_name}, OT_eq, {1e1}, {0}, 1);
+                      {car_name, wheel_name}, OT_eq, {10}, {0}, 1);
 
     // Rotation Trailer
     komo.addObjective({}, make_shared<Trailer>(d1), {car_name, arm_name}, OT_eq,
-                      {1e1}, {0}, 1);
+                      {10}, {0}, 1);
 
     // Bound Linear Velocity
     komo.addObjective({}, make_shared<UnicycleVelocity>(), {car_name}, OT_ineq,
-                      {1}, {max_velocity}, 1);
+                      {10}, {max_velocity}, 1);
 
     komo.addObjective({}, make_shared<UnicycleVelocity>(), {car_name}, OT_ineq,
-                      {-1}, {-max_velocity}, 1);
+                      {-10}, {min_velocity}, 1);
 
     // Bound angle on wheel
-    komo.addObjective({}, FS_qItself, {wheel_name}, OT_ineq, {1}, {max_phi},
+    komo.addObjective({}, FS_qItself, {wheel_name}, OT_ineq, {10}, {max_phi},
                       -1);
 
-    komo.addObjective({}, FS_qItself, {wheel_name}, OT_ineq, {-1}, {-max_phi},
+    komo.addObjective({}, FS_qItself, {wheel_name}, OT_ineq, {-10}, {min_phi},
                       -1);
 
-    // TODO: Wolfgang, do you want bounds on the angular velocity?
+    // bound angle between car and trailer
+    komo.addObjective({}, FS_qItself, {arm_name}, OT_ineq, {10},
+                      {max_theta1quim}, 0);
+    komo.addObjective({}, FS_qItself, {arm_name}, OT_ineq, {-10},
+                      {min_theta1quim}, 0);
 
   } else {
     NIY;

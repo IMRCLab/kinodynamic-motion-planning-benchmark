@@ -55,8 +55,8 @@ def check(filename_env: str, filename_result: str, file = None, expected_T=None)
 		success &= check_array(states[t+1], state_desired, "Wrong dynamics at t={}".format(t))
 	# state limits
 	for t in range(T):
-		if (states[t] > robot.max_x).any() or (states[t] < robot.min_x).any():
-			print("State outside bounds at t={} ({})".format(t, states[t]), file=file)
+		if not robot.valid_state(states[t]):
+			print("State invalid at t={} ({})".format(t, states[t]), file=file)
 			success = False
 	# action limits
 	for t in range(T-1):

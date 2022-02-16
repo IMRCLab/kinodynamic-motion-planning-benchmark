@@ -9,6 +9,8 @@ sst:
     rai_cfg: |
       opt/verbose: 4
       KOMO/verbose: 3
+  parallelpark_0:
+    goal_epsilon: 0.1
 
 dbAstar-komo:
   default:

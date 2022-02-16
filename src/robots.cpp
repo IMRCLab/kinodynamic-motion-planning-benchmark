@@ -369,8 +369,10 @@ class RobotCarFirstOrderWithTrailers : public Robot
 public:
   RobotCarFirstOrderWithTrailers(
       const ompl::base::RealVectorBounds &position_bounds,
-      float v_limit,
-      float phi_limit,
+      float v_min,
+      float v_max,
+      float phi_min,
+      float phi_max,
       float L,
       const std::vector<float>& hitch_lengths)
       : Robot()
@@ -391,10 +393,10 @@ public:
 
     // set the bounds for the control space
     ob::RealVectorBounds cbounds(2);
-    cbounds.setLow(0, -v_limit);
-    cbounds.setHigh(0, v_limit);
-    cbounds.setLow(1, -phi_limit);
-    cbounds.setHigh(1, phi_limit);
+    cbounds.setLow(0, v_min);
+    cbounds.setHigh(0, v_max);
+    cbounds.setLow(1, phi_min);
+    cbounds.setHigh(1, phi_max);
 
     cspace->setBounds(cbounds);
 
@@ -547,6 +549,32 @@ protected:
     }
 
     ~StateSpace() override = default;
+
+    bool satisfiesBounds(const ob::State *state) const override
+    {
+      auto stateTyped = state->as<StateSpace::StateType>();
+      double th0 = stateTyped->getTheta(0);
+      double th1 = stateTyped->getTheta(1);
+      double delta = th1 - th0;
+      double angular_change = atan2(sin(delta), cos(delta));
+      if (fabs(angular_change) > M_PI / 4) {
+        return false;
+      }
+      return ob::CompoundStateSpace::satisfiesBounds(state);
+    }
+
+    void enforceBounds(ob::State *state) const override
+    {
+      auto stateTyped = state->as<StateSpace::StateType>();
+      double th0 = stateTyped->getTheta(0);
+      double th1 = stateTyped->getTheta(1);
+      double delta = th1 - th0;
+      double angular_change = atan2(sin(delta), cos(delta));
+      if (fabs(angular_change) > M_PI / 4) {
+        stateTyped->setTheta(1, th0 + angular_change / fabs(angular_change) * M_PI/4);
+      }
+      ob::CompoundStateSpace::enforceBounds(state);
+    }
 
     void setPositionBounds(const ob::RealVectorBounds &bounds)
     {
@@ -1070,8 +1098,10 @@ std::shared_ptr<Robot> create_robot(
   {
     robot.reset(new RobotCarFirstOrderWithTrailers(
         positionBounds,
-        /*v_limit*/ 0.5 /*m/s*/,
-        /*phi_limit*/ M_PI/3.0f /*rad*/,
+        /*v_min*/ -0.1 /*m/s*/,
+        /*v_max*/ 0.5 /*m/s*/,
+        /*phi_min*/ -M_PI/3.0f /*rad*/,
+        /*phi_max*/ M_PI/3.0f /*rad*/,
         /*L*/ 0.4 /*m*/,
         /*hitch_lengths*/ {} /*m*/
         ));
@@ -1080,8 +1110,10 @@ std::shared_ptr<Robot> create_robot(
   {
     robot.reset(new RobotCarFirstOrderWithTrailers(
         positionBounds,
-        /*v_limit*/ 0.5 /*m/s*/,
-        /*phi_limit*/ M_PI / 3.0f /*rad*/,
+        /*v_min*/ -0.1 /*m/s*/,
+        /*v_max*/ 0.5 /*m/s*/,
+        /*phi_min*/ -M_PI/3.0f /*rad*/,
+        /*phi_max*/ M_PI/3.0f /*rad*/,
         /*L*/ 0.4 /*m*/,
         /*hitch_lengths*/ {0.5} /*m*/
         ));
