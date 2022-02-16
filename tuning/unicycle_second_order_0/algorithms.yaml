@@ -6,6 +6,9 @@ sst:
     pruning_radius: 0.5  # delta_s in paper
     propagation_step_size: 0.1 #s
     control_duration: [5, 10] # multiples of step size
+    rai_cfg: |
+      opt/verbose: 4
+      KOMO/verbose: 3
   parallelpark_0:
     goal_epsilon: 0.1
 

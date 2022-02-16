@@ -6,8 +6,9 @@ sst:
     pruning_radius: 0.4  # delta_s in paper
     propagation_step_size: 0.1 #s
     control_duration: [1, 10] # multiples of step size
-  # parallelpark_0:
-    # goal_epsilon: 0.05
+    rai_cfg: |
+      opt/verbose: 4
+      KOMO/verbose: 3
 
 dbAstar-komo:
   default:
