@@ -323,6 +323,13 @@ void create_komo_trailer(KOMO &komo, const TrailerOpt &opt) {
     komo.addObjective({}, FS_qItself, {wheel_name}, OT_ineq, {-1}, {-max_phi},
                       -1);
 
+    double max_theta1quim = M_PI / 2. + M_PI / 4.;
+    double min_theta1quim = M_PI / 2. - M_PI / 4.;
+    komo.addObjective({}, FS_qItself, {arm_name}, OT_ineq, {1},
+                      {max_theta1quim}, 0);
+    komo.addObjective({}, FS_qItself, {arm_name}, OT_ineq, {-1},
+                      {min_theta1quim}, 0);
+
   } else {
     NIY;
   }
@@ -799,11 +806,11 @@ int main_trailer() {
     if (display) {
       komoh.view(true);
     }
-    auto out_iterative =
-        iterative_komo_solver(waypoints, horizon, komoh, komo_hard, start,
-                              set_start, [&](auto &komo, const auto &arr, bool true_goal) {
-                                return set_goal(C, komo, arr, horizon, true_goal);
-                              });
+    auto out_iterative = iterative_komo_solver(
+        waypoints, horizon, komoh, komo_hard, start, set_start,
+        [&](auto &komo, const auto &arr, bool true_goal) {
+          return set_goal(C, komo, arr, horizon, true_goal);
+        });
     std::cout << "feasible " << out_iterative.first << std::endl;
     std::cout << "NUM waypoints " << out_iterative.second.N << std::endl;
     std::cout << "result " << out_iterative.second << std::endl;
