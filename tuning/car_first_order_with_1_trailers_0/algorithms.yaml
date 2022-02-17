@@ -15,7 +15,7 @@ sst:
 dbAstar-komo:
   default:
     add_primitives_per_iteration: 250
-    desired_branching_factor: 16
+    desired_branching_factor: 8
     suboptimality_bound: 1.0
     # Config file (rai.cfg) that will be used
     rai_cfg: |
