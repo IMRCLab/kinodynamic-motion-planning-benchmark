@@ -42,6 +42,9 @@ def main():
 				report.load_stat_files(alg, stat_files)
 		report.add_time_cost_plot()
 		report.add_initial_time_cost_plot()
+		report.add_success_rate_plot()
+		report.add_boxplot_initial_time_plot()
+		report.add_boxplot_initial_cost_plot()
 
 	report.close()
 

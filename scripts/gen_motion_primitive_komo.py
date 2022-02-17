@@ -28,8 +28,8 @@ def gen_motion(robot_type, start, goal):
 			p = Path(tmpdirname)
 		env = {
 			"environment":{
-				"min": [-2, -2],
-				"max": [2, 2],
+				"min": [-5, -5],
+				"max": [5, 5],
 				"obstacles": []
 			},
 			"robots": [{
@@ -130,17 +130,18 @@ def main():
 	tmp_path.mkdir(parents=True, exist_ok=True)
 
 	def add_motions(additional_motions):
-		motions.extend(additional_motions)
-		print("Generated {} motions".format(len(motions)), flush=True)
-		# Store intermediate results, in case we need to interupt the generation
-		i = 0
-		while True:
-			p = tmp_path / "{}.yaml".format(i)
-			if not p.exists():
-				with open(p, 'w') as f:
-					yaml.dump(additional_motions, f)
-				break
-			i = i + 1
+		if len(additional_motions) > 0:
+			motions.extend(additional_motions)
+			print("Generated {} motions".format(len(motions)), flush=True)
+			# Store intermediate results, in case we need to interupt the generation
+			i = 0
+			while True:
+				p = tmp_path / "{}.yaml".format(i)
+				if not p.exists():
+					with open(p, 'w') as f:
+						yaml.dump(additional_motions, f)
+					break
+				i = i + 1
 
 	# if args.N <= 10:
 	if False:

@@ -332,7 +332,9 @@ int main(int argc, char* argv[]) {
     auto state_sampler = si->allocStateSampler();
     float sum_delta = 0.0;
     for (size_t k = 0; k < num_samples; ++k) {
-      state_sampler->sampleUniform(fakeMotion.states[0]);
+      do {
+        state_sampler->sampleUniform(fakeMotion.states[0]);
+      } while(!si->satisfiesBounds(fakeMotion.states[0]));
       robot->setPosition(fakeMotion.states[0], fcl::Vector3f(0, 0, 0));
 
       T_m->nearestK(&fakeMotion, num_desired_neighbors, neighbors_m);

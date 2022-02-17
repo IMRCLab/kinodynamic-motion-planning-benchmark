@@ -133,7 +133,7 @@ def main():
 	for instance in instances:
 		for alg in algs:
 			# sbpl only supports unicycleFirstOrder
-			if alg == "sbpl" and "unicycleFirstOrder" not in instance:
+			if alg == "sbpl" and "unicycle_first_order_0" not in instance:
 				continue
 			for trial in range(trials):
 				tasks.append(ExecutionTask(instance, alg, trial, timelimit))

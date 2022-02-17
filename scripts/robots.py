@@ -4,6 +4,9 @@ from jax import lax
 def normalize_angle(angle):
 	return (angle + np.pi) % (2 * np.pi) - np.pi
 
+def diff_angle(angle1, angle2):
+	return np.arctan2(np.sin(angle1-angle2), np.cos(angle1-angle2))
+
 # Quaternion routines adapted from rowan to use autograd
 
 
@@ -61,6 +64,10 @@ class RobotUnicycleFirstOrder:
 		self.min_x = np.array([-np.inf, -np.inf, -np.pi])
 		self.max_x = np.array([np.inf, np.inf, np.pi])
 
+	def valid_state(self, state):
+		return 	(state >= self.min_x).all() and \
+				(state <= self.max_x).all()
+
 	def step(self, state, action):
 		dt = 0.1
 		x, y, yaw = state
@@ -87,6 +94,10 @@ class RobotUnicycleSecondOrder:
 		self.min_x = np.array([-np.inf, -np.inf, -np.pi, -v_limit, -w_limit])
 		self.max_x = np.array([np.inf, np.inf, np.pi, v_limit, w_limit])
 
+	def valid_state(self, state):
+		return 	(state >= self.min_x).all() and \
+				(state <= self.max_x).all()
+
 	def step(self, state, action):
 		dt = 0.1
 		x, y, yaw, v, w = state
@@ -112,10 +123,10 @@ class RobotUnicycleSecondOrder:
 # LaValle book, Equation 13.19
 class RobotCarFirstOrderWithTrailers:
 
-	def __init__(self, v_limit, phi_limit, L, hitch_lengths):
+	def __init__(self, v_min, v_max, phi_min, phi_max, L, hitch_lengths):
 		self.action_desc = ["v [m/s]", "steering angle [rad]"]
-		self.min_u = np.array([-v_limit, -phi_limit])
-		self.max_u = np.array([v_limit, phi_limit])
+		self.min_u = np.array([v_min, phi_min])
+		self.max_u = np.array([v_max, phi_max])
 
 		self.state_desc = ["x [m]", "y [m]", "yaw [rad]"]
 		min_x = [-np.inf, -np.inf, -np.pi]
@@ -129,6 +140,14 @@ class RobotCarFirstOrderWithTrailers:
 
 		self.L = L
 		self.hitch_lengths = hitch_lengths
+
+	def valid_state(self, state):
+		# check if theta0 and theta1 have a reasonable relative angle
+		dangle = diff_angle(state[2], state[3])
+
+		return 	(state >= self.min_x).all() and \
+				(state <= self.max_x).all() and \
+				np.absolute(dangle) <= np.pi / 4
 
 	def step(self, state, action):
 		""""
@@ -216,6 +235,10 @@ class Quadrotor:
 
 		self.dt = 0.01
 
+	def valid_state(self, state):
+		return 	(state >= self.min_x).all() and \
+				(state <= self.max_x).all()
+
 	def step(self, state, action):
 		# compute next state
 		state = np.asarray(state)
@@ -257,9 +280,9 @@ def create_robot(robot_type):
 	elif robot_type == "unicycle_second_order_0":
 		return RobotUnicycleSecondOrder(0.5, 0.5, 0.25, 0.25)
 	elif robot_type == "car_first_order__0":
-		return RobotCarFirstOrderWithTrailers(0.5, np.pi/3, 0.4, [])
+		return RobotCarFirstOrderWithTrailers(-0.1, 0.5, -np.pi/3, np.pi/3, 0.4, [])
 	elif robot_type == "car_first_order_with_1_trailers_0":
-		return RobotCarFirstOrderWithTrailers(0.5, np.pi/3, 0.4, [0.5])
+		return RobotCarFirstOrderWithTrailers(-0.1, 0.5, -np.pi/3, np.pi/3, 0.4, [0.5])
 	elif robot_type == "quadrotor_0":
 		return Quadrotor()
 	else:
