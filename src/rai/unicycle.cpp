@@ -85,6 +85,9 @@ int main_unicycle(float min_v, float max_v, float min_w, float max_w) {
 
   rai::String env_file = rai::getParameter<rai::String>("env", STRING("none"));
 
+  rai::String mode = rai::getParameter<rai::String>("mode", STRING("default"));
+
+
   enum CAR_ORDER {
     ZERO = 0, // no bounds
     ONE = 1,  // bounds velocity
@@ -174,8 +177,10 @@ int main_unicycle(float min_v, float max_v, float min_w, float max_w) {
   }
 
   // I assume names robot0 and goal0 in the .g file
-  komo.addObjective({1., 1.}, FS_poseDiff, {"robot0", "goal0"}, OT_eq, {1e2});
-  // komo.addObjective({1., 1.}, FS_poseDiff, {"robot0", "goal0"}, OT_sos, {1e1});
+  if (mode != "dynamics_check") {
+    komo.addObjective({1., 1.}, FS_poseDiff, {"robot0", "goal0"}, OT_eq, {1e2});
+    // komo.addObjective({1., 1.}, FS_poseDiff, {"robot0", "goal0"}, OT_sos, {1e1});
+  }
 
   // Note: if you want position constraints on the first variable.
   // komo.addObjective({1./N, 1./N}, FS_poseDiff, {"robot0", "start0"}, OT_eq,
@@ -315,6 +320,19 @@ int main_unicycle(float min_v, float max_v, float min_w, float max_w) {
       std::cout << "report " << report << std::endl;
       if (display) {
         komo.view_play(true, 0.3);
+      }
+
+      if (mode == "dynamics_check") {
+        double ineq = report.get<double>("ineq") / komo.T;
+        double eq = report.get<double>("eq") / komo.T;
+
+        if (ineq <= 1e-5 && eq <= 1e-3) {
+          return 0;
+        }
+        std::cout << "Dynamics check failed! Rerun with animate=1 and display=1 to debug! ineq="
+                  << ineq << " eq=" 
+                  << eq << std::endl;
+        return 1;
       }
     }
   }

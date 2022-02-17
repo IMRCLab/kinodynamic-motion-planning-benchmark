@@ -74,11 +74,11 @@ class RobotUnicycleFirstOrder:
 		x, y, yaw = state
 		v, w = action
 
-		x_next = x + v * np.cos(yaw) * self.dt
-		y_next = y + v * np.sin(yaw) * self.dt
 		yaw_next = yaw + w * self.dt
-		# normalize yaw between -pi and pi
 		yaw_next_norm = (yaw_next + np.pi) % (2 * np.pi) - np.pi
+		x_next = x + v * np.cos(yaw_next_norm) * self.dt
+		y_next = y + v * np.sin(yaw_next_norm) * self.dt
+		# normalize yaw between -pi and pi
 
 		state_next = np.array([x_next, y_next, yaw_next_norm])
 		return state_next
