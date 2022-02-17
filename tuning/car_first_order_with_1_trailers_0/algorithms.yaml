@@ -2,14 +2,16 @@ sst:
   default:
     goal_epsilon: 0.2
     goal_bias: 0.05
-    selection_radius: 0.8 # delta_BN in paper
-    pruning_radius: 0.4  # delta_s in paper
+    selection_radius: 0.2 # delta_BN in paper
+    pruning_radius: 0.1  # delta_s in paper
     propagation_step_size: 0.1 #s
     control_duration: [1, 10] # multiples of step size
     rai_cfg: |
       opt/verbose: 4
       KOMO/verbose: 3
   parallelpark_0:
+    selection_radius: 0.04 # delta_BN in paper
+    pruning_radius: 0.02  # delta_s in paper
     goal_epsilon: 0.1
 
 dbAstar-komo:
