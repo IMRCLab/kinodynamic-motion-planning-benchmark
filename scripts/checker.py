@@ -36,7 +36,7 @@ def extract_valid_motions(filename_env: str, filename_result: str):
 		valid[t] &= check_array(states[t+1], state_desired)
 	# state limits
 	for t in range(T):
-		if (states[t] > robot.max_x).any() or (states[t] < robot.min_x).any():
+		if not robot.valid_state(states[t]):
 			valid[t] = False
 	# action limits
 	for t in range(T-1):
@@ -57,18 +57,16 @@ def extract_valid_motions(filename_env: str, filename_result: str):
 				# create motion
 				motion = dict()
 				motion['x0'] = states[start_t].tolist()
-				motion['xf'] = states[t].tolist()
-				motion['states'] = states[start_t:t+1].tolist()
-				motion['actions'] = actions[start_t:t].tolist()
-				motion['T'] = t-start_t
+				motion['xf'] = states[t-1].tolist()
+				motion['states'] = states[start_t:t].tolist()
+				motion['actions'] = actions[start_t:t-1].tolist()
+				motion['T'] = t-start_t-1
 				motions.append(motion)
 				start_t = t
 				eucledian_distance = 0
 		if not valid[t]:
 			start_t = t
 			eucledian_distance = 0
-
-	print(motions)
 
 	return motions
 	

@@ -321,9 +321,12 @@ int main_trailer() {
   //                   {1e1}, {0}, 1);
 
   // add the goal
-  komo.addObjective({1., 1.}, FS_poseDiff, {car_name, goal_name}, OT_sos, {1e1});
-  komo.addObjective({1., 1.}, FS_poseDiff, {trailer_name, trailer_goal}, OT_sos,
-                    {1e1});
+  komo.addObjective({1., 1.}, FS_poseDiff, {car_name, goal_name}, OT_eq, {1e2});
+  komo.addObjective({1., 1.}, FS_poseDiff, {trailer_name, trailer_goal}, OT_eq,
+                    {1e2});
+  // komo.addObjective({1., 1.}, FS_poseDiff, {car_name, goal_name}, OT_sos, {1e1});
+  // komo.addObjective({1., 1.}, FS_poseDiff, {trailer_name, trailer_goal}, OT_sos,
+  //                  {1e1});
 
   // add collisions
   StringA obstacles;

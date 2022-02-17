@@ -174,7 +174,8 @@ int main_unicycle(float min_v, float max_v, float min_w, float max_w) {
   }
 
   // I assume names robot0 and goal0 in the .g file
-  komo.addObjective({1., 1.}, FS_poseDiff, {"robot0", "goal0"}, OT_sos, {1e1});
+  komo.addObjective({1., 1.}, FS_poseDiff, {"robot0", "goal0"}, OT_eq, {1e2});
+  // komo.addObjective({1., 1.}, FS_poseDiff, {"robot0", "goal0"}, OT_sos, {1e1});
 
   // Note: if you want position constraints on the first variable.
   // komo.addObjective({1./N, 1./N}, FS_poseDiff, {"robot0", "start0"}, OT_eq,
@@ -270,9 +271,13 @@ int main_unicycle(float min_v, float max_v, float min_w, float max_w) {
     double wf = env["robots"][0]["goal"][4].as<double>();
 
     komo.addObjective({1., 1.}, make_shared<UnicycleVelocity>(), {"robot0"},
-                      OT_sos, {10}, {vf}, 1);
-    komo.addObjective({1., 1.}, FS_qItself, {"robot0"}, OT_sos, {0, 0, 10},
+                      OT_eq, {10}, {vf}, 1);
+    komo.addObjective({1., 1.}, FS_qItself, {"robot0"}, OT_eq, {0, 0, 10},
                       {0, 0, wf}, 1);
+    // komo.addObjective({1., 1.}, make_shared<UnicycleVelocity>(), {"robot0"},
+    //                   OT_sos, {10}, {vf}, 1);
+    // komo.addObjective({1., 1.}, FS_qItself, {"robot0"}, OT_sos, {0, 0, 10},
+    //                   {0, 0, wf}, 1);
 
     // komo.addObjective({1./N,1./N}, FS_qItself, {"robot0"}, OT_eq,
     // {10},{},1); komo.addObjective({1,1}, FS_qItself, {"robot0"}, OT_eq,

@@ -39,7 +39,7 @@ def _run_komo(filename_g, filename_env, filename_initial_guess, filename_result,
 			break
 	if result.returncode != 0:
 		print("KOMO failed")
-		# return False
+		return False
 	else:
 		return True
 
