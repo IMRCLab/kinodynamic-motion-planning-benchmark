@@ -163,11 +163,11 @@ class RobotCarFirstOrderWithTrailers:
 		x, y, yaw = state[0], state[1], state[2]
 		v, phi = action
 
-		x_next = x + v * np.cos(yaw) * self.dt
-		y_next = y + v * np.sin(yaw) * self.dt
 		yaw_next = yaw + v / self.L * np.tan(phi) * self.dt
 		# normalize yaw between -pi and pi
 		yaw_next_norm = normalize_angle(yaw_next)
+		x_next = x + v * np.cos(yaw_next) * self.dt
+		y_next = y + v * np.sin(yaw_next) * self.dt
 
 		state_next_list = [x_next, y_next, yaw_next_norm]
 

@@ -269,16 +269,20 @@ int main_unicycle(float min_v, float max_v, float min_w, float max_w) {
 
     komo.addObjective({2. / N, 2. / N}, make_shared<UnicycleVelocity>(),
                       {"robot0"}, OT_eq, {10}, {v0}, 1);
-    komo.addObjective({2. / N, 2. / N}, FS_qItself, {"robot0"}, OT_eq,
-                      {0, 0, 10}, {0, 0, w0}, 1);
+    komo.addObjective({2. / N, 2. / N}, make_shared<UnicycleAngularVelocity>(), {"robot0"}, OT_eq,
+                      {10}, {w0}, 1);
 
-    double vf = env["robots"][0]["goal"][3].as<double>();
-    double wf = env["robots"][0]["goal"][4].as<double>();
 
-    komo.addObjective({1., 1.}, make_shared<UnicycleVelocity>(), {"robot0"},
-                      OT_eq, {10}, {vf}, 1);
-    komo.addObjective({1., 1.}, FS_qItself, {"robot0"}, OT_eq, {0, 0, 10},
-                      {0, 0, wf}, 1);
+    if (mode != "dynamics_check") {
+
+      double vf = env["robots"][0]["goal"][3].as<double>();
+      double wf = env["robots"][0]["goal"][4].as<double>();
+
+      komo.addObjective({1., 1.}, make_shared<UnicycleVelocity>(), {"robot0"},
+                        OT_eq, {10}, {vf}, 1);
+      komo.addObjective({1., 1.}, make_shared<UnicycleAngularVelocity>(), {"robot0"}, OT_eq, {10},
+                        {wf}, 1);
+    }
     // komo.addObjective({1., 1.}, make_shared<UnicycleVelocity>(), {"robot0"},
     //                   OT_sos, {10}, {vf}, 1);
     // komo.addObjective({1., 1.}, FS_qItself, {"robot0"}, OT_sos, {0, 0, 10},

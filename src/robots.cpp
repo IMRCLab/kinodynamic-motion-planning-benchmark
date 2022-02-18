@@ -434,8 +434,6 @@ public:
     {
       float dt = std::min(remaining_time, dt_);
 
-      x += ctrl[0] * cosf(theta[0]) * dt;
-      y += ctrl[0] * sinf(theta[0]) * dt;
       // TODO: loop over this in reverse, to avoid changing dependenies
       //       (for a single trailer it shouldn't matter)
       for (size_t i = 1; i < hitch_lengths_.size() + 1; ++i) {
@@ -447,6 +445,8 @@ public:
         theta[i] += theta_dot * dt;
       }
       theta[0] += ctrl[0] / L_ * tanf(ctrl[1]) * dt;
+      x += ctrl[0] * cosf(theta[0]) * dt;
+      y += ctrl[0] * sinf(theta[0]) * dt;
 
       remaining_time -= dt;
     } while (remaining_time >= dt_);
