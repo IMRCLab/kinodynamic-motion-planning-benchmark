@@ -89,8 +89,8 @@ def run_komo_with_T_scaling(filename_env, filename_initial_guess, filename_resul
 			return False
 		filename_modified_guess = p / "guess.yaml"
 
-		for factor in [1.0]:
-		# for factor in [0.8, 1.0, 1.2]:
+		# for factor in [1.0]:
+		for factor in [0.8, 1.0, 1.2]:
 			T = int(utils_sol_file.T() * factor)
 			if max_T is not None and T > max_T:
 				return False
