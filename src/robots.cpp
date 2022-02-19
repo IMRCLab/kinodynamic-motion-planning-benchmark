@@ -1102,7 +1102,7 @@ std::shared_ptr<Robot> create_robot(
         /*v_max*/ 0.5 /*m/s*/,
         /*phi_min*/ -M_PI/3.0f /*rad*/,
         /*phi_max*/ M_PI/3.0f /*rad*/,
-        /*L*/ 0.4 /*m*/,
+        /*L*/ 0.25 /*m*/,
         /*hitch_lengths*/ {} /*m*/
         ));
   }
@@ -1114,7 +1114,7 @@ std::shared_ptr<Robot> create_robot(
         /*v_max*/ 0.5 /*m/s*/,
         /*phi_min*/ -M_PI/3.0f /*rad*/,
         /*phi_max*/ M_PI/3.0f /*rad*/,
-        /*L*/ 0.4 /*m*/,
+        /*L*/ 0.25 /*m*/,
         /*hitch_lengths*/ {0.5} /*m*/
         ));
   }

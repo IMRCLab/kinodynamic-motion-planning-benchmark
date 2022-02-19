@@ -282,9 +282,9 @@ def create_robot(robot_type):
 	elif robot_type == "unicycle_second_order_0":
 		return RobotUnicycleSecondOrder(0.5, 0.5, 0.25, 0.25)
 	elif robot_type == "car_first_order_0":
-		return RobotCarFirstOrderWithTrailers(-0.1, 0.5, -np.pi/3, np.pi/3, 0.4, [])
+		return RobotCarFirstOrderWithTrailers(-0.1, 0.5, -np.pi/3, np.pi/3, 0.25, [])
 	elif robot_type == "car_first_order_with_1_trailers_0":
-		return RobotCarFirstOrderWithTrailers(-0.1, 0.5, -np.pi/3, np.pi/3, 0.4, [0.5])
+		return RobotCarFirstOrderWithTrailers(-0.1, 0.5, -np.pi/3, np.pi/3, 0.25, [0.5])
 	elif robot_type == "quadrotor_0":
 		return Quadrotor()
 	else:

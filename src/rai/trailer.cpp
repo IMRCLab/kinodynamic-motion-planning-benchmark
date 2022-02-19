@@ -37,7 +37,7 @@ struct Trailer : Feature {
     // trailer
     arr t, Jt;
     arr tdot, Jtdot;
-    F_qItself().setOrder(0).eval(t, Jt, FrameL{F(1, 1)}.reshape(1, -1));
+    F_qItself().setOrder(0).eval(t, Jt, FrameL{F(0, 1)}.reshape(1, -1));
     F_qItself().setOrder(1).eval(
         tdot, Jtdot, FrameL{F(0, 1), F(1, 1)}.reshape(-1, 1)); // break here!!
 
