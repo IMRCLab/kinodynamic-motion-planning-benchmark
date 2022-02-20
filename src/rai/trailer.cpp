@@ -397,7 +397,7 @@ int main_trailer() {
     NIY;
   }
 
-  komo.run_prepare(0.02); // TODO: is this necessary?
+  // komo.run_prepare(0.02); // TODO: is this necessary?
   if (waypoints_file != "none") {
     komo.initWithWaypoints(waypoints, N);
 
@@ -442,7 +442,9 @@ int main_trailer() {
   }
   // throw -1;
 
-  komo.run();
+  // komo.run();
+  double add_init_noise = rai::getParameter<double>("add_init_noise", 0.1);
+  komo.optimize(add_init_noise);
 
   komo.reportProblem();
 

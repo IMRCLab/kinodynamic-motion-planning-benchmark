@@ -301,7 +301,7 @@ int main_unicycle(float min_v, float max_v, float min_w, float max_w) {
     komo.addObjective({}, FS_distance, {"robot0", obs}, OT_ineq, {1e2});
   }
 
-  komo.run_prepare(0.1); // TODO: is this necessary?
+  // komo.run_prepare(0.1); // TODO: is this necessary?
   // komo.checkGradients();
   std::cout << "done" << std::endl;
   if (waypoints_file != "none") {
@@ -355,9 +355,8 @@ int main_unicycle(float min_v, float max_v, float min_w, float max_w) {
     komo.opt.animateOptimization = animate;
   }
 
-  // TODO: in final benchmark, check which is the optimal value of inital
-  // noise.
-  komo.optimize(0.1);
+  double add_init_noise = rai::getParameter<double>("add_init_noise", 0.1);
+  komo.optimize(add_init_noise);
 
   std::cout << "report after solve" << std::endl;
   komo.reportProblem();

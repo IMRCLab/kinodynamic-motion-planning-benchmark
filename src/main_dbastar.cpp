@@ -173,6 +173,8 @@ int main(int argc, char* argv[]) {
   std::string motionsFile;
   float delta;
   float epsilon;
+  float alpha;
+  bool filterDuplicates;
   float maxCost;
   std::string outputFile;
   desc.add_options()
@@ -181,6 +183,8 @@ int main(int argc, char* argv[]) {
     ("motions,m", po::value<std::string>(&motionsFile)->required(), "motions file (yaml)")
     ("delta", po::value<float>(&delta)->default_value(0.01), "discontinuity bound (negative to auto-compute with given k)")
     ("epsilon", po::value<float>(&epsilon)->default_value(1.0), "suboptimality bound")
+    ("alpha", po::value<float>(&alpha)->default_value(0.5), "alpha")
+    ("filterDuplicates", po::value<bool>(&filterDuplicates)->default_value(true), "filter duplicates")
     ("maxCost", po::value<float>(&maxCost)->default_value(std::numeric_limits<float>::infinity()), "cost bound")
     ("output,o", po::value<std::string>(&outputFile)->required(), "output file (yaml)");
 
@@ -319,6 +323,10 @@ int main(int argc, char* argv[]) {
 
   std::cout << "There are " << motions.size() << " motions!" << std::endl;
 
+  if (alpha <= 0 || alpha >= 1) {
+    std::cerr << "Alpha needs to be between 0 and 1!" << std::endl;
+    return 1;
+  }
 
   //////////////////////////
   if (delta < 0) {
@@ -342,14 +350,14 @@ int main(int argc, char* argv[]) {
       float max_delta = si->distance(fakeMotion.states[0], neighbors_m.back()->states.front());
       sum_delta += max_delta;
     }
-    float adjusted_delta = (sum_delta / num_samples) * 2;
+    float adjusted_delta = (sum_delta / num_samples) / alpha;
     std::cout << "Automatically adjusting delta to: " << adjusted_delta << std::endl;
     delta = adjusted_delta;
 
   }
   //////////////////////////
 
-  // if (false)
+  if (filterDuplicates)
   {
     size_t num_duplicates = 0;
     Motion fakeMotion;
@@ -362,14 +370,14 @@ int main(int argc, char* argv[]) {
       }
 
       si->copyState(fakeMotion.states[0], m.states[0]);
-      T_m->nearestR(&fakeMotion, delta/2, neighbors_m);
+      T_m->nearestR(&fakeMotion, delta*alpha, neighbors_m);
 
       for (Motion* nm : neighbors_m) {
         if (nm == &m || nm->disabled) {
           continue;
         }
         float goal_delta = si->distance(m.states.back(), nm->states.back());
-        if (goal_delta < delta/2) {
+        if (goal_delta < delta*(1-alpha)) {
           // std::cout << nm->idx << " " << goal_delta << " " << delta/2 << std::endl;
           nm->disabled = true;
           ++num_duplicates;
@@ -560,7 +568,7 @@ int main(int argc, char* argv[]) {
     si->copyState(fakeMotion.states[0], current->state);
     robot->setPosition(fakeMotion.states[0], fcl::Vector3f(0,0,0));
 
-    T_m->nearestR(&fakeMotion, delta/2, neighbors_m);
+    T_m->nearestR(&fakeMotion, delta*alpha, neighbors_m);
     // std::shuffle(std::begin(neighbors_m), std::end(neighbors_m), rng);
 
     // std::cout << "found " << neighbors_m.size() << " motions" << std::endl;
@@ -683,7 +691,7 @@ int main(int argc, char* argv[]) {
       // float motion_distance = si->distance(query_n->state, current->state);
       // const float eps = 1e-6;
       // float radius = std::min(delta/2, motion_distance-eps);
-      float radius = delta/2;
+      float radius = delta*(1-alpha);
       T_n->nearestR(query_n, radius, neighbors_n);
       // auto nearest = T_n->nearest(query_n);
       // float nearest_distance = si->distance(nearest->state, tmpState);

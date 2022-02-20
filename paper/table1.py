@@ -152,7 +152,8 @@ def main():
 			out += " & $"
 			is_best = False
 			if result[alg][key] is not None:
-				is_best = np.array([result[alg][key] <= result[other][key] for other in algs if result[other][key] is not None]).all()
+				# we only look at one digit
+				is_best = np.array([round(result[alg][key],1) <= round(result[other][key],1) for other in algs if result[other][key] is not None]).all()
 			if is_best:
 				out += r"\mathbf{"
 			if result[alg][key] is not None:
