@@ -23,7 +23,7 @@ dbAstar-komo:
     rai_cfg: |
       opt/verbose: 4
       KOMO/verbose: 3
-      # opt/stopTolerance: 0.0001
+      opt/stopTolerance: 0.001
       add_init_noise: 0.05
 
 dbAstar-scp:
@@ -42,7 +42,8 @@ komo:
     rai_cfg: |
       opt/verbose: 4
       KOMO/verbose: 3
-      opt/stopTolerance: 0.0001
+      opt/stopTolerance: 0.001
+      add_init_noise: 0.1
 
 scp:
   default:

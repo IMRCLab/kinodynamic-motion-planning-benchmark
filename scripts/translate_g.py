@@ -131,7 +131,7 @@ class Box:
                "color:[{}], contact}}\n").format(
             self.ID,
             ' '.join(map(str, center3)),
-            ' '.join(map(str, size3)),
+            ' '.join(map(str, [v+0.05 for v in size3])), # increase the size to "correct" for rounded corners
             ' '.join(map(str, self.color)))
 
         return out
