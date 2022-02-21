@@ -775,7 +775,10 @@ public:
     resultTyped->rotation().x = q.x();
     resultTyped->rotation().y = q.y();
     resultTyped->rotation().z = q.z();
-    
+    // Normalize orientation
+    ob::SO3StateSpace SO3;
+    SO3.enforceBounds(&resultTyped->rotation());
+
     resultTyped->velocity()[0] = vel(0);
     resultTyped->velocity()[1] = vel(1);
     resultTyped->velocity()[2] = vel(2);

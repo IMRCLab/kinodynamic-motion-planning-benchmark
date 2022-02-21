@@ -110,8 +110,8 @@ def main():
 		# "unicycle_first_order_0/parallelpark_0",
 		# "unicycle_first_order_0/kink_0",
 		# "unicycle_first_order_0/bugtrap_0",
-		"unicycle_first_order_1/kink_0",
-		"unicycle_first_order_2/wall_0",
+		# "unicycle_first_order_1/kink_0",
+		# "unicycle_first_order_2/wall_0",
 		# "unicycle_second_order_0/parallelpark_0",
 		# "unicycle_second_order_0/kink_0",
 		# "unicycle_second_order_0/bugtrap_0",
@@ -123,14 +123,14 @@ def main():
 		"quadrotor_0/empty_0",
 	]
 	algs = [
-		# "sst",
+		"sst",
 		# "sbpl",
 		# "komo",
-		"dbAstar-komo",
+		# "dbAstar-komo",
 		# "dbAstar-scp",
 	]
 	trials = 1
-	timelimit = 5 * 60
+	timelimit = 30 #5 * 60
 
 	tasks = []
 	for instance in instances:

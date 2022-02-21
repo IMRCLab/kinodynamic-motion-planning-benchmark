@@ -4,6 +4,6 @@ environment:
   obstacles: []
 robots:
   - type: quadrotor_0
-    # start: [2,5,5, 0,0,0,1, 0,0,0, 0,0,0] # x,y,z, qx, qy, qz, qw, vx, vy, vz, wx, wy, wz
-    start: [2,5,5, 0.819152, 0, 0, 0.5735764, 0,0,0, 0,0,0] # x,y,z, qx, qy, qz, qw, vx, vy, vz, wx, wy, wz
+    start: [2,5,5, 0,0,0,1, 0,0,0, 0,0,0] # x,y,z, qx, qy, qz, qw, vx, vy, vz, wx, wy, wz
+    # start: [2,5,5, 0.819152, 0, 0, 0.5735764, 0,0,0, 0,0,0] # x,y,z, qx, qy, qz, qw, vx, vy, vz, wx, wy, wz
     goal: [6,5,5, 0,0,0,1, 0,0,0, 0,0,0] # x,y,z, qx, qy, qz, qw, vx, vy, vz, wx, wy, wz
