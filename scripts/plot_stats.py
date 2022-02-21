@@ -4,7 +4,8 @@ from mimetypes import init
 import numpy as np
 import matplotlib.pyplot as plt
 import yaml
-from matplotlib.backends.backend_pdf import PdfPages
+# from matplotlib.backends.backend_pdf import PdfPages
+from matplotlib.backends.backend_pgf import PdfPages
 from matplotlib.cm import get_cmap
 from collections import defaultdict
 
@@ -14,10 +15,10 @@ class Report:
     self.fig = None
     cmap = get_cmap("Dark2")
     self.alg_dict = {
-      'sst': {'idx': 0, 'color': cmap.colors[0]},
-      'sbpl': {'idx': 1, 'color': cmap.colors[1]},
-      'komo': {'idx': 2, 'color': cmap.colors[2]},
-      'dbAstar-komo': {'idx': 3, 'color': cmap.colors[3]},
+      'sst': {'idx': 0, 'color': cmap.colors[0], 'name': 'SST*'},
+      'sbpl': {'idx': 1, 'color': cmap.colors[1], 'name': 'SBPL'},
+      'komo': {'idx': 2, 'color': cmap.colors[2], 'name': 'KOMO'},
+      'dbAstar-komo': {'idx': 3, 'color': cmap.colors[3], 'name': 'db-A*'},
     }
     self.color_dict = {
       'sst': cmap.colors[0],
@@ -43,7 +44,7 @@ class Report:
   def add_time_cost_plot(self, exp_name):
     self._add_page()
     self.fig, self.ax = plt.subplots()
-    self.ax.set_title(exp_name)
+    # self.ax.set_title(exp_name)
 
     for (exp_name_stats, algo), costs in self.stats.items():
       if exp_name_stats != exp_name:
@@ -53,7 +54,7 @@ class Report:
       #   std = costs.std(axis=0)
       std = np.nanstd(costs, axis=0)
 
-      self.ax.plot(self.times, mean, label=algo, color=self.color_dict[algo])
+      self.ax.plot(self.times, mean, label=self.alg_dict[algo]['name'], color=self.color_dict[algo])
       self.ax.fill_between(self.times, mean+std, mean-std, color=self.color_dict[algo], alpha=0.5)
     self.ax.legend()
     self.ax.set_xlabel("time [s]")
@@ -234,6 +235,17 @@ def main():
   parser = argparse.ArgumentParser()
   parser.add_argument("stats", nargs='*', help="yaml files with stats")
   args = parser.parse_args()
+
+  # plt.rcParams.update({
+  #   "text.usetex": True,
+  #   "font.family": "sans-serif",
+  #   "font.sans-serif": ["Helvetica"]})
+
+  plt.rcParams.update({
+    "text.usetex": True,
+    "font.family": "serif",
+    "font.serif": ["Times"],
+  })
 
   fig, ax = plt.subplots()
 

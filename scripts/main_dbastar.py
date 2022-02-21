@@ -130,7 +130,7 @@ def run_dbastar(filename_env, folder, timelimit, cfg, opt_alg="scp", motions_sta
 			all_motions = yaml.load(f, Loader=yaml.CSafeLoader)
 
 		# all_motions = sort_primitives(all_motions, robot_type, 100)
-		all_motions = all_motions[0:1000]
+		# all_motions = all_motions[0:1000]
 		print("Have {} motions in total".format(len(all_motions)))
 		motions = all_motions[0:add_prims]
 		del all_motions[0:add_prims]
