@@ -85,6 +85,9 @@ int main_unicycle(float min_v, float max_v, float min_w, float max_w) {
 
   rai::String env_file = rai::getParameter<rai::String>("env", STRING("none"));
 
+  rai::String mode = rai::getParameter<rai::String>("mode", STRING("default"));
+
+
   enum CAR_ORDER {
     ZERO = 0, // no bounds
     ONE = 1,  // bounds velocity
@@ -174,7 +177,10 @@ int main_unicycle(float min_v, float max_v, float min_w, float max_w) {
   }
 
   // I assume names robot0 and goal0 in the .g file
-  komo.addObjective({1., 1.}, FS_poseDiff, {"robot0", "goal0"}, OT_eq, {1e2});
+  if (mode != "dynamics_check") {
+    komo.addObjective({1., 1.}, FS_poseDiff, {"robot0", "goal0"}, OT_eq, {1e2});
+    // komo.addObjective({1., 1.}, FS_poseDiff, {"robot0", "goal0"}, OT_sos, {1e1});
+  }
 
   // Note: if you want position constraints on the first variable.
   // komo.addObjective({1./N, 1./N}, FS_poseDiff, {"robot0", "start0"}, OT_eq,
@@ -263,16 +269,24 @@ int main_unicycle(float min_v, float max_v, float min_w, float max_w) {
 
     komo.addObjective({2. / N, 2. / N}, make_shared<UnicycleVelocity>(),
                       {"robot0"}, OT_eq, {10}, {v0}, 1);
-    komo.addObjective({2. / N, 2. / N}, FS_qItself, {"robot0"}, OT_eq,
-                      {0, 0, 10}, {0, 0, w0}, 1);
+    komo.addObjective({2. / N, 2. / N}, make_shared<UnicycleAngularVelocity>(), {"robot0"}, OT_eq,
+                      {10}, {w0}, 1);
 
-    double vf = env["robots"][0]["goal"][3].as<double>();
-    double wf = env["robots"][0]["goal"][4].as<double>();
 
-    komo.addObjective({1., 1.}, make_shared<UnicycleVelocity>(), {"robot0"},
-                      OT_eq, {10}, {vf}, 1);
-    komo.addObjective({1., 1.}, FS_qItself, {"robot0"}, OT_eq, {0, 0, 10},
-                      {0, 0, wf}, 1);
+    if (mode != "dynamics_check") {
+
+      double vf = env["robots"][0]["goal"][3].as<double>();
+      double wf = env["robots"][0]["goal"][4].as<double>();
+
+      komo.addObjective({1., 1.}, make_shared<UnicycleVelocity>(), {"robot0"},
+                        OT_eq, {10}, {vf}, 1);
+      komo.addObjective({1., 1.}, make_shared<UnicycleAngularVelocity>(), {"robot0"}, OT_eq, {10},
+                        {wf}, 1);
+    }
+    // komo.addObjective({1., 1.}, make_shared<UnicycleVelocity>(), {"robot0"},
+    //                   OT_sos, {10}, {vf}, 1);
+    // komo.addObjective({1., 1.}, FS_qItself, {"robot0"}, OT_sos, {0, 0, 10},
+    //                   {0, 0, wf}, 1);
 
     // komo.addObjective({1./N,1./N}, FS_qItself, {"robot0"}, OT_eq,
     // {10},{},1); komo.addObjective({1,1}, FS_qItself, {"robot0"}, OT_eq,
@@ -287,7 +301,7 @@ int main_unicycle(float min_v, float max_v, float min_w, float max_w) {
     komo.addObjective({}, FS_distance, {"robot0", obs}, OT_ineq, {1e2});
   }
 
-  komo.run_prepare(0.1); // TODO: is this necessary?
+  // komo.run_prepare(0.1); // TODO: is this necessary?
   // komo.checkGradients();
   std::cout << "done" << std::endl;
   if (waypoints_file != "none") {
@@ -311,6 +325,19 @@ int main_unicycle(float min_v, float max_v, float min_w, float max_w) {
       if (display) {
         komo.view_play(true, 0.3);
       }
+
+      if (mode == "dynamics_check") {
+        double ineq = report.get<double>("ineq") / komo.T;
+        double eq = report.get<double>("eq") / komo.T;
+
+        if (ineq <= 1e-5 && eq <= 1e-3) {
+          return 0;
+        }
+        std::cout << "Dynamics check failed! Rerun with animate=1 and display=1 to debug! ineq="
+                  << ineq << " eq=" 
+                  << eq << std::endl;
+        return 1;
+      }
     }
   }
   // return 5;
@@ -328,9 +355,8 @@ int main_unicycle(float min_v, float max_v, float min_w, float max_w) {
     komo.opt.animateOptimization = animate;
   }
 
-  // TODO: in final benchmark, check which is the optimal value of inital
-  // noise.
-  komo.optimize(0.1);
+  double add_init_noise = rai::getParameter<double>("add_init_noise", 0.1);
+  komo.optimize(add_init_noise);
 
   std::cout << "report after solve" << std::endl;
   komo.reportProblem();
@@ -353,12 +379,6 @@ int main_unicycle(float min_v, float max_v, float min_w, float max_w) {
   std::cout << "results: " << std::endl;
   std::cout << results << std::endl;
   std::cout << "(N,T): " << results.N << " " << komo.T << std::endl;
-
-  if (ineq > 0.01 || eq > 0.01) {
-    // Optimization failed (constraint violations)
-    std::cout << "Optimization failed (constraint violation)!" << std::endl;
-    return 1;
-  }
 
   // write the results.
   std::ofstream out(out_file);
@@ -396,6 +416,12 @@ int main_unicycle(float min_v, float max_v, float min_w, float max_w) {
       out << "      - [" << acceleration(results, t, dt) << ","
           << angularAcceleration(results, t, dt) << "]" << std::endl;
     }
+  }
+
+  if (ineq > 0.01 || eq > 0.01) {
+    // Optimization failed (constraint violations)
+    std::cout << "Optimization failed (constraint violation)!" << std::endl;
+    return 1;
   }
 
   return 0;

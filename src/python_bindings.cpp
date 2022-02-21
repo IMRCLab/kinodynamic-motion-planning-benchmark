@@ -63,8 +63,10 @@ public:
 
   std::vector<double> sampleStateUniform()
   {
-    state_sampler_->sampleUniform(tmp_state_a_);
     auto si = robot_->getSpaceInformation();
+    do {
+      state_sampler_->sampleUniform(tmp_state_a_);
+    } while(!si->satisfiesBounds(tmp_state_a_));
     std::vector<double> reals;
     si->getStateSpace()->copyToReals(reals, tmp_state_a_);
     return reals;

@@ -41,7 +41,7 @@ def _run_komo(filename_g, filename_env, filename_initial_guess, filename_result,
 			break
 	if result.returncode != 0:
 		print("KOMO failed")
-		# return False
+		return False
 	else:
 		return True
 
@@ -49,6 +49,7 @@ def run_komo(filename_env, filename_initial_guess, filename_result, cfg = ""):
 
 	with tempfile.TemporaryDirectory() as tmpdirname:
 		p = Path(tmpdirname)
+		# p = Path("../results/dbg")
 
 		with open(filename_env) as f:
 			env = yaml.safe_load(f)
@@ -70,6 +71,7 @@ def run_komo_with_T_scaling(filename_env, filename_initial_guess, filename_resul
 
 	with tempfile.TemporaryDirectory() as tmpdirname:
 		p = Path(tmpdirname)
+		# p = Path("../results/test")
 
 		with open(filename_env) as f:
 			env = yaml.safe_load(f)
@@ -91,7 +93,8 @@ def run_komo_with_T_scaling(filename_env, filename_initial_guess, filename_resul
 			return False
 		filename_modified_guess = p / "guess.yaml"
 
-		for factor in [1.0]: #[0.8, 1.0, 1.2]:
+		# for factor in [1.0]:
+		for factor in [0.8, 1.0, 1.2]:
 			T = int(utils_sol_file.T() * factor)
 			if max_T is not None and T > max_T:
 				return False

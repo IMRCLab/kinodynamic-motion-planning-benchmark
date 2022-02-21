@@ -11,7 +11,7 @@ def run_sbpl(filename_env, folder):
 	result = subprocess.run(["./main_sbpl", 
 		"-i", filename_env,
 		"-o", "{}/result_sbpl.yaml".format(folder),
-		"-p", "../tuning/unicycle_first_order_0/unicycle_first_order_0.mprim",
+		"-p", "../tuning/unicycle_first_order_0/unicycle_first_order_0_mprim.mprim",
 		"--stats", "{}/stats.yaml".format(folder),
 		])
 	if result.returncode != 0:

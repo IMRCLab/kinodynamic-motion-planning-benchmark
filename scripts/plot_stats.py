@@ -1,55 +1,72 @@
 #!/usr/bin/env python3
 import argparse
+from mimetypes import init
 import numpy as np
 import matplotlib.pyplot as plt
 import yaml
 from matplotlib.backends.backend_pdf import PdfPages
-
+from matplotlib.cm import get_cmap
+from collections import defaultdict
 
 class Report:
-  def __init__(self, filename):
+  def __init__(self, filename, T, dt):
     self.pp = PdfPages(filename)
     self.fig = None
-
-  def start_experiment(self, name, T, dt):
-    self.experiment_name = name
+    cmap = get_cmap("Dark2")
+    self.alg_dict = {
+      'sst': {'idx': 0, 'color': cmap.colors[0]},
+      'sbpl': {'idx': 1, 'color': cmap.colors[1]},
+      'komo': {'idx': 2, 'color': cmap.colors[2]},
+      'dbAstar-komo': {'idx': 3, 'color': cmap.colors[3]},
+    }
+    self.color_dict = {
+      'sst': cmap.colors[0],
+      'sbpl': cmap.colors[1],
+      'komo': cmap.colors[2],
+      'dbAstar-komo': cmap.colors[3],
+    }
     self.T = T
     self.dt = dt
     self.times = np.arange(0, self.T, self.dt)
     self.stats = dict()
 
-  def load_stat_files(self, name, filenames):
+  def load_stat_files(self, exp_name, algo, filenames):
     costs = []
     for filename in filenames:
       costs.append(load_data(filename, self.T, self.dt))
 
     # convert to 2D array
     costs = np.array(costs)
-    self.stats[name] = costs
+    key = (exp_name, algo)
+    self.stats[key] = costs
 
-  def add_time_cost_plot(self):
+  def add_time_cost_plot(self, exp_name):
     self._add_page()
     self.fig, self.ax = plt.subplots()
-    self.ax.set_title(self.experiment_name)
+    self.ax.set_title(exp_name)
 
-    for name, costs in self.stats.items():
+    for (exp_name_stats, algo), costs in self.stats.items():
+      if exp_name_stats != exp_name:
+        continue
       #   mean = costs.mean(axis=0)
       mean = np.nanmean(costs, axis=0)
       #   std = costs.std(axis=0)
       std = np.nanstd(costs, axis=0)
 
-      self.ax.plot(self.times, mean, label=name)
-      self.ax.fill_between(self.times, mean+std, mean-std, alpha=0.5)
+      self.ax.plot(self.times, mean, label=algo, color=self.color_dict[algo])
+      self.ax.fill_between(self.times, mean+std, mean-std, color=self.color_dict[algo], alpha=0.5)
     self.ax.legend()
     self.ax.set_xlabel("time [s]")
     self.ax.set_ylabel("cost [s]")
 
-  def add_initial_time_cost_plot(self):
+  def add_initial_time_cost_plot(self, exp_name):
     self._add_page()
     self.fig, self.ax = plt.subplots()
-    self.ax.set_title(self.experiment_name)
+    self.ax.set_title(exp_name)
 
-    for name, costs in self.stats.items():
+    for (exp_name_stats, algo), costs in self.stats.items():
+      if exp_name_stats != exp_name:
+        continue
       initial_costs = []
       initial_times = []
       for k in range(costs.shape[0]):
@@ -59,11 +76,135 @@ class Report:
           initial_costs.append(initial_cost)
           initial_time = self.times[np.isfinite(costs[k])][0]
           initial_times.append(initial_time)
-      print(initial_times, initial_costs)
-      self.ax.scatter(initial_times, initial_costs, label=name)
+      self.ax.scatter(initial_times, initial_costs, label=algo, color=self.color_dict[algo])
     self.ax.legend()
     self.ax.set_xlabel("time for first solution [s]")
     self.ax.set_ylabel("cost of first solution [s]")
+
+  def add_success_rate_plot(self, exp_name):
+    self._add_page()
+    self.fig, self.ax = plt.subplots()
+    self.ax.set_title(exp_name)
+
+    success_dict = defaultdict(int)
+    for (exp_name_stats, algo), costs in self.stats.items():
+      if exp_name_stats != exp_name:
+        continue
+      for k in range(costs.shape[0]):
+        l = costs[k, np.isfinite(costs[k])]
+        if len(l) > 0:
+          success_dict[algo] += 1
+    names = self.color_dict.keys()
+    y = []
+    for name in names:
+      y.append(success_dict[name])
+
+    self.ax.bar(range(len(y)), y)
+    self.ax.set_xticks(range(len(y)))
+    self.ax.set_xticklabels(names)
+
+  def add_boxplot_initial_time_plot(self, exp_name):
+    self._add_page()
+    self.fig, self.ax = plt.subplots()
+    self.ax.set_title(exp_name)
+
+    result = []
+    names = self.color_dict.keys()
+    result_dict = defaultdict(list)
+    for (exp_name_stats, algo), costs in self.stats.items():
+      if exp_name_stats != exp_name:
+        continue
+      initial_times = []
+      for k in range(costs.shape[0]):
+        l = costs[k, np.isfinite(costs[k])]
+        if len(l) > 0:
+          initial_time = self.times[np.isfinite(costs[k])][0]
+          initial_times.append(initial_time)
+      result_dict[algo] = initial_times
+    # print(result_dict.values())
+    result = []
+    for name in names:
+      result.append(result_dict[name])
+    self.ax.boxplot(result)
+    self.ax.set_xticks(range(1, len(names)+1))
+    self.ax.set_xticklabels(names)
+    # self.ax.legend()
+    self.ax.set_ylabel("time for first solution [s]")
+
+  def add_boxplot_initial_cost_plot(self, exp_names):
+    self._add_page()
+    self.fig, ax = plt.subplots(1, len(exp_names), sharex='all', sharey='none', squeeze=False)
+    for i, exp_name in enumerate(exp_names):
+      ax[0,i].set_title(exp_name)
+
+      result = []
+      names = self.color_dict.keys()
+      result_dict = defaultdict(list)
+      for (exp_name_stats, algo), costs in self.stats.items():
+        if exp_name_stats != exp_name:
+          continue
+        initial_costs = []
+        for k in range(costs.shape[0]):
+          l = costs[k, np.isfinite(costs[k])]
+          if len(l) > 0:
+            initial_cost = l[0]
+            initial_costs.append(initial_cost)
+        result_dict[algo] = initial_costs
+      # print(result_dict.values())
+      result = []
+      colors = []
+      for name in names:
+        result.append(result_dict[name])
+        colors.append(self.color_dict[name])
+      bplot = ax[0,i].boxplot(result, patch_artist=True)
+      for patch, color in zip(bplot['boxes'], colors):
+        patch.set_facecolor(color)
+      ax[0,i].set_xticks(range(1, len(names)+1))
+      ax[0,i].set_xticklabels(names)
+      ax[0,i].yaxis.grid(True)
+      # ax[0,i].legend()
+    ax[0,0].set_ylabel("cost for first solution [s]")
+
+
+  def add_barplot_initial_cost_plot(self, exp_names):
+    self._add_page()
+    self.fig, ax = plt.subplots(2, len(exp_names), sharex='all', sharey='none', squeeze=False)
+    for i, exp_name in enumerate(exp_names):
+      # ax[0,i].set_title(exp_name)
+      ax[0,i].yaxis.grid(True)
+      ax[0,i].set_xticks([])
+      ax[1,i].yaxis.grid(True)
+      ax[1,i].set_xticks([])
+
+      for (exp_name_stats, algo), costs in self.stats.items():
+        if exp_name_stats != exp_name:
+          continue
+        initial_costs = []
+        initial_times = []
+        for k in range(costs.shape[0]):
+          l = costs[k, np.isfinite(costs[k])]
+          if len(l) > 0:
+            initial_cost = l[0]
+            initial_costs.append(initial_cost)
+            initial_time = self.times[np.isfinite(costs[k])][0]
+            initial_times.append(initial_time)
+        ax[0,i].bar(
+          self.alg_dict[algo]['idx'],
+          np.mean(initial_costs),
+          yerr=np.std(initial_costs),
+          color=self.alg_dict[algo]['color'])
+
+        ax[1,i].bar(
+          self.alg_dict[algo]['idx'],
+          np.mean(initial_times),
+          yerr=np.std(initial_times),
+          color=self.alg_dict[algo]['color'])
+
+        ax[1,i].set_xlabel(exp_name)
+        
+        
+    ax[0,0].set_ylabel("cost for first solution [s]")
+    ax[1,0].set_ylabel("time for first solution [s]")
 
 
   def close(self):

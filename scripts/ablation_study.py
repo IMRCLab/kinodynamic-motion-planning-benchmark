@@ -26,6 +26,8 @@ class ExecutionTask:
 	alg: str
 	trial: int
 	timelimit: float
+	cfg_name: str
+	cfg: dict
 
 
 def run_visualize(script, filename_env, filename_result):
@@ -39,7 +41,7 @@ def run_visualize(script, filename_env, filename_result):
 
 def execute_task(task: ExecutionTask):
 	benchmark_path = Path("../benchmark")
-	results_path = Path("../results")
+	results_path = Path("../results/ablation")
 	tuning_path = Path("../tuning")
 
 	env = (benchmark_path / task.instance).with_suffix(".yaml")
@@ -52,7 +54,7 @@ def execute_task(task: ExecutionTask):
 		cfg = yaml.safe_load(f)
 
 
-	result_folder = results_path / task.instance / task.alg / "{:03d}".format(task.trial)
+	result_folder = results_path / task.instance / task.alg / task.cfg_name / "{:03d}".format(task.trial)
 	if result_folder.exists():
 			print("Warning! {} exists already. Deleting...".format(result_folder))
 			shutil.rmtree(result_folder)
@@ -64,6 +66,9 @@ def execute_task(task: ExecutionTask):
 	if Path(task.instance).name in cfg[task.alg]:
 		mycfg_instance = cfg[task.alg][Path(task.instance).name]
 		mycfg = {**mycfg, **mycfg_instance} # merge two dictionaries
+
+	# merge with task config
+	mycfg = {**mycfg, **task.cfg} # merge two dictionaries
 
 	print("Using configurations ", mycfg)
 
@@ -105,13 +110,11 @@ def execute_task(task: ExecutionTask):
 
 
 def main():
-	parallel = False
+	parallel = True
 	instances = [
 		# "unicycle_first_order_0/parallelpark_0",
 		# "unicycle_first_order_0/kink_0",
 		# "unicycle_first_order_0/bugtrap_0",
-		"unicycle_first_order_1/kink_0",
-		"unicycle_first_order_2/wall_0",
 		# "unicycle_second_order_0/parallelpark_0",
 		# "unicycle_second_order_0/kink_0",
 		# "unicycle_second_order_0/bugtrap_0",
@@ -119,8 +122,7 @@ def main():
 		# "car_first_order_with_1_trailers_0/kink_0",
 		# "car_first_order_with_1_trailers_0/bugtrap_0",
 		# "unicycle_first_order_1/kink_0",
-		# "unicycle_first_order_2/wall_0",
-		"quadrotor_0/empty_0",
+		"unicycle_first_order_2/wall_0",
 	]
 	algs = [
 		# "sst",
@@ -132,14 +134,23 @@ def main():
 	trials = 1
 	timelimit = 5 * 60
 
+	cfgs = {
+		# "b4": {"desired_branching_factor": 4},
+		# "b8": {"desired_branching_factor": 8},
+		"b16": {"desired_branching_factor": 16},
+		# "b32": {"desired_branching_factor": 32},
+		# "b64": {"desired_branching_factor": 64},
+	}
+
 	tasks = []
 	for instance in instances:
 		for alg in algs:
 			# sbpl only supports unicycleFirstOrder
 			if alg == "sbpl" and "unicycle_first_order_0" not in instance:
 				continue
-			for trial in range(trials):
-				tasks.append(ExecutionTask(instance, alg, trial, timelimit))
+			for cfg_name, cfg in cfgs.items():
+				for trial in range(trials):
+					tasks.append(ExecutionTask(instance, alg, trial, timelimit, cfg_name, cfg))
 
 	if parallel and len(tasks) > 1:
 		use_cpus = psutil.cpu_count(logical=False)-1

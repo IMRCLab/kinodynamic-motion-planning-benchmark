@@ -2,10 +2,13 @@ sst:
   default:
     goal_epsilon: 0.5
     goal_bias: 0.05
-    selection_radius: 1.0 # delta_BN in paper
-    pruning_radius: 0.5  # delta_s in paper
+    selection_radius: 0.2 # delta_BN in paper
+    pruning_radius: 0.1  # delta_s in paper
     propagation_step_size: 0.1 #s
     control_duration: [5, 10] # multiples of step size
+    rai_cfg: |
+      opt/verbose: 4
+      KOMO/verbose: 3
   parallelpark_0:
     goal_epsilon: 0.1
 
@@ -14,11 +17,14 @@ dbAstar-komo:
     add_primitives_per_iteration: 200
     desired_branching_factor: 16
     suboptimality_bound: 1.0
+    alpha: 0.5
+    filter_duplicates: False
     # Config file (rai.cfg) that will be used
     rai_cfg: |
       opt/verbose: 4
       KOMO/verbose: 3
-      opt/stopTolerance: 0.0001
+      opt/stopTolerance: 0.001
+      add_init_noise: 0.05
 
 # dbAstar-scp:
 #   default:
@@ -36,7 +42,8 @@ komo:
     rai_cfg: |
       opt/verbose: 4
       KOMO/verbose: 3
-      opt/stopTolerance: 0.0001
+      opt/stopTolerance: 0.001
+      add_init_noise: 0.1
 
 scp:
   default:

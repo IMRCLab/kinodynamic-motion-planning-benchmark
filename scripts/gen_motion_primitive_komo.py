@@ -28,8 +28,8 @@ def gen_motion(robot_type, start, goal, is2D):
 			p = Path(tmpdirname)
 		env = {
 			"environment":{
-				"min": [-2, -2],
-				"max": [2, 2],
+				"min": [-5, -5],
+				"max": [5, 5],
 				"obstacles": []
 			},
 			"robots": [{
@@ -48,7 +48,7 @@ def gen_motion(robot_type, start, goal, is2D):
 		
 		filename_result = p / "result_komo.yaml"
 
-		# success = run_komo_standalone(filename_env, str(p), 5 * 60, "", search="linear", initialguess="none")
+		# success = run_komo_standalone(filename_env, str(p), 120, "", search="linear", initialguess="none")
 		# use_T = np.random.randint(20, 100)
 		# success = run_komo_standalone(filename_env, str(p), 5 * 60, "soft_goal: 1", search="none", initialguess="none", use_T=use_T)
 		success = run_komo_standalone(filename_env, str(p), 5 * 60, "plan_recovery: 1", search="binarySearch", initialguess="none")
