@@ -103,7 +103,7 @@ def merge_motions(folder: str, limit: int = None):
 	for file_name in file_names:
 		with open(file_name) as f:
 			motions = yaml.load(f, Loader=yaml.CSafeLoader)
-			merged_motions.extend(motions)
+			merged_motions.extend([m for m in motions if m["T"] <= 100])
 			print(len(merged_motions))
 			if limit is not None and len(merged_motions) > limit:
 				break
@@ -181,7 +181,7 @@ def main() -> None:
 	tmp_path = Path("../results/tmp/motions/{}".format(args.robot_type))
 	tmp_path.mkdir(parents=True, exist_ok=True)
 
-	motions = merge_motions(tmp_path, 1000)
+	motions = merge_motions(tmp_path, 2000)
 
 	# # Hack to fix bad quadrotor motions (z wasn't shifted)
 	# for m in motions:

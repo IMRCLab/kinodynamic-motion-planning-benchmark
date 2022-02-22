@@ -156,7 +156,7 @@ float heuristic(std::shared_ptr<Robot> robot, const ob::State *s, const ob::Stat
   const auto goal_pos = robot->getTransform(g).translation();
   float dist = (current_pos - goal_pos).norm();
   const float max_vel = 8.67;//0.5; // m/s
-  const float time = dist * max_vel;
+  const float time = dist / max_vel;
   return time;
 }
 
@@ -285,8 +285,9 @@ int main(int argc, char* argv[]) {
     for (const auto& action : motion["actions"]) {
       m.actions.push_back(allocAndFillControl(si, action));
     }
-    m.cost = m.actions.size() / 10.0f; // time in seconds
+    m.cost = m.actions.size() * robot->dt(); // time in seconds
     m.idx = motions.size();
+    std::cout << m.actions.size() << " " << m.cost << std::endl;
     // m.name = motion["name"].as<std::string>();
 
     // generate collision objects and collision manager
@@ -333,6 +334,7 @@ int main(int argc, char* argv[]) {
   }
 
   std::cout << "There are " << motions.size() << " motions!" << std::endl;
+  std::cout << "Max cost is " << maxCost << std::endl;
 
   if (alpha <= 0 || alpha >= 1) {
     std::cerr << "Alpha needs to be between 0 and 1!" << std::endl;
@@ -588,7 +590,7 @@ int main(int argc, char* argv[]) {
     T_m->nearestR(&fakeMotion, delta*alpha, neighbors_m);
     // std::shuffle(std::begin(neighbors_m), std::end(neighbors_m), rng);
 
-    // std::cout << "found " << neighbors_m.size() << " motions" << std::endl;
+    std::cout << "found " << neighbors_m.size() << " motions" << std::endl;
     // Loop over all potential applicable motions
     for (const Motion* motion : neighbors_m) {
       if (motion->disabled) {
@@ -643,11 +645,18 @@ int main(int argc, char* argv[]) {
       float tentative_hScore = epsilon * heuristic(robot, tmpState, goalState);
       float tentative_fScore = tentative_gScore + tentative_hScore;
 
-      // skip motions that would exceed cost bound, or that are invalid
-      if (tentative_fScore > maxCost || !si->satisfiesBounds(tmpState))
+      // skip motions that would exceed cost bound
+      if (tentative_fScore > maxCost)
       {
-        // std::cout << "skip " << tentative_fScore << " " << maxCost << std::endl;
+        std::cout << "skip b/c cost " << tentative_fScore << " " << tentative_gScore << " " << tentative_hScore << " " << maxCost << std::endl;
         // si->printState(tmpState);
+        continue;
+      }
+      // skip motions that are invalid
+      if (!si->satisfiesBounds(tmpState))
+      {
+        std::cout << "skip invalid state" << std::endl;
+        si->printState(tmpState);
         continue;
       }
 
@@ -699,6 +708,7 @@ int main(int argc, char* argv[]) {
 
       // Skip this motion, if it isn't valid
       if (!motionValid) {
+        std::cout << "skip invalid motion" << std::endl;
         continue;
       }
       // std::cout << "valid " <<  std::endl;

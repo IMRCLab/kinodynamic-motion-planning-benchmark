@@ -105,7 +105,7 @@ def execute_task(task: ExecutionTask):
 
 
 def main():
-	parallel = False
+	parallel = True
 	instances = [
 		# "unicycle_first_order_0/parallelpark_0",
 		# "unicycle_first_order_0/kink_0",
@@ -123,14 +123,14 @@ def main():
 		"quadrotor_0/empty_0",
 	]
 	algs = [
-		"sst",
+		# "sst",
 		# "sbpl",
 		# "komo",
-		# "dbAstar-komo",
+		"dbAstar-komo",
 		# "dbAstar-scp",
 	]
 	trials = 1
-	timelimit = 30 #5 * 60
+	timelimit = 5 * 60#5 * 60
 
 	tasks = []
 	for instance in instances:

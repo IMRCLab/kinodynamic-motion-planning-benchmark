@@ -105,7 +105,7 @@ def run_dbastar(filename_env, folder, timelimit, cfg, opt_alg="scp", motions_sta
 
 	with tempfile.TemporaryDirectory() as tmpdirname:
 		p = Path(tmpdirname)
-		# p = Path("../results/test")
+		# p = Path("../results/dbg")
 
 		filename_motions = p / "motions.yaml"
 
@@ -132,7 +132,7 @@ def run_dbastar(filename_env, folder, timelimit, cfg, opt_alg="scp", motions_sta
 			all_motions = yaml.load(f, Loader=yaml.CSafeLoader)
 
 		# all_motions = sort_primitives(all_motions, robot_type, 100)
-		all_motions = all_motions[0:1000]
+		all_motions = all_motions[0:5000]
 		print("Have {} motions in total".format(len(all_motions)))
 		motions = all_motions[0:add_prims]
 		del all_motions[0:add_prims]
@@ -243,7 +243,7 @@ def run_dbastar(filename_env, folder, timelimit, cfg, opt_alg="scp", motions_sta
 							# compute_motion_importance(filename_env, filename_motions, filename_result_dbastar, delta, maxCost, motions_stats)
 						with open(filename_result_opt) as f:
 							result = yaml.safe_load(f)
-							cost = len(result["result"][0]["actions"]) / 10
+							cost = len(result["result"][0]["actions"]) * robot.dt
 						now = time.time()
 						t = now - start
 						print("success!", cost, t)

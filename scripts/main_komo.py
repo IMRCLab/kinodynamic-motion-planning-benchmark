@@ -71,7 +71,7 @@ def run_komo_with_T_scaling(filename_env, filename_initial_guess, filename_resul
 
 	with tempfile.TemporaryDirectory() as tmpdirname:
 		p = Path(tmpdirname)
-		# p = Path("../results/test")
+		# p = Path("../results/dbg")
 
 		with open(filename_env) as f:
 			env = yaml.safe_load(f)

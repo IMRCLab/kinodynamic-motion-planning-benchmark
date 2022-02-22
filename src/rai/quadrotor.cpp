@@ -316,18 +316,13 @@ int main_quadrotor() {
   }
 
 //  komo.animateOptimization=1;
-  komo.optimize(0.);
+  double add_init_noise = rai::getParameter<double>("add_init_noise", 0.0);
+  komo.optimize(add_init_noise);
 
   auto report = komo.getReport(display, 0, std::cout);
   std::cout << "report " << report << std::endl;
   double ineq = report.get<double>("ineq") / komo.T;
   double eq = report.get<double>("eq") / komo.T;
-  if (ineq > 0.01 || eq > 0.01) {
-    // Optimization failed (constraint violations)
-    std::cout << "Optimization failed (constraint violation)!" << std::endl;
-    return 1;
-  }
-
 
   arr allDofs = komo.x;
   allDofs.reshape(komo.T, 4+7);
@@ -367,6 +362,12 @@ int main_quadrotor() {
   // komo.view(true);
   // while(komo.view_play(true, 1.));
   // komo.view_play(false,.2,"z.vid/");
+
+  if (ineq > 0.01 || eq > 0.01) {
+    // Optimization failed (constraint violations)
+    std::cout << "Optimization failed (constraint violation)!" << std::endl;
+    return 1;
+  }
 
   return 0;
 }

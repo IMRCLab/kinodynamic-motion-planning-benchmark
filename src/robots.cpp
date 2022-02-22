@@ -683,32 +683,40 @@ public:
     space->setVelocityBounds(vbounds);
 
     ob::RealVectorBounds wbounds(3);
-    wbounds.setLow(-35); // rad/s
-    wbounds.setHigh(35); // rad/s
+    // wbounds.setLow(-35); // rad/s
+    // wbounds.setHigh(35); // rad/s
 
-    // wbounds.setLow(-5); // rad/s
-    // wbounds.setHigh(5); // rad/s
+    wbounds.setLow(-2); // rad/s
+    wbounds.setHigh(2); // rad/s
+    wbounds.setLow(2, -0.5); // no yaw movement
+    wbounds.setHigh(2, 0.5);
     space->setAngularVelocityBounds(wbounds);
 
     // create a control space
     // R^4: forces of the 4 rotors
     auto cspace(std::make_shared<oc::RealVectorControlSpace>(space, 4));
-    // cspace->setControlSamplerAllocator(
-    //     [this](const oc::ControlSpace *space)
-    //     {
-    //       return std::make_shared<ControlSampler>(space, mass_ / 4.0 * g_, 0.5 / 1000.0 * g_);
-    //     });
+    cspace->setControlSamplerAllocator(
+        [this](const oc::ControlSpace *space)
+        {
+          return std::make_shared<ControlSampler>(space, mass_ / 4.0 * g_, 2.0 / 1000.0 * g_);
+        });
 
     // set the bounds for the control space
     ob::RealVectorBounds cbounds(4);
     // // version to control thrust + moments
-    // cbounds.setLow(-1e-5);
-    // cbounds.setHigh(1e-5);
-    // cbounds.setLow(0, 4.0 * 3.0 / 1000.0 * g_);
-    // cbounds.setHigh(0, 4.0 * 12.0 / 1000.0 * g_);
+    // // cbounds.setLow(0);
+    // // cbounds.setHigh(0);
+    // cbounds.setLow(1,-1e-4); // roll
+    // cbounds.setHigh(1,1e-4);
+    // cbounds.setLow(2,-1e-4); // pitch
+    // cbounds.setHigh(2,1e-4);
+    // cbounds.setLow(3,0); // yaw
+    // cbounds.setHigh(3,0);
+    // cbounds.setLow(0, 0.0 * mass_ * g_);//4.0 * 3.0 / 1000.0 * g_);
+    // cbounds.setHigh(0, 1.4 * mass_ * g_);//4.0 * 12.0 / 1000.0 * g_);
 
     // version to control force
-    cbounds.setLow(0);//3.0 / 1000.0 * g_);
+    cbounds.setLow(0);
     cbounds.setHigh(12.0 / 1000.0 * g_);
     // const float t2w = 3.0; // thrust-to-weight
     // cbounds.setHigh(t2w * mass_ / 4.0 * g_);
@@ -787,7 +795,9 @@ public:
     resultTyped->angularVelocity()[1] = omega(1);
     resultTyped->angularVelocity()[2] = omega(2);
 
-    // std::cout << "=====================" << std::endl;
+    // std::cout << "=====================" <<  duration << std::endl;
+    // si_->printState(startTyped);
+    // si_->printControl(control);
     // si_->printState(resultTyped);
     // std::cout << si_->satisfiesBounds(resultTyped) << std::endl;
   }
