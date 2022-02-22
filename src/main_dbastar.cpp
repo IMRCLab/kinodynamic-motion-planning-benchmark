@@ -156,7 +156,7 @@ float heuristic(std::shared_ptr<Robot> robot, const ob::State *s, const ob::Stat
   const auto goal_pos = robot->getTransform(g).translation();
   float dist = (current_pos - goal_pos).norm();
   const float max_vel = 0.5; // m/s
-  const float time = dist * max_vel;
+  const float time = dist / max_vel;
   return time;
 }
 
@@ -275,7 +275,7 @@ int main(int argc, char* argv[]) {
     for (const auto& action : motion["actions"]) {
       m.actions.push_back(allocAndFillControl(si, action));
     }
-    m.cost = m.actions.size() / 10.0f; // time in seconds
+    m.cost = m.actions.size() * robot->dt(); // time in seconds
     m.idx = motions.size();
     // m.name = motion["name"].as<std::string>();
 
