@@ -276,7 +276,8 @@ int main(int argc, char* argv[]) {
   position_bounds_no_bound.setHigh(std::numeric_limits<double>::max());
   std::shared_ptr<Robot> robot_no_pos_bound = create_robot(robotType, position_bounds);
   auto si_no_pos_bound = robot_no_pos_bound->getSpaceInformation();
-
+  si_no_pos_bound->setStatePropagator(statePropagator);
+  si_no_pos_bound->setup();
 
   for (const auto& motion : motions_node) {
     Motion m;
