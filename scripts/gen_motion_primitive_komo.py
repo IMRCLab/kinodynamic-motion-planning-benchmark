@@ -39,8 +39,8 @@ def gen_motion(robot_type, start, goal, is2D):
 			}]
 		}
 		if not is2D:
-			env["environment"]["min"].append(-2)
-			env["environment"]["max"].append(2)
+			env["environment"]["min"].append(-5)
+			env["environment"]["max"].append(5)
 
 		filename_env = str(p / "env.yaml")
 		with open(filename_env, 'w') as f:
@@ -91,7 +91,10 @@ def gen_motion(robot_type, start, goal, is2D):
 		eucledian_distance = 0
 		split = [0]
 		for k in range(1, len(states)):
-			eucledian_distance += np.linalg.norm(states[k-1][0:3] - states[k][0:3])
+			if is2D:
+				eucledian_distance += np.linalg.norm(states[k-1][0:2] - states[k][0:2])
+			else:
+				eucledian_distance += np.linalg.norm(states[k-1][0:3] - states[k][0:3])
 			if eucledian_distance >= 0.5:
 				split.append(k)
 				eucledian_distance = 0
@@ -106,7 +109,10 @@ def gen_motion(robot_type, start, goal, is2D):
 			start_k = split[idx-1]
 			k = split[idx]
 			# shift states
-			states[start_k:, 0:3] -= states[start_k, 0:3]
+			if is2D:
+				states[start_k:, 0:2] -= states[start_k, 0:2]
+			else:
+				states[start_k:, 0:3] -= states[start_k, 0:3]
 			# create motion
 			motion = dict()
 			motion['x0'] = states[start_k].tolist()

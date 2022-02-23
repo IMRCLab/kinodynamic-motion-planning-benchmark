@@ -65,6 +65,7 @@ class RobotUnicycleFirstOrder:
 		self.max_x = np.array([np.inf, np.inf, np.pi])
 
 		self.dt = 0.1
+		self.is2D = True
 
 	def valid_state(self, state):
 		return 	(state >= self.min_x).all() and \
@@ -96,6 +97,7 @@ class RobotUnicycleSecondOrder:
 		self.max_x = np.array([np.inf, np.inf, np.pi, v_limit, w_limit])
 
 		self.dt = 0.1
+		self.is2D = True
 
 	def valid_state(self, state):
 		return 	(state >= self.min_x).all() and \
@@ -143,6 +145,7 @@ class RobotCarFirstOrderWithTrailers:
 		self.L = L
 		self.hitch_lengths = hitch_lengths
 		self.dt = 0.1
+		self.is2D = True
 
 	def valid_state(self, state):
 		# check if theta0 and theta1 have a reasonable relative angle
@@ -236,6 +239,7 @@ class Quadrotor:
 			self.inv_J = 1 / self.J  # diagonal matrix -> division
 
 		self.dt = 0.01
+		self.is2D = False
 
 	def valid_state(self, state):
 		return 	(state >= self.min_x).all() and \

@@ -50,11 +50,17 @@ def extract_valid_motions(filename_env: str, filename_result: str, validity_chec
 
 	for t in range(T):
 		if t > 0:
-			eucledian_distance += np.linalg.norm(states[t-1][0:3] - states[t][0:3])
+			if robot.is2D:
+				eucledian_distance += np.linalg.norm(states[t-1][0:2] - states[t][0:2])
+			else:
+				eucledian_distance += np.linalg.norm(states[t-1][0:3] - states[t][0:3])
 		if not valid[t] or t == T-1 or eucledian_distance > 0.5:
 			if t - start_t > 5:
 				# shift states
-				states[start_t:, 0:3] -= states[start_t, 0:3]
+				if robot.is2D:
+					states[start_t:, 0:2] -= states[start_t, 0:2]
+				else:
+					states[start_t:, 0:3] -= states[start_t, 0:3]
 				# create motion
 				motion = dict()
 				motion['x0'] = states[start_t].tolist()
