@@ -1,7 +1,7 @@
 import numpy as np
 # from scp import SCP
 from main_komo import run_komo_standalone
-from utils_motion_primitives import sort_primitives, visualize_motion
+from utils_motion_primitives import sort_primitives, visualize_motion, plot_stats
 import robots
 import yaml
 import multiprocessing as mp
@@ -19,7 +19,7 @@ import time
 import sys, os
 sys.path.append(os.getcwd())
 
-def gen_motion(robot_type, start, goal):
+def gen_motion(robot_type, start, goal, is2D):
 	dbg = False
 	with tempfile.TemporaryDirectory() as tmpdirname:
 		if dbg:
@@ -38,6 +38,9 @@ def gen_motion(robot_type, start, goal):
 				"goal": list(goal),
 			}]
 		}
+		if not is2D:
+			env["environment"]["min"].append(-5)
+			env["environment"]["max"].append(5)
 
 		filename_env = str(p / "env.yaml")
 		with open(filename_env, 'w') as f:
@@ -67,7 +70,10 @@ def gen_motion(robot_type, start, goal):
 		eucledian_distance = 0
 		split = [0]
 		for k in range(1, len(states)):
-			eucledian_distance += np.linalg.norm(states[k-1][0:2] - states[k][0:2])
+			if is2D:
+				eucledian_distance += np.linalg.norm(states[k-1][0:2] - states[k][0:2])
+			else:
+				eucledian_distance += np.linalg.norm(states[k-1][0:3] - states[k][0:3])
 			if eucledian_distance >= 0.5:
 				split.append(k)
 				eucledian_distance = 0
@@ -82,7 +88,10 @@ def gen_motion(robot_type, start, goal):
 			start_k = split[idx-1]
 			k = split[idx]
 			# shift states
-			states[start_k:, 0:2] -= states[start_k, 0:2]
+			if is2D:
+				states[start_k:, 0:2] -= states[start_k, 0:2]
+			else:
+				states[start_k:, 0:3] -= states[start_k, 0:3]
 			# create motion
 			motion = dict()
 			motion['x0'] = states[start_k].tolist()
@@ -109,7 +118,9 @@ def gen_random_motion(robot_type):
 	# shift to center (at 0,0)
 	start[0] = 0
 	start[1] = 0
-	motions =  gen_motion(robot_type, start, goal)
+	if not rh.is2D():
+		start[2] = 0
+	motions =  gen_motion(robot_type, start, goal, rh.is2D())
 	for motion in motions:
 		motion['distance'] = rh.distance(motion['x0'], motion['xf'])
 	return motions
@@ -180,6 +191,9 @@ def main():
 	# visualize the top 100
 	for k, m in enumerate(sorted_motions[0:100]):
 		visualize_motion(m, args.robot_type, tmp_path / "top_{}.mp4".format(k))
+
+	# plot statistics
+	plot_stats(sorted_motions, args.robot_type, tmp_path / "stats.pdf")
 
 
 if __name__ == '__main__':
