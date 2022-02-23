@@ -9,7 +9,7 @@ from motionplanningutils import CollisionChecker, RobotHelper
 import robots
 
 
-def extract_valid_motions(filename_env: str, filename_result: str):
+def extract_valid_motions(filename_env: str, filename_result: str, validity_checked=False):
 	# read robot type
 	with open(filename_env) as f:
 		env = yaml.safe_load(f)
@@ -18,7 +18,7 @@ def extract_valid_motions(filename_env: str, filename_result: str):
 	robot = robots.create_robot(robot_node["type"])
 
 	def check_array(a, b):
-		return np.allclose(a, b, rtol=0.01, atol=1e-2)
+		return np.allclose(a, b, rtol=0.01, atol=1e-1)
 
 	# load result
 	with open(filename_result) as f:
@@ -30,18 +30,19 @@ def extract_valid_motions(filename_env: str, filename_result: str):
 	# dynamics
 	T = states.shape[0]
 	valid = np.full((T,), True)
-
-	for t in range(T-1):
-		state_desired = robot.step(states[t], actions[t])
-		valid[t] &= check_array(states[t+1], state_desired)
-	# state limits
-	for t in range(T):
-		if not robot.valid_state(states[t]):
-			valid[t] = False
-	# action limits
-	for t in range(T-1):
-		if (actions[t] > robot.max_u + 1e-2).any() or (actions[t] < robot.min_u - 1e-2).any():
-			valid[t] = False
+	if not validity_checked:
+		for t in range(T-1):
+			state_desired = robot.step(states[t], actions[t])
+			valid[t] &= check_array(states[t+1], state_desired)
+			# print(t, states[t+1] - state_desired)
+		# state limits
+		for t in range(T):
+			if not robot.valid_state(states[t]):
+				valid[t] = False
+		# action limits
+		for t in range(T-1):
+			if (actions[t] > robot.max_u + 1e-2).any() or (actions[t] < robot.min_u - 1e-2).any():
+				valid[t] = False
 
 	motions = []
 	start_t = 0
@@ -49,11 +50,11 @@ def extract_valid_motions(filename_env: str, filename_result: str):
 
 	for t in range(T):
 		if t > 0:
-			eucledian_distance += np.linalg.norm(states[t-1][0:2] - states[t][0:2])
+			eucledian_distance += np.linalg.norm(states[t-1][0:3] - states[t][0:3])
 		if not valid[t] or t == T-1 or eucledian_distance > 0.5:
 			if t - start_t > 5:
 				# shift states
-				states[start_t:, 0:2] -= states[start_t, 0:2]
+				states[start_t:, 0:3] -= states[start_t, 0:3]
 				# create motion
 				motion = dict()
 				motion['x0'] = states[start_t].tolist()
@@ -68,6 +69,8 @@ def extract_valid_motions(filename_env: str, filename_result: str):
 			start_t = t
 			eucledian_distance = 0
 
+	print("extract motions: {:.1f} % valid; split in {} motions".format(np.count_nonzero(valid) / T * 100, len(motions)))
+	
 	return motions
 	
 
@@ -181,8 +184,10 @@ def main() -> None:
 	parser.add_argument("result", help="file containing the result (YAML)")
 	args = parser.parse_args()
 
-	print(check(args.env, args.result))
-	print(compute_delta(args.env, args.result))
+	print(extract_valid_motions(args.env, args.result))
+
+	# print(check(args.env, args.result))
+	# print(compute_delta(args.env, args.result))
 
 
 if __name__ == "__main__":
