@@ -40,6 +40,7 @@ public:
 
     dt_ = 0.1;
     is2D_ = true;
+    max_speed_ = std::max(fabsf(v_min), fabsf(v_max));
   }
 
   void propagate(
@@ -146,6 +147,7 @@ public:
 
     dt_ = 0.1;
     is2D_ = true;
+    max_speed_ = v_limit;
   }
 
   void propagate(
@@ -407,6 +409,7 @@ public:
 
     dt_ = 0.1;
     is2D_ = true;
+    max_speed_ = std::max(fabsf(v_min), fabsf(v_max));
   }
 
   virtual size_t numParts()
@@ -728,6 +731,7 @@ public:
 
     dt_ = 0.01;
     is2D_ = false;
+    max_speed_ = sqrtf(powf(vbounds.high[0], 2) + powf(vbounds.high[1], 2) + powf(vbounds.high[2], 2));
   }
 
   void propagate(

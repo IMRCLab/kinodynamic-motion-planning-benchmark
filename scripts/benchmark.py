@@ -121,14 +121,14 @@ def main():
 		"quadrotor_0/empty_0",
 	]
 	algs = [
-		# "sst",
-		# "sbpl",
-		# "komo",
+		"sst",
+		"sbpl",
+		"komo",
 		"dbAstar-komo",
 		# "dbAstar-scp",
 	]
-	trials = 1
-	timelimit = 5 * 60#5 * 60
+	trials = 5
+	timelimit = 5 * 60
 
 	tasks = []
 	for instance in instances:

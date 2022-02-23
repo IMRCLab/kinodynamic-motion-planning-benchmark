@@ -51,7 +51,10 @@ def gen_motion(robot_type, start, goal, is2D):
 		# success = run_komo_standalone(filename_env, str(p), 120, "", search="linear", initialguess="none")
 		# use_T = np.random.randint(20, 100)
 		# success = run_komo_standalone(filename_env, str(p), 5 * 60, "soft_goal: 1", search="none", initialguess="none", use_T=use_T)
-		success = run_komo_standalone(filename_env, str(p), 5 * 60, "plan_recovery: 1", search="binarySearch", initialguess="none")
+		if "quadrotor" in robot_type:
+			success = run_komo_standalone(filename_env, str(p), 5 * 60, "plan_recovery: 1", search="binarySearch", initialguess="none")
+		else:
+			success = run_komo_standalone(filename_env, str(p), 120, "opt/stopTolerance: 0.001\nadd_init_noise: 0.1", search="linear", initialguess="none")
 		# print("SDF", success)
 		# if success:
 		# 	print("PPPPSDF")
@@ -135,15 +138,15 @@ def gen_random_motion(robot_type):
 
 	rh = RobotHelper(robot_type)
 	start = rh.sampleUniform()
-	goal = rh.sampleUniform()
-	# shift to center (at 2,2)
+	# shift to center (at 0,0)
 	start[0] = 0
 	start[1] = 0
 	if not rh.is2D():
 		start[2] = 0
-	# TODO:
-	# goal[0:3] = np.random.uniform(-0.25, 0.25, 3).tolist()
-	goal = [0,0,0, 0,0,0,1, 0,0,0, 0,0,0]
+	if "quadrotor" in robot_type:
+		goal = [0,0,0, 0,0,0,1, 0,0,0, 0,0,0]
+	else:
+		goal = rh.sampleUniform()
 	motions =  gen_motion(robot_type, start, goal, rh.is2D())
 	for motion in motions:
 		motion['distance'] = rh.distance(motion['x0'], motion['xf'])

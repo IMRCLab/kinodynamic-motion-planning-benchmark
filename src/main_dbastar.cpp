@@ -155,7 +155,7 @@ float heuristic(std::shared_ptr<Robot> robot, const ob::State *s, const ob::Stat
   const auto current_pos = robot->getTransform(s).translation();
   const auto goal_pos = robot->getTransform(g).translation();
   float dist = (current_pos - goal_pos).norm();
-  const float max_vel = 8.67;//0.5; // m/s
+  const float max_vel = robot->maxSpeed(); // m/s
   const float time = dist / max_vel;
   return time;
 }
@@ -269,14 +269,23 @@ int main(int argc, char* argv[]) {
   std::vector<Motion> motions;
   size_t num_states = 0;
   size_t num_invalid_states = 0;
+
+  // create a robot with no position bounds
+  ob::RealVectorBounds position_bounds_no_bound(env_min.size());
+  position_bounds_no_bound.setLow(std::numeric_limits<double>::min());
+  position_bounds_no_bound.setHigh(std::numeric_limits<double>::max());
+  std::shared_ptr<Robot> robot_no_pos_bound = create_robot(robotType, position_bounds);
+  auto si_no_pos_bound = robot_no_pos_bound->getSpaceInformation();
+
+
   for (const auto& motion : motions_node) {
     Motion m;
     for (const auto& state : motion["states"]) {
       m.states.push_back(allocAndFillState(si, state));
-      if (!si->isValid(m.states.back())) {
+      if (!si_no_pos_bound->isValid(m.states.back())) {
         // std::cout << "State in motion primitive is invalid! Enforcing bounds!\n";
         // si->printState(m.states.back());
-        si->enforceBounds(m.states.back());
+        si_no_pos_bound->enforceBounds(m.states.back());
         ++num_invalid_states;
         // si->printState(m.states.back());
       }
@@ -287,7 +296,6 @@ int main(int argc, char* argv[]) {
     }
     m.cost = m.actions.size() * robot->dt(); // time in seconds
     m.idx = motions.size();
-    std::cout << m.actions.size() << " " << m.cost << std::endl;
     // m.name = motion["name"].as<std::string>();
 
     // generate collision objects and collision manager
@@ -590,7 +598,7 @@ int main(int argc, char* argv[]) {
     T_m->nearestR(&fakeMotion, delta*alpha, neighbors_m);
     // std::shuffle(std::begin(neighbors_m), std::end(neighbors_m), rng);
 
-    std::cout << "found " << neighbors_m.size() << " motions" << std::endl;
+    // std::cout << "found " << neighbors_m.size() << " motions" << std::endl;
     // Loop over all potential applicable motions
     for (const Motion* motion : neighbors_m) {
       if (motion->disabled) {
@@ -648,15 +656,14 @@ int main(int argc, char* argv[]) {
       // skip motions that would exceed cost bound
       if (tentative_fScore > maxCost)
       {
-        std::cout << "skip b/c cost " << tentative_fScore << " " << tentative_gScore << " " << tentative_hScore << " " << maxCost << std::endl;
-        // si->printState(tmpState);
+        // std::cout << "skip b/c cost " << tentative_fScore << " " << tentative_gScore << " " << tentative_hScore << " " << maxCost << std::endl;
         continue;
       }
       // skip motions that are invalid
       if (!si->satisfiesBounds(tmpState))
       {
-        std::cout << "skip invalid state" << std::endl;
-        si->printState(tmpState);
+        // std::cout << "skip invalid state" << std::endl;
+        // si->printState(tmpState);
         continue;
       }
 
@@ -708,7 +715,7 @@ int main(int argc, char* argv[]) {
 
       // Skip this motion, if it isn't valid
       if (!motionValid) {
-        std::cout << "skip invalid motion" << std::endl;
+        // std::cout << "skip invalid motion" << std::endl;
         continue;
       }
       // std::cout << "valid " <<  std::endl;

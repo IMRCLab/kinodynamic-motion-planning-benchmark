@@ -18,7 +18,7 @@ def extract_valid_motions(filename_env: str, filename_result: str, validity_chec
 	robot = robots.create_robot(robot_node["type"])
 
 	def check_array(a, b):
-		return np.allclose(a, b, rtol=0.01, atol=1e-1)
+		return np.allclose(a, b, rtol=0.01, atol=1e-2)
 
 	# load result
 	with open(filename_result) as f:
@@ -34,7 +34,6 @@ def extract_valid_motions(filename_env: str, filename_result: str, validity_chec
 		for t in range(T-1):
 			state_desired = robot.step(states[t], actions[t])
 			valid[t] &= check_array(states[t+1], state_desired)
-			# print(t, states[t+1] - state_desired)
 		# state limits
 		for t in range(T):
 			if not robot.valid_state(states[t]):
