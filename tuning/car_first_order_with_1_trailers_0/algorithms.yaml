@@ -16,7 +16,7 @@ sst:
 
 dbAstar-komo:
   default:
-    add_primitives_per_iteration: 250
+    add_primitives_per_iteration: 500
     desired_branching_factor: 8
     suboptimality_bound: 1.0
     alpha: 0.4
