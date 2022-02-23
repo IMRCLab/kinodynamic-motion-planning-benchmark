@@ -9,7 +9,7 @@ from motionplanningutils import CollisionChecker, RobotHelper
 import robots
 
 
-def extract_valid_motions(filename_env: str, filename_result: str):
+def extract_valid_motions(filename_env: str, filename_result: str, validity_checked=False):
 	# read robot type
 	with open(filename_env) as f:
 		env = yaml.safe_load(f)
@@ -30,18 +30,18 @@ def extract_valid_motions(filename_env: str, filename_result: str):
 	# dynamics
 	T = states.shape[0]
 	valid = np.full((T,), True)
-
-	for t in range(T-1):
-		state_desired = robot.step(states[t], actions[t])
-		valid[t] &= check_array(states[t+1], state_desired)
-	# state limits
-	for t in range(T):
-		if not robot.valid_state(states[t]):
-			valid[t] = False
-	# action limits
-	for t in range(T-1):
-		if (actions[t] > robot.max_u + 1e-2).any() or (actions[t] < robot.min_u - 1e-2).any():
-			valid[t] = False
+	if not validity_checked:
+		for t in range(T-1):
+			state_desired = robot.step(states[t], actions[t])
+			valid[t] &= check_array(states[t+1], state_desired)
+		# state limits
+		for t in range(T):
+			if not robot.valid_state(states[t]):
+				valid[t] = False
+		# action limits
+		for t in range(T-1):
+			if (actions[t] > robot.max_u + 1e-2).any() or (actions[t] < robot.min_u - 1e-2).any():
+				valid[t] = False
 
 	motions = []
 	start_t = 0
@@ -68,6 +68,8 @@ def extract_valid_motions(filename_env: str, filename_result: str):
 			start_t = t
 			eucledian_distance = 0
 
+	print("extract motions: {:.1f} % valid; split in {} motions".format(np.count_nonzero(valid) / T * 100, len(motions)))
+	
 	return motions
 	
 
@@ -181,8 +183,10 @@ def main() -> None:
 	parser.add_argument("result", help="file containing the result (YAML)")
 	args = parser.parse_args()
 
-	print(check(args.env, args.result))
-	print(compute_delta(args.env, args.result))
+	print(extract_valid_motions(args.env, args.result))
+
+	# print(check(args.env, args.result))
+	# print(compute_delta(args.env, args.result))
 
 
 if __name__ == "__main__":

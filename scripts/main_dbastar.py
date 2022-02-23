@@ -214,7 +214,7 @@ def run_dbastar(filename_env, folder, timelimit, cfg, opt_alg="scp", motions_sta
 						success = main_scp.run_scp(filename_env, filename_result_dbastar, filename_result_opt)
 					elif opt_alg == "komo":
 						success = main_komo.run_komo_with_T_scaling(
-							filename_env, filename_result_dbastar, filename_result_opt, cfg["rai_cfg"], max_T=int(maxCost*10))
+							filename_env, filename_result_dbastar, filename_result_opt, cfg["rai_cfg"], max_T=int(maxCost/robot.dt))
 
 						# success = main_komo.run_komo(filename_env, filename_result_dbastar, filename_result_opt, cfg["rai_cfg"])
 					else:
@@ -224,7 +224,7 @@ def run_dbastar(filename_env, folder, timelimit, cfg, opt_alg="scp", motions_sta
 
 					# extract solution, independent of success
 					if Path(filename_result_opt).exists():
-						opt_motions = checker.extract_valid_motions(filename_env, filename_result_opt)
+						opt_motions = checker.extract_valid_motions(filename_env, filename_result_opt, success)
 						print("Extracted {} motions from optimization".format(len(opt_motions)))
 						motions.extend(opt_motions)
 
