@@ -17,8 +17,8 @@ class Report:
     self.alg_dict = {
       'sst': {'idx': 0, 'color': cmap.colors[0], 'name': 'SST*'},
       'sbpl': {'idx': 1, 'color': cmap.colors[1], 'name': 'SBPL'},
-      'komo': {'idx': 2, 'color': cmap.colors[2], 'name': 'KOMO'},
-      'dbAstar-komo': {'idx': 3, 'color': cmap.colors[3], 'name': 'db-A*'},
+      'komo': {'idx': 2, 'color': cmap.colors[2], 'name': 'geom. RRT*+KOMO'},
+      'dbAstar-komo': {'idx': 3, 'color': cmap.colors[3], 'name': 'kMP-db-A*'},
     }
     self.color_dict = {
       'sst': cmap.colors[0],

@@ -83,7 +83,7 @@ def main():
 
 	out = r"\begin{tabular}{c || c|c || c|c|c || c|c|c || c|c|c  || c|c|c}"
 	print(out)
-	print(r"\# & System & Instance & \multicolumn{3}{c||}{SST*} & \multicolumn{3}{c||}{SBPL} & \multicolumn{3}{c||}{KOMO} & \multicolumn{3}{c}{db-A*}\\")
+	print(r"\# & System & Instance & \multicolumn{3}{c||}{SST*} & \multicolumn{3}{c||}{SBPL} & \multicolumn{3}{c||}{geom. RRT*+KOMO} & \multicolumn{3}{c}{kMP-db-A*}\\")
 	print(r"&&& $t^{\mathrm{st}} [s]$ & $J^{\mathrm{st}} [s]$ & $J^{f} [s]$& $t^{\mathrm{st}} [s]$ & $J^{\mathrm{st}} [s]$ & $J^{f} [s]$& $t^{\mathrm{st}} [s]$ & $J^{\mathrm{st}} [s]$ & $J^{f} [s]$& $t^{\mathrm{st}} [s]$ & $J^{\mathrm{st}} [s]$ & $J^{f} [s]$\\")
 	print(r"\hline")
 
