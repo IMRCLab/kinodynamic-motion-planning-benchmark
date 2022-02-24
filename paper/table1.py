@@ -79,12 +79,35 @@ def main():
 		'wall_0': "wall",
 	}
 
+	alg_names = {
+		"sst": "SST*",
+		"sbpl": "SBPL",
+		"komo": "geom. RRT*+KOMO",
+		"dbAstar-komo": "kMP-db-A*"
+	}
+
 	T = 5*60
 
-	out = r"\begin{tabular}{c || c|c || c|c|c || c|c|c || c|c|c  || c|c|c}"
+	out = r"\begin{tabular}{c || c|c"
+	for _ in algs:
+		out += r" || r|r|r|r"
+	out += "}"
 	print(out)
-	print(r"\# & System & Instance & \multicolumn{3}{c||}{SST*} & \multicolumn{3}{c||}{SBPL} & \multicolumn{3}{c||}{geom. RRT*+KOMO} & \multicolumn{3}{c}{kMP-db-A*}\\")
-	print(r"&&& $t^{\mathrm{st}} [s]$ & $J^{\mathrm{st}} [s]$ & $J^{f} [s]$& $t^{\mathrm{st}} [s]$ & $J^{\mathrm{st}} [s]$ & $J^{f} [s]$& $t^{\mathrm{st}} [s]$ & $J^{\mathrm{st}} [s]$ & $J^{f} [s]$& $t^{\mathrm{st}} [s]$ & $J^{\mathrm{st}} [s]$ & $J^{f} [s]$\\")
+	out = r"\# & System & Instance"
+	for k, alg in enumerate(algs):
+		if k == len(algs) - 1:
+			out += r" & \multicolumn{4}{c}{"
+		else:
+			out += r" & \multicolumn{4}{c||}{"
+		out += alg_names[alg]
+		out += r"}"
+	out += r"\\"
+	print(out)
+	out = r"&& "
+	for _ in algs:
+		out += r" & $p$ & $t^{\mathrm{st}} [s]$ & $J^{\mathrm{st}} [s]$ & $J^{f} [s]$"
+	out += r"\\"
+	print(out)
 	print(r"\hline")
 
 	last_system = ""
@@ -94,6 +117,7 @@ def main():
 		out = ""
 		if last_system != row["system"]:
 			out += r"\hline"
+			out += "\n"
 		out += "{} & ".format(r_number+1)
 		if last_system != row["system"]:
 			# check how many use the same
@@ -143,32 +167,48 @@ def main():
 			# out += " & ${:.1f} \pm {:.1f}$".format(np.mean(final_costs), np.std(final_costs))
 
 			result[alg] = {
+				'success': len(initial_times)/5,
 				't^st_mean': np.mean(initial_times) if len(initial_times) > 0 else None,
 				'J^st_mean': np.mean(initial_costs) if len(initial_costs) > 0 else None,
 				'J^f_mean': np.mean(final_costs) if len(initial_costs) > 0 else None,
 			}
 
 		def print_and_highlight_best(out, key):
-			out += " & $"
+			out += " & "
 			is_best = False
 			if result[alg][key] is not None:
 				# we only look at one digit
 				is_best = np.array([round(result[alg][key],1) <= round(result[other][key],1) for other in algs if result[other][key] is not None]).all()
 			if is_best:
-				out += r"\mathbf{"
+				out += r"\bfseries "
 			if result[alg][key] is not None:
 				out += "{:.1f}".format(result[alg][key])
 			else:
-				out += "-"
+				out += r"\textemdash"
+			return out
+
+		def print_and_highlight_best_max(out, key):
+			out += " & "
+			is_best = False
+			if result[alg][key] is not None:
+				# we only look at one digit
+				is_best = np.array([round(result[alg][key],1) >= round(result[other][key],1) for other in algs if result[other][key] is not None]).all()
 			if is_best:
-				out += r"}"
-			out += r"$"
+				out += r"\bfseries "
+			if result[alg][key] is not None:
+				out += "{:.1f}".format(result[alg][key])
+			else:
+				out += r"\textemdash"
 			return out
 
 		for alg in algs:
-			out = print_and_highlight_best(out, 't^st_mean')
-			out = print_and_highlight_best(out, 'J^st_mean')
-			out = print_and_highlight_best(out, 'J^f_mean')
+			if alg == "sbpl" and row['system'] != "unicycle_first_order_0":
+				out += " &&&& "
+			else:
+				out = print_and_highlight_best_max(out, 'success')
+				out = print_and_highlight_best(out, 't^st_mean')
+				out = print_and_highlight_best(out, 'J^st_mean')
+				out = print_and_highlight_best(out, 'J^f_mean')
 
 		out += r"\\"
 		print(out)

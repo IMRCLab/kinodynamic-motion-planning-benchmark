@@ -57,8 +57,8 @@ class Report:
       self.ax.plot(self.times, mean, label=self.alg_dict[algo]['name'], color=self.color_dict[algo])
       self.ax.fill_between(self.times, mean+std, mean-std, color=self.color_dict[algo], alpha=0.5)
     self.ax.legend()
-    self.ax.set_xlabel("time [s]")
-    self.ax.set_ylabel("cost [s]")
+    self.ax.set_xlabel("Time [s]")
+    self.ax.set_ylabel("Cost [s]")
 
   def add_initial_time_cost_plot(self, exp_name):
     self._add_page()
@@ -79,8 +79,8 @@ class Report:
           initial_times.append(initial_time)
       self.ax.scatter(initial_times, initial_costs, label=algo, color=self.color_dict[algo])
     self.ax.legend()
-    self.ax.set_xlabel("time for first solution [s]")
-    self.ax.set_ylabel("cost of first solution [s]")
+    self.ax.set_xlabel("Time for first solution [s]")
+    self.ax.set_ylabel("Cost of first solution [s]")
 
   def add_success_rate_plot(self, exp_name):
     self._add_page()
@@ -130,7 +130,7 @@ class Report:
     self.ax.set_xticks(range(1, len(names)+1))
     self.ax.set_xticklabels(names)
     # self.ax.legend()
-    self.ax.set_ylabel("time for first solution [s]")
+    self.ax.set_ylabel("Time for first solution [s]")
 
   def add_boxplot_initial_cost_plot(self, exp_names):
     self._add_page()
@@ -164,7 +164,7 @@ class Report:
       ax[0,i].set_xticklabels(names)
       ax[0,i].yaxis.grid(True)
       # ax[0,i].legend()
-    ax[0,0].set_ylabel("cost for first solution [s]")
+    ax[0,0].set_ylabel("Cost for first solution [s]")
 
 
   def add_barplot_initial_cost_plot(self, exp_names):
@@ -204,8 +204,8 @@ class Report:
         ax[1,i].set_xlabel(exp_name)
         
         
-    ax[0,0].set_ylabel("cost for first solution [s]")
-    ax[1,0].set_ylabel("time for first solution [s]")
+    ax[0,0].set_ylabel("Cost for first solution [s]")
+    ax[1,0].set_ylabel("Time for first solution [s]")
 
 
   def close(self):
