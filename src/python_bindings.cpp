@@ -10,6 +10,11 @@
 // YAML
 #include <yaml-cpp/yaml.h>
 
+// OMPL
+#include <ompl/datastructures/NearestNeighbors.h>
+#include <ompl/datastructures/NearestNeighborsSqrtApprox.h>
+#include <ompl/datastructures/NearestNeighborsGNATNoThreadSafety.h>
+
 // local
 #include "robots.h"
 #include "robotStatePropagator.hpp"
@@ -23,7 +28,7 @@ namespace oc = ompl::control;
 class RobotHelper
 {
 public:
-  RobotHelper(const std::string& robotType)
+  RobotHelper(const std::string& robotType, float pos_limit = 2)
   {
     size_t dim = 2;
     if (robotType == "quadrotor_0") {
@@ -31,8 +36,8 @@ public:
     }
 
     ob::RealVectorBounds position_bounds(dim);
-    position_bounds.setLow(-2);
-    position_bounds.setHigh(2);
+    position_bounds.setLow(-pos_limit);
+    position_bounds.setHigh(pos_limit);
     robot_ = create_robot(robotType, position_bounds);
 
     auto si = robot_->getSpaceInformation();
@@ -58,6 +63,8 @@ public:
     auto si = robot_->getSpaceInformation();
     si->getStateSpace()->copyFromReals(tmp_state_a_, stateA);
     si->getStateSpace()->copyFromReals(tmp_state_b_, stateB);
+    si->printState(tmp_state_a_);
+    si->printState(tmp_state_b_);
     return si->distance(tmp_state_a_, tmp_state_b_);
   }
 
@@ -126,6 +133,108 @@ public:
   bool is2D() const
   {
     return robot_->is2D();
+  }
+
+  std::vector<size_t> sortMotions(
+    const std::vector<std::vector<double>> &x0s,
+    const std::vector<std::vector<double>> &xfs,
+    size_t top_k)
+  {
+    assert(x0s.size() == xfs.size());
+    assert(x0s.size() > 0);
+    auto si = robot_->getSpaceInformation();
+    struct Motion
+    {
+      ob::State* x0;
+      ob::State* xf;
+      size_t idx;
+    };
+    // create vector of motions
+    std::vector<Motion> motions;
+    for (size_t i = 0; i < x0s.size(); ++i) {
+      Motion m;
+      m.x0 = si->allocState();
+      si->getStateSpace()->copyFromReals(m.x0, x0s[i]);
+      si->enforceBounds(m.x0);
+      m.xf = si->allocState();
+      si->getStateSpace()->copyFromReals(m.xf, xfs[i]);
+      si->enforceBounds(m.xf);
+      m.idx = i;
+      motions.push_back(m);
+    }
+
+    // build kd-tree for Tx0
+    ompl::NearestNeighbors<Motion*>* Tx0;
+    if (si->getStateSpace()->isMetricSpace())
+    {
+      Tx0 = new ompl::NearestNeighborsGNATNoThreadSafety<Motion*>();
+    } else {
+      Tx0 = new ompl::NearestNeighborsSqrtApprox<Motion*>();
+    }
+    Tx0->setDistanceFunction([si](const Motion* a, const Motion* b) { return si->distance(a->x0, b->x0); });
+
+    // build kd-tree for Txf
+    ompl::NearestNeighbors<Motion*>* Txf;
+    if (si->getStateSpace()->isMetricSpace())
+    {
+      Txf = new ompl::NearestNeighborsGNATNoThreadSafety<Motion*>();
+    } else {
+      Txf = new ompl::NearestNeighborsSqrtApprox<Motion*>();
+    }
+    Txf->setDistanceFunction([si](const Motion* a, const Motion* b) { return si->distance(a->xf, b->xf); });
+
+    // use as first/seed motion the one that moves furthest
+    std::vector<size_t> used_motions;
+    size_t best_motion = 0;
+    double largest_d = 0;
+    for (const auto& m : motions) {
+      double d = si->distance(m.x0, m.xf);
+      if (d > largest_d) {
+        largest_d = d;
+        best_motion = m.idx;
+      }
+    }
+    used_motions.push_back(best_motion);
+    Tx0->add(&motions[best_motion]);
+    Txf->add(&motions[best_motion]);
+
+    std::set<size_t> unused_motions;
+    for (const auto& m : motions) {
+      unused_motions.insert(m.idx);
+    }
+    unused_motions.erase(best_motion);
+
+    for (size_t k = 1; k < top_k; ++k) {
+      std::cout << "sorting " << k << std::endl;
+      double best_d = -1;
+      size_t best_motion = -1;
+      for (size_t m1 : unused_motions) {
+        // find smallest distance to existing neighbors
+        auto m2 = Tx0->nearest(&motions[m1]);
+        double smallest_d_x0 = si->distance(motions[m1].x0, m2->x0);
+
+        m2 = Txf->nearest(&motions[m1]);
+        double smallest_d_xf = si->distance(motions[m1].xf, m2->xf);
+
+        double smallest_d = smallest_d_x0 + smallest_d_xf;
+        if (smallest_d > best_d) {
+          best_motion = m1;
+          best_d = smallest_d;
+        }
+      }
+      used_motions.push_back(best_motion);
+      unused_motions.erase(best_motion);
+      Tx0->add(&motions[best_motion]);
+      Txf->add(&motions[best_motion]);
+    }
+
+    // clean-up memory
+    for (const auto& m : motions) {
+      si->freeState(m.x0);
+      si->freeState(m.xf);
+    }
+
+    return used_motions;
   }
 
 private: 
@@ -246,11 +355,12 @@ PYBIND11_MODULE(motionplanningutils, m)
       .def("distance", &CollisionChecker::distance);
 
   pybind11::class_<RobotHelper>(m, "RobotHelper")
-      .def(pybind11::init<const std::string &>())
+      .def(pybind11::init<const std::string &, float>(), py::arg("robot_type"), py::arg("pos_limit") = 2)
       .def("distance", &RobotHelper::distance)
       .def("sampleUniform", &RobotHelper::sampleStateUniform)
       .def("sampleControlUniform", &RobotHelper::sampleControlUniform)
       .def("step", &RobotHelper::step)
       .def("interpolate", &RobotHelper::interpolate)
-      .def("is2D", &RobotHelper::is2D);
+      .def("is2D", &RobotHelper::is2D)
+      .def("sortMotions", &RobotHelper::sortMotions);
 }

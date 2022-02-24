@@ -20,19 +20,7 @@ import time
 import sys, os
 sys.path.append(os.getcwd())
 
-def gen_motion(robot_type, start, goal, is2D):
-
-	# load tuning settings for this case
-	tuning_path = Path("../tuning")
-
-	cfg = tuning_path / robot_type / "algorithms.yaml"
-	assert(cfg.is_file())
-
-	with open(cfg) as f:
-		cfg = yaml.safe_load(f)
-
-	# find cfg
-	mycfg = cfg['gen-motion']
+def gen_motion(robot_type, start, goal, is2D, cfg):
 
 	dbg = False
 	with tempfile.TemporaryDirectory() as tmpdirname:
@@ -42,8 +30,8 @@ def gen_motion(robot_type, start, goal, is2D):
 			p = Path(tmpdirname)
 		env = {
 			"environment":{
-				"min": [-5, -5],
-				"max": [5, 5],
+				"min": [-10, -10],
+				"max": [10, 10],
 				"obstacles": []
 			},
 			"robots": [{
@@ -53,8 +41,8 @@ def gen_motion(robot_type, start, goal, is2D):
 			}]
 		}
 		if not is2D:
-			env["environment"]["min"].append(-5)
-			env["environment"]["max"].append(5)
+			env["environment"]["min"].append(-10)
+			env["environment"]["max"].append(10)
 
 		filename_env = str(p / "env.yaml")
 		with open(filename_env, 'w') as f:
@@ -65,7 +53,7 @@ def gen_motion(robot_type, start, goal, is2D):
 		# success = run_komo_standalone(filename_env, str(p), 120, "", search="linear", initialguess="none")
 		# use_T = np.random.randint(20, 100)
 		# success = run_komo_standalone(filename_env, str(p), 5 * 60, "soft_goal: 1", search="none", initialguess="none", use_T=use_T)
-		success = run_komo_standalone(filename_env, str(p), mycfg['timelimit'], mycfg['rai_cfg'], mycfg['search'], initialguess="none")
+		success = run_komo_standalone(filename_env, str(p), cfg['timelimit'], cfg['rai_cfg'], cfg['search'], initialguess="none", T_range_abs=[0, 200])
 		# print("SDF", success)
 		# if success:
 		# 	print("PPPPSDF")
@@ -147,18 +135,33 @@ def gen_random_motion(robot_type):
 	#       random numbers may repeat, when using multiprocessing
 	from motionplanningutils import RobotHelper
 
-	rh = RobotHelper(robot_type)
+	# load tuning settings for this case
+	tuning_path = Path("../tuning")
+
+	cfg = tuning_path / robot_type / "algorithms.yaml"
+	assert(cfg.is_file())
+
+	with open(cfg) as f:
+		cfg = yaml.safe_load(f)
+
+	# find cfg
+	mycfg = cfg['gen-motion']
+
+	rh = RobotHelper(robot_type, mycfg["env_limit"])
 	start = rh.sampleUniform()
 	# shift to center (at 0,0)
 	start[0] = 0
 	start[1] = 0
 	if not rh.is2D():
 		start[2] = 0
-	if "quadrotor" in robot_type:
-		goal = [0,0,0, 0,0,0,1, 0,0,0, 0,0,0]
-	else:
-		goal = rh.sampleUniform()
-	motions =  gen_motion(robot_type, start, goal, rh.is2D())
+	# if "quadrotor" in robot_type:
+		# goal = [0,0,0, 0,0,0,1, 0,0,0, 0,0,0]
+	# else:
+		# goal = rh.sampleUniform()
+	goal = rh.sampleUniform()
+	# print(start, goal)
+	# exit()
+	motions =  gen_motion(robot_type, start, goal, rh.is2D(), mycfg)
 	for motion in motions:
 		motion['distance'] = rh.distance(motion['x0'], motion['xf'])
 	return motions

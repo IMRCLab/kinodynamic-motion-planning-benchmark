@@ -13,7 +13,25 @@ sys.path.append(os.getcwd())
 from motionplanningutils import RobotHelper
 
 def sort_primitives(motions: list, robot_type: str, top_k=None) -> list:
-	rh = RobotHelper(robot_type)
+	rh = RobotHelper(robot_type, pos_limit=100)
+
+	if top_k is None:
+		top_k = len(motions)
+
+	x0s = [m["x0"] for m in motions]
+	xfs = [m["xf"] for m in motions]
+	idxs = rh.sortMotions(x0s, xfs, top_k)
+
+	used_motions = [motions[idx] for idx in idxs]
+	return used_motions
+
+	# The code below is the equivalent, but slower, Python version
+
+	print(idxs)
+	# exit()
+
+	for k, m in enumerate(motions):
+		m['idx'] = k
 
 	# use as first/seed motion the one that moves furthest
 	best_motion = motions[0]
@@ -31,7 +49,7 @@ def sort_primitives(motions: list, robot_type: str, top_k=None) -> list:
 	if top_k is None:
 		top_k = len(motions) - 1
 
-	for k in range(top_k):
+	for k in range(1, top_k):
 		best_d = -1
 		best_motion = None
 		for m1 in unused_motions:
@@ -55,6 +73,10 @@ def sort_primitives(motions: list, robot_type: str, top_k=None) -> list:
 		used_motions.append(best_motion)
 		unused_motions.remove(best_motion)
 		print("sorting ", k)
+
+	for m in used_motions:
+		print(m['idx'])
+	exit()
 	return used_motions
 
 def visualize_motion(motion: dict, robot_type: str, output_file: str):
@@ -205,15 +227,15 @@ def main() -> None:
 	# 	m["xf"] = list(m["states"][-1])
 
 	# now sort the primitives
-	sorted_motions = motions
-	# sorted_motions = sort_primitives(motions, args.robot_type, 1000)
+	# sorted_motions = motions
+	sorted_motions = sort_primitives(motions, args.robot_type)
 	# with open(out_path / "{}_sorted.yaml".format(args.robot_type), 'w') as file:
 	# 	yaml.dump(sorted_motions, file, Dumper=yaml.CSafeDumper)
 
 	with open(out_path / "{}_sorted.msgpack".format(args.robot_type), 'wb') as file:
 		msgpack.pack(sorted_motions, file)
 
-	# visualize the top 100
+	# visualize the top 10
 	for k, m in enumerate(sorted_motions[0:10]):
 		visualize_motion(m, args.robot_type, tmp_path / "top_{}.mp4".format(k))
 
