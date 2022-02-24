@@ -662,8 +662,8 @@ public:
     const float arm_length = 0.046; // m
     const float arm = 0.707106781 * arm_length;
     const float t2t = 0.006; // thrust-to-torque ratio
-    const float max_v = 5; // m/s
-    const float max_omega = 35; //rad/s
+    const float max_v = 2; // m/s
+    const float max_omega = 4; //rad/s
     B0_ << 1, 1, 1, 1,
         -arm, -arm, arm, arm,
         -arm, arm, arm, -arm,

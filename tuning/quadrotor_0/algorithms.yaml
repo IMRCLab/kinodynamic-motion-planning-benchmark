@@ -14,8 +14,8 @@ sst:
 
 dbAstar-komo:
   default:
-    add_primitives_per_iteration: 1000
-    desired_branching_factor: 2
+    add_primitives_per_iteration: 10000
+    desired_branching_factor: 4
     suboptimality_bound: 1.0
     alpha: 0.5
     filter_duplicates: False
@@ -47,4 +47,4 @@ gen-motion:
     KOMO/verbose: 4
     opt/stopTolerance = 1e-3
     add_init_noise = 0
-    plan_recovery = 1
+    # plan_recovery = 1

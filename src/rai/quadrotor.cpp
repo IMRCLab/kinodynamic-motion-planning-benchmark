@@ -141,8 +141,8 @@ int main_quadrotor() {
 
   const float force_to_torque = 0.006; // force-to-torque ratio
   const float max_force_per_motor = 12. / 1000. * 9.81;
-  const float max_v = 5; // m/s
-  const float max_omega = 35; // rad/s
+  const float max_v = 2; // m/s
+  const float max_omega = 4; // rad/s
 
   const double dt = 0.01;
 
