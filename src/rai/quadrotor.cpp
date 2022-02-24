@@ -141,6 +141,8 @@ int main_quadrotor() {
 
   const float force_to_torque = 0.006; // force-to-torque ratio
   const float max_force_per_motor = 12. / 1000. * 9.81;
+  const float max_v = 5; // m/s
+  const float max_omega = 35; // rad/s
 
   const double dt = 0.01;
 
@@ -256,11 +258,11 @@ int main_quadrotor() {
   }
 
   // limit velocity
-  komo.addObjective({2./N, 1}, FS_position, {"drone"}, OT_ineq, {1}, {5,5,5}, 1);
-  komo.addObjective({2./N, 1}, FS_position, {"drone"}, OT_ineq, {-1}, {-5,-5,-5}, 1);
+  komo.addObjective({2./N, 1}, FS_position, {"drone"}, OT_ineq, {1}, {max_v,max_v,max_v}, 1);
+  komo.addObjective({2./N, 1}, FS_position, {"drone"}, OT_ineq, {-1}, {-max_v,-max_v,-max_v}, 1);
   // limit angular velocity
-  komo.addObjective({2./N, 1}, FS_angularVel, {"drone"}, OT_ineq, {0.1}, {35,35,35}, 1);
-  komo.addObjective({2./N, 1}, FS_angularVel, {"drone"}, OT_ineq, {-0.1}, {-35,-35,-35}, 1);
+  komo.addObjective({2./N, 1}, FS_angularVel, {"drone"}, OT_ineq, {0.1}, {max_omega,max_omega,max_omega}, 1);
+  komo.addObjective({2./N, 1}, FS_angularVel, {"drone"}, OT_ineq, {-0.1}, {-max_omega,-max_omega,-max_omega}, 1);
 
 
   //NE & starting smoothly

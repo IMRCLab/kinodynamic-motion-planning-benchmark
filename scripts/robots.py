@@ -195,6 +195,8 @@ class Quadrotor:
 		self.action_desc = ["f1 [N]", "f2 [N]", "f3 [N]", "f4 [N]"]
 		self.min_u = np.zeros(4)
 		self.max_u = np.ones(4) * 12.0 / 1000.0 * 9.81
+		max_v = 5
+		max_omega = 35
 
 		self.state_desc = [
 			"x [m]", "y [m]", "z [m]",
@@ -203,12 +205,12 @@ class Quadrotor:
 			"w_x", "w_y", "w_z"]
 		min_x = [-np.inf, -np.inf, -np.inf,
 				-1.001, -1.001, -1.001, -1.001,
-				-5, -5, -5,
-				-35, -35, -35]
+				-max_v, -max_v, -max_v,
+				-max_omega, -max_omega, -max_omega]
 		max_x = [np.inf, np.inf, np.inf,
 				1.001, 1.001, 1.001, 1.001,
-				5, 5, 5,
-				35, 35, 35]
+				max_v, max_v, max_v,
+				max_omega, max_omega, max_omega]
 		self.min_x = np.array(min_x)
 		self.max_x = np.array(max_x)
 

@@ -662,6 +662,8 @@ public:
     const float arm_length = 0.046; // m
     const float arm = 0.707106781 * arm_length;
     const float t2t = 0.006; // thrust-to-torque ratio
+    const float max_v = 5; // m/s
+    const float max_omega = 35; //rad/s
     B0_ << 1, 1, 1, 1,
         -arm, -arm, arm, arm,
         -arm, arm, arm, -arm,
@@ -677,8 +679,8 @@ public:
     space->setPositionBounds(position_bounds);
 
     ob::RealVectorBounds vbounds(3);
-    vbounds.setLow(-5); // m/s
-    vbounds.setHigh(5); // m/s
+    vbounds.setLow(-max_v); // m/s
+    vbounds.setHigh(max_v); // m/s
 
     // vbounds.setLow(-0.5); // m/s
     // vbounds.setHigh(0.5); // m/s
@@ -686,13 +688,13 @@ public:
     space->setVelocityBounds(vbounds);
 
     ob::RealVectorBounds wbounds(3);
-    // wbounds.setLow(-35); // rad/s
-    // wbounds.setHigh(35); // rad/s
+    wbounds.setLow(-max_omega); // rad/s
+    wbounds.setHigh(max_omega); // rad/s
 
-    wbounds.setLow(-2); // rad/s
-    wbounds.setHigh(2); // rad/s
-    wbounds.setLow(2, -0.5); // no yaw movement
-    wbounds.setHigh(2, 0.5);
+    // wbounds.setLow(-2); // rad/s
+    // wbounds.setHigh(2); // rad/s
+    // wbounds.setLow(2, -0.5); // no yaw movement
+    // wbounds.setHigh(2, 0.5);
     space->setAngularVelocityBounds(wbounds);
 
     // create a control space
