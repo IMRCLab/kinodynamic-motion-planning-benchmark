@@ -21,6 +21,19 @@ import sys, os
 sys.path.append(os.getcwd())
 
 def gen_motion(robot_type, start, goal, is2D):
+
+	# load tuning settings for this case
+	tuning_path = Path("../tuning")
+
+	cfg = tuning_path / robot_type / "algorithms.yaml"
+	assert(cfg.is_file())
+
+	with open(cfg) as f:
+		cfg = yaml.safe_load(f)
+
+	# find cfg
+	mycfg = cfg['gen-motion']
+
 	dbg = False
 	with tempfile.TemporaryDirectory() as tmpdirname:
 		if dbg:
@@ -52,10 +65,7 @@ def gen_motion(robot_type, start, goal, is2D):
 		# success = run_komo_standalone(filename_env, str(p), 120, "", search="linear", initialguess="none")
 		# use_T = np.random.randint(20, 100)
 		# success = run_komo_standalone(filename_env, str(p), 5 * 60, "soft_goal: 1", search="none", initialguess="none", use_T=use_T)
-		if "quadrotor" in robot_type:
-			success = run_komo_standalone(filename_env, str(p), 5 * 60, "plan_recovery: 1", search="binarySearch", initialguess="none")
-		else:
-			success = run_komo_standalone(filename_env, str(p), 120, "opt/stopTolerance: 0.001\nadd_init_noise: 0.1", search="linear", initialguess="none")
+		success = run_komo_standalone(filename_env, str(p), mycfg['timelimit'], mycfg['rai_cfg'], mycfg['search'], initialguess="none")
 		# print("SDF", success)
 		# if success:
 		# 	print("PPPPSDF")

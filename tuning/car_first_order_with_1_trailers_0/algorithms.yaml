@@ -46,3 +46,10 @@ komo:
 scp:
   default:
     dummy: 0
+
+gen-motion:
+  timelimit: 120 # 2 min
+  search: "linear"
+  rai_cfg: |
+    opt/stopTolerance: 0.001
+    add_init_noise: 0.1

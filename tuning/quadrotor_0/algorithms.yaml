@@ -36,3 +36,14 @@ komo:
       KOMO/verbose: 4
       opt/stopTolerance = 1e-3
       add_init_noise = 0
+
+gen-motion:
+  timelimit: 300 # 5 min
+  search: "binarySearch"
+  rai_cfg: |
+    opt/muInit = 1e1
+    opt/damping = 1e-2
+    KOMO/verbose: 4
+    opt/stopTolerance = 1e-3
+    add_init_noise = 0
+    plan_recovery = 1
