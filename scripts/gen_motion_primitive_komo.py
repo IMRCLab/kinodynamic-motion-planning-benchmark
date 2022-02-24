@@ -4,6 +4,7 @@ from main_komo import run_komo_standalone
 from utils_motion_primitives import sort_primitives, visualize_motion, plot_stats
 import robots
 import yaml
+import msgpack
 import multiprocessing as mp
 import tqdm
 import itertools
@@ -212,11 +213,13 @@ def main():
 
 	# now sort the primitives
 	sorted_motions = sort_primitives(motions, args.robot_type)
-	with open(out_path / "{}_sorted.yaml".format(args.robot_type), 'w') as file:
-		yaml.dump(sorted_motions, file, Dumper=yaml.CSafeDumper)
+	# with open(out_path / "{}_sorted.yaml".format(args.robot_type), 'w') as file:
+	# 	yaml.dump(sorted_motions, file, Dumper=yaml.CSafeDumper)
+	with open(out_path / "{}_sorted.msgpack".format(args.robot_type), 'wb') as file:
+		msgpack.pack(sorted_motions, file)
 
 	# visualize the top 100
-	for k, m in enumerate(sorted_motions[0:100]):
+	for k, m in enumerate(sorted_motions[0:10]):
 		visualize_motion(m, args.robot_type, tmp_path / "top_{}.mp4".format(k))
 
 	# plot statistics

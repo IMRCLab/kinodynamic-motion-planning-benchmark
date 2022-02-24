@@ -4,6 +4,7 @@
 #include <chrono>
 
 #include <yaml-cpp/yaml.h>
+#include <msgpack.hpp>
 
 // #include <boost/functional/hash.hpp>
 #include <boost/program_options.hpp>
@@ -265,35 +266,91 @@ int main(int argc, char* argv[]) {
   // si->freeState(goalState);
 
   // load motion primitives
-  YAML::Node motions_node = YAML::LoadFile(motionsFile);
+  // YAML::Node motions_node = YAML::LoadFile(motionsFile);
+
+  // load motions primitives
+  std::ifstream is( motionsFile.c_str(), std::ios::in | std::ios::binary );
+  // get length of file
+  is.seekg (0, is.end);
+  int length = is.tellg();
+  is.seekg (0, is.beg);
+  //
+  msgpack::unpacker unpacker;
+  unpacker.reserve_buffer(length);
+  is.read(unpacker.buffer(), length);
+  unpacker.buffer_consumed(length);
+  msgpack::object_handle oh;
+  unpacker.next(oh);
+  msgpack::object msg_obj = oh.get();
+
   std::vector<Motion> motions;
   size_t num_states = 0;
   size_t num_invalid_states = 0;
 
   // create a robot with no position bounds
   ob::RealVectorBounds position_bounds_no_bound(env_min.size());
-  position_bounds_no_bound.setLow(std::numeric_limits<double>::min());
-  position_bounds_no_bound.setHigh(std::numeric_limits<double>::max());
-  std::shared_ptr<Robot> robot_no_pos_bound = create_robot(robotType, position_bounds);
+  position_bounds_no_bound.setLow(-1e6);//std::numeric_limits<double>::lowest());
+  position_bounds_no_bound.setHigh(1e6);//std::numeric_limits<double>::max());
+  std::shared_ptr<Robot> robot_no_pos_bound = create_robot(robotType, position_bounds_no_bound);
   auto si_no_pos_bound = robot_no_pos_bound->getSpaceInformation();
+  si_no_pos_bound->setPropagationStepSize(1);
+  si_no_pos_bound->setMinMaxControlDuration(1, 1);
+  si_no_pos_bound->setStateValidityChecker(stateValidityChecker);
   si_no_pos_bound->setStatePropagator(statePropagator);
   si_no_pos_bound->setup();
 
-  for (const auto& motion : motions_node) {
+  if (msg_obj.type != msgpack::type::ARRAY) {
+    throw msgpack::type_error();
+  }
+  for (size_t i = 0; i < msg_obj.via.array.size; ++i) {
     Motion m;
-    for (const auto& state : motion["states"]) {
-      m.states.push_back(allocAndFillState(si, state));
-      if (!si_no_pos_bound->isValid(m.states.back())) {
-        // std::cout << "State in motion primitive is invalid! Enforcing bounds!\n";
-        // si->printState(m.states.back());
-        si_no_pos_bound->enforceBounds(m.states.back());
-        ++num_invalid_states;
-        // si->printState(m.states.back());
+    // find the states
+    auto item = msg_obj.via.array.ptr[i];
+    if (item.type != msgpack::type::MAP) {
+      throw msgpack::type_error();
+    }
+    // load the states
+    for (size_t j = 0; j < item.via.map.size; ++j) {
+      auto key = item.via.map.ptr[j].key.as<std::string>();
+      if (key == "states") {
+        auto val = item.via.map.ptr[j].val;
+        for (size_t k = 0; k < val.via.array.size; ++k) {
+          ob::State* state = si->allocState();
+          std::vector<double> reals;
+          val.via.array.ptr[k].convert(reals);
+          si->getStateSpace()->copyFromReals(state, reals);
+          m.states.push_back(state);
+          if (!si_no_pos_bound->satisfiesBounds(m.states.back())) {
+            // std::cout << "State in motion primitive is invalid! Enforcing bounds!\n";
+            // si->printState(m.states.back());
+            si_no_pos_bound->enforceBounds(m.states.back());
+            ++num_invalid_states;
+            // si->printState(m.states.back());
+          }
+        }
+        break;
       }
     }
     num_states += m.states.size();
-    for (const auto& action : motion["actions"]) {
-      m.actions.push_back(allocAndFillControl(si, action));
+    // load the actions
+    for (size_t j = 0; j < item.via.map.size; ++j) {
+      auto key = item.via.map.ptr[j].key.as<std::string>();
+      if (key == "actions") {
+        auto val = item.via.map.ptr[j].val;
+        for (size_t k = 0; k < val.via.array.size; ++k) {
+          oc::Control *control = si->allocControl();
+          std::vector<double> reals;
+          val.via.array.ptr[k].convert(reals);
+          for (size_t idx = 0; idx < reals.size(); ++idx) {
+            double* address = si->getControlSpace()->getValueAddressAtIndex(control, idx);
+            if (address) {
+              *address = reals[idx];
+            }
+          }
+          m.actions.push_back(control);
+        }
+        break;
+      }
     }
     m.cost = m.actions.size() * robot->dt(); // time in seconds
     m.idx = motions.size();
@@ -357,13 +414,13 @@ int main(int argc, char* argv[]) {
     fakeMotion.states.push_back(si->allocState());
     std::vector<Motion *> neighbors_m;
     size_t num_desired_neighbors = (size_t)-delta;
-    size_t num_samples = 100;
+    size_t num_samples = std::min<size_t>(1000, motions.size());
 
     auto state_sampler = si->allocStateSampler();
     float sum_delta = 0.0;
     for (size_t k = 0; k < num_samples; ++k) {
       // state_sampler->sampleUniform(fakeMotion.states[0]);
-      si->copyState(fakeMotion.states[0], motions[k].states.front());
+      si->copyState(fakeMotion.states[0], motions[k].states.back());
       robot->setPosition(fakeMotion.states[0], fcl::Vector3f(0, 0, 0));
 
       T_m->nearestK(&fakeMotion, num_desired_neighbors+1, neighbors_m);

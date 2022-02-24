@@ -12,6 +12,7 @@ import shutil
 from collections import defaultdict
 import tempfile
 from pathlib import Path
+import msgpack
 
 import sys
 import os
@@ -107,7 +108,7 @@ def run_dbastar(filename_env, folder, timelimit, cfg, opt_alg="scp", motions_sta
 		p = Path(tmpdirname)
 		# p = Path("../results/dbg")
 
-		filename_motions = p / "motions.yaml"
+		filename_motions = p / "motions.msgpack"
 
 		sol = 0
 		filename_stats = "{}/stats.yaml".format(folder)
@@ -128,16 +129,21 @@ def run_dbastar(filename_env, folder, timelimit, cfg, opt_alg="scp", motions_sta
 
 
 		# load existing motions
-		with open('../cloud/motions/{}_sorted.yaml'.format(robot_node["type"])) as f:
-			all_motions = yaml.load(f, Loader=yaml.CSafeLoader)
+		# with open('../cloud/motions/{}_sorted.yaml'.format(robot_node["type"])) as f:
+		# 	all_motions = yaml.load(f, Loader=yaml.CSafeLoader)
+
+		with open('../cloud/motions/{}_sorted.msgpack'.format(robot_node["type"]), 'rb') as f:
+			all_motions = msgpack.unpack(f)
 
 		# all_motions = sort_primitives(all_motions, robot_type, 100)
 		# all_motions = all_motions[0:1000]
 		print("Have {} motions in total".format(len(all_motions)))
 		motions = all_motions[0:add_prims]
 		del all_motions[0:add_prims]
-		with open(filename_motions, 'w') as file:
-			yaml.dump(motions, file, Dumper=yaml.CSafeDumper)
+		# with open(filename_motions, 'w') as file:
+		# 	yaml.dump(motions, file, Dumper=yaml.CSafeDumper)
+		with open(filename_motions, 'wb') as file:
+			msgpack.pack(motions, file)
 
 		# print(len(motions))
 		# exit()
@@ -193,8 +199,10 @@ def run_dbastar(filename_env, folder, timelimit, cfg, opt_alg="scp", motions_sta
 						# 	motion['distance'] = rh.distance(motion['x0'], motion['xf'])
 						# 	motions.append(motion)
 
-					with open(filename_motions, 'w') as file:
-						yaml.dump(motions, file, Dumper=yaml.CSafeDumper)
+					# with open(filename_motions, 'w') as file:
+					# 	yaml.dump(motions, file, Dumper=yaml.CSafeDumper)
+					with open(filename_motions, 'wb') as file:
+						msgpack.pack(motions, file)
 
 					# median = np.median([m['distance'] for m in motions])
 					# if delta > median:
@@ -207,7 +215,7 @@ def run_dbastar(filename_env, folder, timelimit, cfg, opt_alg="scp", motions_sta
 					print("DELTA CHECK", delta_achieved)
 					# assert(delta_achieved <= delta)
 
-					shutil.copyfile(filename_motions, "{}/motions_sol{}.yaml".format(folder, sol))
+					# shutil.copyfile(filename_motions, "{}/motions_sol{}.msgpack".format(folder, sol))
 
 					t_opt_start = time.time()
 					if opt_alg == "scp":
@@ -275,9 +283,10 @@ def run_dbastar(filename_env, folder, timelimit, cfg, opt_alg="scp", motions_sta
 						# 	motion['distance'] = rh.distance(motion['x0'], motion['xf'])
 						# 	motions.append(motion)
 
-					with open(filename_motions, 'w') as file:
-						yaml.dump(motions, file, Dumper=yaml.CSafeDumper)
-
+					# with open(filename_motions, 'w') as file:
+					# 	yaml.dump(motions, file, Dumper=yaml.CSafeDumper)
+					with open(filename_motions, 'wb') as file:
+						msgpack.pack(motions, file)
 
 						# delta = initialDelta
 						# break

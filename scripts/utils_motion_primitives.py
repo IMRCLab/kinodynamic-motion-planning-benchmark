@@ -7,6 +7,7 @@ from pathlib import Path
 import subprocess
 import robots
 import random
+import msgpack
 
 sys.path.append(os.getcwd())
 from motionplanningutils import RobotHelper
@@ -181,7 +182,17 @@ def main() -> None:
 	tmp_path = Path("../results/tmp/motions/{}".format(args.robot_type))
 	tmp_path.mkdir(parents=True, exist_ok=True)
 
-	motions = merge_motions(tmp_path, 2000)
+	# # load existing motions
+	# with open(out_path / "{}_sorted.yaml".format(args.robot_type)) as f:
+	# 	sorted_motions = yaml.load(f, Loader=yaml.CSafeLoader)
+
+	# with open(out_path / "{}_sorted.msgpack".format(args.robot_type), 'wb') as file:
+	# 	msgpack.pack(sorted_motions, file)
+
+
+	# exit()
+
+	motions = merge_motions(tmp_path, 10000)
 
 	# # Hack to fix bad quadrotor motions (z wasn't shifted)
 	# for m in motions:
@@ -196,8 +207,11 @@ def main() -> None:
 	# now sort the primitives
 	sorted_motions = motions
 	# sorted_motions = sort_primitives(motions, args.robot_type, 1000)
-	with open(out_path / "{}_sorted.yaml".format(args.robot_type), 'w') as file:
-		yaml.dump(sorted_motions, file, Dumper=yaml.CSafeDumper)
+	# with open(out_path / "{}_sorted.yaml".format(args.robot_type), 'w') as file:
+	# 	yaml.dump(sorted_motions, file, Dumper=yaml.CSafeDumper)
+
+	with open(out_path / "{}_sorted.msgpack".format(args.robot_type), 'wb') as file:
+		msgpack.pack(sorted_motions, file)
 
 	# visualize the top 100
 	for k, m in enumerate(sorted_motions[0:10]):
