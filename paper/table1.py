@@ -167,10 +167,10 @@ def main():
 			# out += " & ${:.1f} \pm {:.1f}$".format(np.mean(final_costs), np.std(final_costs))
 
 			result[alg] = {
-				'success': len(initial_times)/5,
-				't^st_mean': np.mean(initial_times) if len(initial_times) > 0 else None,
-				'J^st_mean': np.mean(initial_costs) if len(initial_costs) > 0 else None,
-				'J^f_mean': np.mean(final_costs) if len(initial_costs) > 0 else None,
+				'success': len(initial_times)/10,
+				't^st_median': np.median(initial_times) if len(initial_times) > 0 else None,
+				'J^st_median': np.median(initial_costs) if len(initial_costs) > 0 else None,
+				'J^f_median': np.median(final_costs) if len(initial_costs) > 0 else None,
 			}
 
 		def print_and_highlight_best(out, key):
@@ -206,9 +206,9 @@ def main():
 				out += " &&&& "
 			else:
 				out = print_and_highlight_best_max(out, 'success')
-				out = print_and_highlight_best(out, 't^st_mean')
-				out = print_and_highlight_best(out, 'J^st_mean')
-				out = print_and_highlight_best(out, 'J^f_mean')
+				out = print_and_highlight_best(out, 't^st_median')
+				out = print_and_highlight_best(out, 'J^st_median')
+				out = print_and_highlight_best(out, 'J^f_median')
 
 		out += r"\\"
 		print(out)

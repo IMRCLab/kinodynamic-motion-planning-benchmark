@@ -1,6 +1,6 @@
 sst:
   default:
-    goal_epsilon: 0.5
+    goal_epsilon: 0.2
     goal_bias: 0.05
     selection_radius: 0.2 # delta_BN in paper
     pruning_radius: 0.1  # delta_s in paper
@@ -14,10 +14,10 @@ sst:
 
 dbAstar-komo:
   default:
-    add_primitives_per_iteration: 500
+    add_primitives_per_iteration: 1000
     desired_branching_factor: 16
     suboptimality_bound: 1.0
-    alpha: 0.5
+    alpha: 0.3
     filter_duplicates: False
     # Config file (rai.cfg) that will be used
     rai_cfg: |

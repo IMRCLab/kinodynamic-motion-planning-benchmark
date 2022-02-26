@@ -63,8 +63,6 @@ public:
     auto si = robot_->getSpaceInformation();
     si->getStateSpace()->copyFromReals(tmp_state_a_, stateA);
     si->getStateSpace()->copyFromReals(tmp_state_b_, stateB);
-    si->printState(tmp_state_a_);
-    si->printState(tmp_state_b_);
     return si->distance(tmp_state_a_, tmp_state_b_);
   }
 

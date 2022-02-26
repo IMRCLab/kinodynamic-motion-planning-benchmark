@@ -42,11 +42,13 @@ def main():
 
 	report.add_barplot_initial_cost_plot(instances)
 	for instance in instances:
-		report.add_time_cost_plot(instance)
-		report.add_initial_time_cost_plot(instance)
-		report.add_success_rate_plot(instance)
-		report.add_boxplot_initial_time_plot(instance)
-		report.add_boxplot_initial_cost_plot([instance])
+		report.add_success_and_cost_over_time_plot(instance)
+		# report.add_time_cost_plot(instance)
+		# report.add_success_over_time_plot(instance)
+		# report.add_initial_time_cost_plot(instance)
+		# # report.add_success_rate_plot(instance)
+		# report.add_boxplot_initial_time_plot(instance)
+		# report.add_boxplot_initial_cost_plot([instance])
 
 	report.close()
 

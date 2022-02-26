@@ -60,6 +60,56 @@ class Report:
     self.ax.set_xlabel("Time [s]")
     self.ax.set_ylabel("Cost [s]")
 
+  def add_success_over_time_plot(self, exp_name):
+    self._add_page()
+    self.fig, self.ax = plt.subplots()
+    self.ax.set_title(exp_name)
+    self.ax.set_xscale('symlog')
+    self.ax.grid(which='both', axis='x', linestyle='dashed')#color='r', linestyle='-', linewidth=2)
+    self.ax.grid(which='major', axis='y', linestyle='dashed')#color='r', linestyle='-', linewidth=2)
+
+    for (exp_name_stats, algo), costs in self.stats.items():
+      if exp_name_stats != exp_name:
+        continue
+
+      success = np.count_nonzero(~np.isnan(costs), axis=0) / 5 * 100
+
+      self.ax.plot(self.times, success, label=self.alg_dict[algo]['name'], color=self.color_dict[algo], linewidth=3, alpha=0.8)
+    self.ax.legend()
+    self.ax.set_xlabel("Time [s]")
+    self.ax.set_ylabel("Success [%]")
+
+
+  def add_success_and_cost_over_time_plot(self, exp_name):
+    self._add_page()
+    self.fig, ax = plt.subplots(2, 1, sharex='all', sharey='none')
+    ax[0].set_title(exp_name)
+
+    for i in range(2):
+      ax[i].set_xscale('symlog')
+      ax[i].grid(which='both', axis='x', linestyle='dashed')
+      ax[i].grid(which='major', axis='y', linestyle='dashed')
+
+    for (exp_name_stats, algo), costs in self.stats.items():
+      if exp_name_stats != exp_name:
+        continue
+
+      success = np.count_nonzero(~np.isnan(costs), axis=0) / 5 * 100
+      median = np.nanmedian(costs, axis=0)
+      percentileH = np.nanpercentile(costs, 75, axis=0)
+      percentileL = np.nanpercentile(costs, 25, axis=0)
+      # std = np.nanstd(costs, axis=0)
+
+      ax[1].plot(self.times, median, label=self.alg_dict[algo]['name'], color=self.color_dict[algo], linewidth=3, alpha=0.8)
+      ax[1].fill_between(self.times, percentileH, percentileL, color=self.color_dict[algo], alpha=0.5)
+
+      ax[0].plot(self.times, success, label=self.alg_dict[algo]['name'], color=self.color_dict[algo], linewidth=3, alpha=0.8)
+    ax[0].legend()
+    ax[0].set_ylabel("Success [%]")
+    ax[1].set_ylabel("Cost [s]")
+
+    ax[1].set_xlabel("Time [s]")
+
   def add_initial_time_cost_plot(self, exp_name):
     self._add_page()
     self.fig, self.ax = plt.subplots()
