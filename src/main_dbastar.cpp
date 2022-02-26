@@ -613,6 +613,13 @@ int main(int argc, char* argv[]) {
         out << "      " << motions[kv.first].idx << ": " << kv.second << std::endl;
       }
 
+      // statistics on where the motion splits are
+      out << "    splits:" << std::endl;
+      for (size_t i = 0; i < result.size() - 1; ++i) {
+        const auto &motion = motions.at(result[i+1]->used_motion);
+        out << "      - " << motion.states.size() - 1 << std::endl;
+      }
+
       // {
       //   T_n->list(neighbors_n);
       //   std::ofstream out("states.txt");
