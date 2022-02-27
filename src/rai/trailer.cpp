@@ -187,7 +187,7 @@ static double velocity(const arrA &results, int t, double dt) {
 
 int main_trailer() {
 
-  const double L = .4;  // distance  rear-front wheels
+  const double L = .25;  // distance  rear-front wheels
   const double d1 = .5; // distance between car centers
 
   // path to *.g file
