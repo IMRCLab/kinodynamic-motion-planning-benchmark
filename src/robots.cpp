@@ -14,8 +14,8 @@ class RobotUnicycleFirstOrder : public Robot
 public:
   RobotUnicycleFirstOrder(
     const ompl::base::RealVectorBounds& position_bounds,
-    float v_limit,
-    float w_limit)
+    float v_min, float v_max,
+    float w_min, float w_max)
   {
     geom_.emplace_back(new fcl::Boxf(0.5, 0.25, 1.0));
 
@@ -28,10 +28,10 @@ public:
 
     // set the bounds for the control space
     ob::RealVectorBounds cbounds(2);
-    cbounds.setLow(0, -v_limit);
-    cbounds.setHigh(0, v_limit);
-    cbounds.setLow(1, -w_limit);
-    cbounds.setHigh(1, w_limit);
+    cbounds.setLow(0, v_min);
+    cbounds.setHigh(0, v_max);
+    cbounds.setLow(1, w_min);
+    cbounds.setHigh(1, w_max);
 
     cspace->setBounds(cbounds);
 
@@ -39,6 +39,8 @@ public:
     si_ = std::make_shared<oc::SpaceInformation>(space, cspace);
 
     dt_ = 0.1;
+    is2D_ = true;
+    max_speed_ = std::max(fabsf(v_min), fabsf(v_max));
   }
 
   void propagate(
@@ -61,9 +63,9 @@ public:
     {
       float dt = std::min(remaining_time, dt_);
 
+      yaw += ctrl[1] * dt;
       x += ctrl[0] * cosf(yaw) * dt;
       y += ctrl[0] * sinf(yaw) * dt;
-      yaw += ctrl[1] * dt;
 
       remaining_time -= dt;
     } while (remaining_time >= dt_);
@@ -144,6 +146,8 @@ public:
     si_ = std::make_shared<oc::SpaceInformation>(space, cspace);
 
     dt_ = 0.1;
+    is2D_ = true;
+    max_speed_ = v_limit;
   }
 
   void propagate(
@@ -369,8 +373,10 @@ class RobotCarFirstOrderWithTrailers : public Robot
 public:
   RobotCarFirstOrderWithTrailers(
       const ompl::base::RealVectorBounds &position_bounds,
-      float v_limit,
-      float phi_limit,
+      float v_min,
+      float v_max,
+      float phi_min,
+      float phi_max,
       float L,
       const std::vector<float>& hitch_lengths)
       : Robot()
@@ -391,10 +397,10 @@ public:
 
     // set the bounds for the control space
     ob::RealVectorBounds cbounds(2);
-    cbounds.setLow(0, -v_limit);
-    cbounds.setHigh(0, v_limit);
-    cbounds.setLow(1, -phi_limit);
-    cbounds.setHigh(1, phi_limit);
+    cbounds.setLow(0, v_min);
+    cbounds.setHigh(0, v_max);
+    cbounds.setLow(1, phi_min);
+    cbounds.setHigh(1, phi_max);
 
     cspace->setBounds(cbounds);
 
@@ -402,6 +408,8 @@ public:
     si_ = std::make_shared<oc::SpaceInformation>(space, cspace);
 
     dt_ = 0.1;
+    is2D_ = true;
+    max_speed_ = std::max(fabsf(v_min), fabsf(v_max));
   }
 
   virtual size_t numParts()
@@ -432,8 +440,6 @@ public:
     {
       float dt = std::min(remaining_time, dt_);
 
-      x += ctrl[0] * cosf(theta[0]) * dt;
-      y += ctrl[0] * sinf(theta[0]) * dt;
       // TODO: loop over this in reverse, to avoid changing dependenies
       //       (for a single trailer it shouldn't matter)
       for (size_t i = 1; i < hitch_lengths_.size() + 1; ++i) {
@@ -445,6 +451,8 @@ public:
         theta[i] += theta_dot * dt;
       }
       theta[0] += ctrl[0] / L_ * tanf(ctrl[1]) * dt;
+      x += ctrl[0] * cosf(theta[0]) * dt;
+      y += ctrl[0] * sinf(theta[0]) * dt;
 
       remaining_time -= dt;
     } while (remaining_time >= dt_);
@@ -548,6 +556,32 @@ protected:
 
     ~StateSpace() override = default;
 
+    bool satisfiesBounds(const ob::State *state) const override
+    {
+      auto stateTyped = state->as<StateSpace::StateType>();
+      double th0 = stateTyped->getTheta(0);
+      double th1 = stateTyped->getTheta(1);
+      double delta = th1 - th0;
+      double angular_change = atan2(sin(delta), cos(delta));
+      if (fabs(angular_change) > M_PI / 4) {
+        return false;
+      }
+      return ob::CompoundStateSpace::satisfiesBounds(state);
+    }
+
+    void enforceBounds(ob::State *state) const override
+    {
+      auto stateTyped = state->as<StateSpace::StateType>();
+      double th0 = stateTyped->getTheta(0);
+      double th1 = stateTyped->getTheta(1);
+      double delta = th1 - th0;
+      double angular_change = atan2(sin(delta), cos(delta));
+      if (fabs(angular_change) > M_PI / 4) {
+        stateTyped->setTheta(1, th0 + angular_change / fabs(angular_change) * M_PI/4);
+      }
+      ob::CompoundStateSpace::enforceBounds(state);
+    }
+
     void setPositionBounds(const ob::RealVectorBounds &bounds)
     {
       as<ob::RealVectorStateSpace>(0)->setBounds(bounds);
@@ -628,6 +662,8 @@ public:
     const float arm_length = 0.046; // m
     const float arm = 0.707106781 * arm_length;
     const float t2t = 0.006; // thrust-to-torque ratio
+    const float max_v = 2; // m/s
+    const float max_omega = 4; //rad/s
     B0_ << 1, 1, 1, 1,
         -arm, -arm, arm, arm,
         -arm, arm, arm, -arm,
@@ -643,41 +679,49 @@ public:
     space->setPositionBounds(position_bounds);
 
     ob::RealVectorBounds vbounds(3);
-    // vbounds.setLow(-3); // m/s
-    // vbounds.setHigh(3); // m/s
+    vbounds.setLow(-max_v); // m/s
+    vbounds.setHigh(max_v); // m/s
 
-    vbounds.setLow(-0.5); // m/s
-    vbounds.setHigh(0.5); // m/s
+    // vbounds.setLow(-0.5); // m/s
+    // vbounds.setHigh(0.5); // m/s
 
     space->setVelocityBounds(vbounds);
 
     ob::RealVectorBounds wbounds(3);
-    // wbounds.setLow(-35); // rad/s
-    // wbounds.setHigh(35); // rad/s
+    wbounds.setLow(-max_omega); // rad/s
+    wbounds.setHigh(max_omega); // rad/s
 
-    wbounds.setLow(-5); // rad/s
-    wbounds.setHigh(5); // rad/s
+    // wbounds.setLow(-2); // rad/s
+    // wbounds.setHigh(2); // rad/s
+    // wbounds.setLow(2, -0.5); // no yaw movement
+    // wbounds.setHigh(2, 0.5);
     space->setAngularVelocityBounds(wbounds);
 
     // create a control space
     // R^4: forces of the 4 rotors
     auto cspace(std::make_shared<oc::RealVectorControlSpace>(space, 4));
-    // cspace->setControlSamplerAllocator(
-    //     [this](const oc::ControlSpace *space)
-    //     {
-    //       return std::make_shared<ControlSampler>(space, mass_ / 4.0 * g_, 0.5 / 1000.0 * g_);
-    //     });
+    cspace->setControlSamplerAllocator(
+        [this](const oc::ControlSpace *space)
+        {
+          return std::make_shared<ControlSampler>(space, mass_ / 4.0 * g_, 2.0 / 1000.0 * g_);
+        });
 
     // set the bounds for the control space
     ob::RealVectorBounds cbounds(4);
     // // version to control thrust + moments
-    // cbounds.setLow(-1e-5);
-    // cbounds.setHigh(1e-5);
-    // cbounds.setLow(0, 4.0 * 3.0 / 1000.0 * g_);
-    // cbounds.setHigh(0, 4.0 * 12.0 / 1000.0 * g_);
+    // // cbounds.setLow(0);
+    // // cbounds.setHigh(0);
+    // cbounds.setLow(1,-1e-4); // roll
+    // cbounds.setHigh(1,1e-4);
+    // cbounds.setLow(2,-1e-4); // pitch
+    // cbounds.setHigh(2,1e-4);
+    // cbounds.setLow(3,0); // yaw
+    // cbounds.setHigh(3,0);
+    // cbounds.setLow(0, 0.0 * mass_ * g_);//4.0 * 3.0 / 1000.0 * g_);
+    // cbounds.setHigh(0, 1.4 * mass_ * g_);//4.0 * 12.0 / 1000.0 * g_);
 
     // version to control force
-    cbounds.setLow(3.0 / 1000.0 * g_);
+    cbounds.setLow(0);
     cbounds.setHigh(12.0 / 1000.0 * g_);
     // const float t2w = 3.0; // thrust-to-weight
     // cbounds.setHigh(t2w * mass_ / 4.0 * g_);
@@ -688,6 +732,8 @@ public:
     si_ = std::make_shared<oc::SpaceInformation>(space, cspace);
 
     dt_ = 0.01;
+    is2D_ = false;
+    max_speed_ = sqrtf(powf(vbounds.high[0], 2) + powf(vbounds.high[1], 2) + powf(vbounds.high[2], 2));
   }
 
   void propagate(
@@ -743,7 +789,10 @@ public:
     resultTyped->rotation().x = q.x();
     resultTyped->rotation().y = q.y();
     resultTyped->rotation().z = q.z();
-    
+    // Normalize orientation
+    ob::SO3StateSpace SO3;
+    SO3.enforceBounds(&resultTyped->rotation());
+
     resultTyped->velocity()[0] = vel(0);
     resultTyped->velocity()[1] = vel(1);
     resultTyped->velocity()[2] = vel(2);
@@ -752,7 +801,9 @@ public:
     resultTyped->angularVelocity()[1] = omega(1);
     resultTyped->angularVelocity()[2] = omega(2);
 
-    // std::cout << "=====================" << std::endl;
+    // std::cout << "=====================" <<  duration << std::endl;
+    // si_->printState(startTyped);
+    // si_->printControl(control);
     // si_->printState(resultTyped);
     // std::cout << si_->satisfiesBounds(resultTyped) << std::endl;
   }
@@ -1031,8 +1082,30 @@ std::shared_ptr<Robot> create_robot(
   {
     robot.reset(new RobotUnicycleFirstOrder(
         positionBounds,
-        /*v_limit*/ 0.5 /* m/s*/,
-        /*w_limit*/ 0.5 /*rad/s*/));
+        /*v_min*/ -0.5 /* m/s*/,
+        /*v_max*/ 0.5 /* m/s*/,
+        /*w_min*/ -0.5 /*rad/s*/,
+        /*w_max*/ 0.5 /*rad/s*/));
+  }
+  else if (robotType == "unicycle_first_order_1")
+  {
+    // 2D plane-like (with a minimum positive speed)
+    robot.reset(new RobotUnicycleFirstOrder(
+        positionBounds,
+        /*v_min*/ 0.25 /* m/s*/,
+        /*v_max*/ 0.5 /* m/s*/,
+        /*w_min*/ -0.5 /*rad/s*/,
+        /*w_max*/ 0.5 /*rad/s*/));
+  }
+  else if (robotType == "unicycle_first_order_2")
+  {
+    // only forward movement, with easier right turns
+    robot.reset(new RobotUnicycleFirstOrder(
+        positionBounds,
+        /*v_min*/ 0.25 /* m/s*/,
+        /*v_max*/ 0.5 /* m/s*/,
+        /*w_min*/ -0.25 /*rad/s*/,
+        /*w_max*/ 0.5 /*rad/s*/));
   }
   else if (robotType == "unicycle_second_order_0")
   {
@@ -1048,9 +1121,11 @@ std::shared_ptr<Robot> create_robot(
   {
     robot.reset(new RobotCarFirstOrderWithTrailers(
         positionBounds,
-        /*v_limit*/ 0.5 /*m/s*/,
-        /*phi_limit*/ M_PI/3.0f /*rad*/,
-        /*L*/ 0.4 /*m*/,
+        /*v_min*/ -0.1 /*m/s*/,
+        /*v_max*/ 0.5 /*m/s*/,
+        /*phi_min*/ -M_PI/3.0f /*rad*/,
+        /*phi_max*/ M_PI/3.0f /*rad*/,
+        /*L*/ 0.25 /*m*/,
         /*hitch_lengths*/ {} /*m*/
         ));
   }
@@ -1058,9 +1133,11 @@ std::shared_ptr<Robot> create_robot(
   {
     robot.reset(new RobotCarFirstOrderWithTrailers(
         positionBounds,
-        /*v_limit*/ 0.5 /*m/s*/,
-        /*phi_limit*/ M_PI / 3.0f /*rad*/,
-        /*L*/ 0.4 /*m*/,
+        /*v_min*/ -0.1 /*m/s*/,
+        /*v_max*/ 0.5 /*m/s*/,
+        /*phi_min*/ -M_PI/3.0f /*rad*/,
+        /*phi_max*/ M_PI/3.0f /*rad*/,
+        /*L*/ 0.25 /*m*/,
         /*hitch_lengths*/ {0.5} /*m*/
         ));
   }

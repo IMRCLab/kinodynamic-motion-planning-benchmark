@@ -110,12 +110,15 @@ def main():
 		"unicycle_first_order_0/parallelpark_0",
 		"unicycle_first_order_0/kink_0",
 		"unicycle_first_order_0/bugtrap_0",
+		"unicycle_first_order_1/kink_0",
+		"unicycle_first_order_2/wall_0",
 		"unicycle_second_order_0/parallelpark_0",
 		"unicycle_second_order_0/kink_0",
 		"unicycle_second_order_0/bugtrap_0",
 		"car_first_order_with_1_trailers_0/parallelpark_0",
 		"car_first_order_with_1_trailers_0/kink_0",
 		"car_first_order_with_1_trailers_0/bugtrap_0",
+		"quadrotor_0/empty_0",
 	]
 	algs = [
 		"sst",
@@ -124,14 +127,14 @@ def main():
 		"dbAstar-komo",
 		# "dbAstar-scp",
 	]
-	trials = 5
+	trials = 10
 	timelimit = 5 * 60
 
 	tasks = []
 	for instance in instances:
 		for alg in algs:
 			# sbpl only supports unicycleFirstOrder
-			if alg == "sbpl" and "unicycleFirstOrder" not in instance:
+			if alg == "sbpl" and "unicycle_first_order_0" not in instance:
 				continue
 			for trial in range(trials):
 				tasks.append(ExecutionTask(instance, alg, trial, timelimit))

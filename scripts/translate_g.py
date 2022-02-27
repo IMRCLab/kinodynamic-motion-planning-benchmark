@@ -1,8 +1,11 @@
 import argparse
 import math
+import rowan
+import numpy as np
 import yaml
 import pathlib
 from typing import List
+from string import Template
 
 # example of input:
 # environment:
@@ -117,6 +120,56 @@ class RobotTrailer:
         return out
 
 
+class RobotQuadrotor:
+    def __init__(self, start: List[float], goal: List[float], ID: int):
+        assert len(start) == 13
+        assert len(goal) == 13
+        self.start = start
+        self.goal = goal
+        self.ID = ID
+        # p = pathlib.Path(__file__).parent / "../src/car_with_trailer_base.g"
+        # self.include = "Include: '{}'\n".format(str(p.resolve()))
+        # self.name_robot = "R_"
+        # self.name_goal = "GOAL_"
+
+    def to_g(self) -> str:
+
+        t = Template((
+            "world {}\n"
+            "\n"
+            "drone (world) { joint:free X:<t($sx $sy $sz) d($sangle $saxisx $saxisy $saxisz)> }\n"
+            # "drone (world) { joint:free X:<t($sx $sy $sz)> }\n"
+            "\n"
+            " (drone){Q:<d(45 0 0 1)> shape:ssBox size:[0.094 0.005 0.005 0.001] color:[.9 .9 .9] mass:0.015}\n"
+            " (drone){Q:<d(-45 0 0 1)> shape:ssBox size:[0.094 0.005 0.005 0.001] color:[.9 .9 .9] mass:0.015}\n"
+            "\n"
+            "m1(drone){ Q:[ 0.0325 -0.0325 0.0] shape:cylinder size:[.02 .005] color:[.9 .9 .9] }\n"
+            "m2(drone){ Q:[-0.0325 -0.0325 0.0] shape:cylinder size:[.02 .005] color:[.9 .9 .9] }\n"
+            "m3(drone){ Q:[-0.0325  0.0325 0.0] shape:cylinder size:[.02 .005] color:[.9 .9 .9] }\n"
+            "m4(drone){ Q:[ 0.0325  0.0325 0.0] shape:cylinder size:[.02 .005] color:[.9 .9 .9] }\n"
+            "\n"
+            # "target (world) { shape:marker size:[.03] color:[.9 .9 .9 .5] X:[$gx $gy $gz] }\n"
+            "start (world) { shape:marker size:[.03] color:[.9 .9 .9 .5] X:<t($sx $sy $sz) d($sangle $saxisx $saxisy $saxisz)> }\n"
+            "target (world) { shape:marker size:[.03] color:[.9 .9 .9 .5] X:<t($gx $gy $gz) d($gangle $gaxisx $gaxisy $gaxisz)> }\n"
+        ))
+        # states are: x,y,z, qx, qy, qz, qw, vx, vy, vz, wx, wy, wz
+        start_q = np.array([self.start[6], self.start[3], self.start[4], self.start[5]])
+        start_q = rowan.normalize(start_q)
+        saxis, sangle  = rowan.to_axis_angle(start_q)
+
+        goal_q = np.array([self.goal[6], self.goal[3], self.goal[4], self.goal[5]])
+        goal_q = rowan.normalize(goal_q)
+        gaxis, gangle  = rowan.to_axis_angle(goal_q)
+
+        result = t.substitute(
+            sx=self.start[0], sy=self.start[1], sz=self.start[2],
+            sangle=math.degrees(sangle[0]), saxisx=saxis[0,0], saxisy=saxis[0,1], saxisz=saxis[0,2],
+            gx=self.goal[0], gy=self.goal[1], gz=self.goal[2],
+            gangle=math.degrees(gangle[0]), gaxisx=gaxis[0,0], gaxisy=gaxis[0,1], gaxisz=gaxis[0,2])
+        # print(result)
+        return result
+
+
 class Box:
     def __init__(self, center: List[float], size: List[float], ID: int):
         self.size = size
@@ -131,7 +184,7 @@ class Box:
                "color:[{}], contact}}\n").format(
             self.ID,
             ' '.join(map(str, center3)),
-            ' '.join(map(str, size3)),
+            ' '.join(map(str, [v+0.05 for v in size3])), # increase the size to "correct" for rounded corners
             ' '.join(map(str, self.color)))
 
         return out
@@ -154,12 +207,19 @@ def write(file_in: str, file_out: str) -> None:
     for robot in env["robots"]:
         if "unicycle" in robot["type"]:
             robots.append(RobotUnicycle(robot["start"][0:3], robot["goal"][0:3], ID_robot))
+            offset_z = 0.5
         elif "trailer" in robot["type"]:
             robots.append(RobotTrailer(robot["start"], robot["goal"], ID_robot))
+            offset_z = 0.5
+        elif "quadrotor" in robot["type"]:
+            robots.append(RobotQuadrotor(robot["start"], robot["goal"], ID_robot))
+            offset_z = 0
+        else:
+            raise Exception("Unknown robot_type! {}".format(robot["type"]))
         ID_robot += 1
 
     with open(file_out, "w") as g_file:
-        g_file.write("world{ X:<t(0 0 0.5)>}\n")
+        g_file.write("world{ X:<t(0 0 " + str(offset_z) + ")>}\n")
         for i in boxes:
             g_file.write(i.to_g())
         for i in robots:

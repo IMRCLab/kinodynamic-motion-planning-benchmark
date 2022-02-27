@@ -5,12 +5,33 @@ import numpy as np
 import tempfile
 from pathlib import Path
 import subprocess
+import robots
+import random
+import msgpack
 
 sys.path.append(os.getcwd())
 from motionplanningutils import RobotHelper
 
 def sort_primitives(motions: list, robot_type: str, top_k=None) -> list:
-	rh = RobotHelper(robot_type)
+	rh = RobotHelper(robot_type, pos_limit=100)
+
+	if top_k is None:
+		top_k = len(motions)
+
+	x0s = [m["x0"] for m in motions]
+	xfs = [m["xf"] for m in motions]
+	idxs = rh.sortMotions(x0s, xfs, top_k)
+
+	used_motions = [motions[idx] for idx in idxs]
+	return used_motions
+
+	# The code below is the equivalent, but slower, Python version
+
+	print(idxs)
+	# exit()
+
+	for k, m in enumerate(motions):
+		m['idx'] = k
 
 	# use as first/seed motion the one that moves furthest
 	best_motion = motions[0]
@@ -28,7 +49,7 @@ def sort_primitives(motions: list, robot_type: str, top_k=None) -> list:
 	if top_k is None:
 		top_k = len(motions) - 1
 
-	for k in range(top_k):
+	for k in range(1, top_k):
 		best_d = -1
 		best_motion = None
 		for m1 in unused_motions:
@@ -52,6 +73,10 @@ def sort_primitives(motions: list, robot_type: str, top_k=None) -> list:
 		used_motions.append(best_motion)
 		unused_motions.remove(best_motion)
 		print("sorting ", k)
+
+	for m in used_motions:
+		print(m['idx'])
+	exit()
 	return used_motions
 
 def visualize_motion(motion: dict, robot_type: str, output_file: str):
@@ -92,41 +117,136 @@ def visualize_motion(motion: dict, robot_type: str, output_file: str):
 			"--result", str(filename_result),
 			"--video", str(output_file)])
 
+def merge_motions(folder: str, limit: int = None):
+
+	file_names = [str(p) for p in Path(folder).glob("**/*.yaml")]
+	if limit is not None:
+		random.shuffle(file_names)
+	merged_motions = []
+	for file_name in file_names:
+		with open(file_name) as f:
+			motions = yaml.load(f, Loader=yaml.CSafeLoader)
+			merged_motions.extend([m for m in motions if m["T"] <= 100])
+			print(len(merged_motions))
+			if limit is not None and len(merged_motions) > limit:
+				break
+	return merged_motions
+
+
+def plot_stats(motions: list, robot_type: str, filename: str):
+	all_actions = []
+	all_states = []
+	all_start_states = []
+	all_end_states = []
+	for m in motions:
+		all_actions.extend(m["actions"])
+		all_states.extend(m["states"])
+		all_start_states.append(m["x0"])
+		all_end_states.append(m["xf"])
+	
+
+	import numpy as np
+	import matplotlib.pyplot as plt
+	from matplotlib.backends.backend_pdf import PdfPages
+
+	all_actions = np.array(all_actions)
+	all_states = np.array(all_states)
+	all_start_states = np.array(all_start_states)
+	all_end_states = np.array(all_end_states)
+
+	pp = PdfPages(filename)
+
+	r = robots.create_robot(robot_type)
+	
+	for k, a in enumerate(r.action_desc):
+		fig, ax = plt.subplots()
+		ax.set_title("Action: " + a)
+		ax.hist(all_actions[:,k])
+		pp.savefig(fig)
+		plt.close(fig)
+
+	for k, s in enumerate(r.state_desc):
+		fig, ax = plt.subplots()
+		ax.set_title("state: " + s)
+		ax.hist(all_states[:,k])
+		pp.savefig(fig)
+		plt.close(fig)
+
+	for k, s in enumerate(r.state_desc):
+		fig, ax = plt.subplots()
+		ax.set_title("start state: " + s)
+		ax.hist(all_start_states[:,k])
+		pp.savefig(fig)
+		plt.close(fig)
+
+	for k, s in enumerate(r.state_desc):
+		fig, ax = plt.subplots()
+		ax.set_title("end state: " + s)
+		ax.hist(all_end_states[:,k])
+		pp.savefig(fig)
+		plt.close(fig)
+
+	pp.close()
+
+
+
 
 def main() -> None:
 	parser = argparse.ArgumentParser()
-	parser.add_argument("motions", help="file containing the motions (YAML)")
+	# parser.add_argument("motions", help="file containing the motions (YAML)")
 	parser.add_argument("robot_type", help="name of robot type to generate motions for")
 	args = parser.parse_args()
 
-	with open(args.motions) as f:
-		motions = yaml.load(f, Loader=yaml.CSafeLoader)
 
-	# all_actions = []
-	# all_start_states = []
-	# for m in motions:
-	# 	all_actions.extend(m["actions"])
-	# 	all_start_states.append(m["x0"])
-	
+	out_path = Path("../cloud/motions")
+	out_path.mkdir(parents=True, exist_ok=True)
 
-	# import numpy as np
-	# import matplotlib.pyplot as plt
-	# from matplotlib.backends.backend_pdf import PdfPages
+	tmp_path = Path("../results/tmp/motions/{}".format(args.robot_type))
+	tmp_path.mkdir(parents=True, exist_ok=True)
 
-	# all_actions = np.array(all_actions)
-	# all_start_states = np.array(all_start_states)
+	# # load existing motions
+	# with open(out_path / "{}_sorted.yaml".format(args.robot_type)) as f:
+	# 	sorted_motions = yaml.load(f, Loader=yaml.CSafeLoader)
 
-	# pp = PdfPages("../results/test/a.pdf")
-	# fig, ax = plt.subplots()
-	# # ax.scatter(all_actions[:,0], all_actions[:,1])
-	# ax.scatter(all_start_states[:,2], all_start_states[:,4])
+	# with open(out_path / "{}_sorted.msgpack".format(args.robot_type), 'wb') as file:
+	# 	msgpack.pack(sorted_motions, file)
 
-	# pp.savefig(fig)
-	# plt.close(fig)
-	# pp.close()
 
-	
 	# exit()
+
+	motions = merge_motions(tmp_path, 10000)
+
+	# # Hack to fix bad quadrotor motions (z wasn't shifted)
+	# for m in motions:
+	# 	x0 = list(m["states"][0])
+	# 	for s in m["states"]:
+	# 		s[0] -= x0[0]
+	# 		s[1] -= x0[1]
+	# 		s[2] -= x0[2]
+	# 	m["x0"] = list(m["states"][0])
+	# 	m["xf"] = list(m["states"][-1])
+
+	# now sort the primitives
+	# sorted_motions = motions
+	sorted_motions = sort_primitives(motions, args.robot_type)
+	# with open(out_path / "{}_sorted.yaml".format(args.robot_type), 'w') as file:
+	# 	yaml.dump(sorted_motions, file, Dumper=yaml.CSafeDumper)
+
+	with open(out_path / "{}_sorted.msgpack".format(args.robot_type), 'wb') as file:
+		msgpack.pack(sorted_motions, file)
+
+	# visualize the top 10
+	for k, m in enumerate(sorted_motions[0:10]):
+		visualize_motion(m, args.robot_type, tmp_path / "top_{}.mp4".format(k))
+
+	# with open(out_path / "{}_sorted.yaml".format(args.robot_type)) as f:
+	# 	sorted_motions = yaml.load(f, Loader=yaml.CSafeLoader)
+
+	print(len(sorted_motions))
+
+	plot_stats(sorted_motions, args.robot_type, tmp_path / "stats.pdf")
+
+	exit()
 
 	filename_motions_sorted = Path(args.motions).stem + "_sorted.yaml"
 	used_motions = sort_primitives(motions, args.robot_type)

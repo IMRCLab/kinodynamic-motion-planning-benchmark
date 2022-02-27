@@ -54,7 +54,7 @@ struct Trailer : Feature {
     // trailer
     arr t, Jt;
     arr tdot, Jtdot;
-    F_qItself().setOrder(0).eval(t, Jt, FrameL{F(1, 1)}.reshape(1, -1));
+    F_qItself().setOrder(0).eval(t, Jt, FrameL{F(0, 1)}.reshape(1, -1));
     F_qItself().setOrder(1).eval(
         tdot, Jtdot, FrameL{F(0, 1), F(1, 1)}.reshape(-1, 1)); // break here!!
 
@@ -208,8 +208,12 @@ void create_komo_trailer(KOMO &komo, const TrailerOpt &opt) {
   double action_factor = rai::getParameter<double>("action_factor", 1.0);
   const double L = .4;  // distance  rear-front wheels
   const double d1 = .5; // distance between car centers
-  const double max_velocity = 0.5 * action_factor - 0.01; // m/s
+  const double min_velocity = -0.1; // m/s
+  const double max_velocity = 0.5; // m/s
+  const double min_phi = -M_PI / 3;
   const double max_phi = M_PI / 3;
+  const double min_theta1quim = M_PI / 2. - M_PI / 4.;
+  const double max_theta1quim = M_PI / 2. + M_PI / 4.;
 
   auto robot_collision = "R_robot_shape";
   auto car_name = "R_robot";
@@ -312,7 +316,7 @@ void create_komo_trailer(KOMO &komo, const TrailerOpt &opt) {
                         OT_ineq, {1}, {max_velocity}, 1);
 
       komo.addObjective({}, make_shared<UnicycleVelocity>(), {car_name},
-                        OT_ineq, {-1}, {-max_velocity}, 1);
+                        OT_ineq, {-1}, {min_velocity}, 1);
     } else {
       komo.addObjective({}, make_shared<UnicycleVelocity>(), {car_name}, OT_sos,
                         {1}, {}, 1);
@@ -320,11 +324,9 @@ void create_komo_trailer(KOMO &komo, const TrailerOpt &opt) {
     komo.addObjective({}, FS_qItself, {wheel_name}, OT_ineq, {1}, {max_phi},
                       -1);
 
-    komo.addObjective({}, FS_qItself, {wheel_name}, OT_ineq, {-1}, {-max_phi},
+    komo.addObjective({}, FS_qItself, {wheel_name}, OT_ineq, {-1}, {min_phi},
                       -1);
 
-    double max_theta1quim = M_PI / 2. + M_PI / 4.;
-    double min_theta1quim = M_PI / 2. - M_PI / 4.;
     komo.addObjective({}, FS_qItself, {arm_name}, OT_ineq, {1},
                       {max_theta1quim}, 0);
     komo.addObjective({}, FS_qItself, {arm_name}, OT_ineq, {-1},
@@ -397,6 +399,8 @@ int main_trailer() {
   // path to output file (*.yaml)
   rai::String out_file =
       rai::getParameter<rai::String>("out", STRING("out.yaml"));
+
+  rai::String env_file = rai::getParameter<rai::String>("env", STRING("none"));
 
   auto car_name = "R_robot";
   auto trailer_name = "R_trailer";
@@ -553,8 +557,10 @@ int main_trailer() {
     }
     // throw -1;
 
-    komo.run_prepare(.1);
-    komo.run();
+    // komo.run_prepare(.1);
+  // komo.run();
+  double add_init_noise = rai::getParameter<double>("add_init_noise", 0.1);
+  komo.optimize(add_init_noise);
 
     komo.reportProblem();
     arrA newwaypoints = komo.getPath_qAll();

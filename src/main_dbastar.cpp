@@ -4,6 +4,7 @@
 #include <chrono>
 
 #include <yaml-cpp/yaml.h>
+#include <msgpack.hpp>
 
 // #include <boost/functional/hash.hpp>
 #include <boost/program_options.hpp>
@@ -96,7 +97,7 @@ public:
   float cost;
 
   size_t idx;
-  std::string name;
+  // std::string name;
   bool disabled;
 };
 
@@ -155,8 +156,8 @@ float heuristic(std::shared_ptr<Robot> robot, const ob::State *s, const ob::Stat
   const auto current_pos = robot->getTransform(s).translation();
   const auto goal_pos = robot->getTransform(g).translation();
   float dist = (current_pos - goal_pos).norm();
-  const float max_vel = 0.5; // m/s
-  const float time = dist * max_vel;
+  const float max_vel = robot->maxSpeed(); // m/s
+  const float time = dist / max_vel;
   return time;
 }
 
@@ -173,6 +174,8 @@ int main(int argc, char* argv[]) {
   std::string motionsFile;
   float delta;
   float epsilon;
+  float alpha;
+  bool filterDuplicates;
   float maxCost;
   std::string outputFile;
   desc.add_options()
@@ -181,6 +184,8 @@ int main(int argc, char* argv[]) {
     ("motions,m", po::value<std::string>(&motionsFile)->required(), "motions file (yaml)")
     ("delta", po::value<float>(&delta)->default_value(0.01), "discontinuity bound (negative to auto-compute with given k)")
     ("epsilon", po::value<float>(&epsilon)->default_value(1.0), "suboptimality bound")
+    ("alpha", po::value<float>(&alpha)->default_value(0.5), "alpha")
+    ("filterDuplicates", po::value<bool>(&filterDuplicates)->default_value(true), "filter duplicates")
     ("maxCost", po::value<float>(&maxCost)->default_value(std::numeric_limits<float>::infinity()), "cost bound")
     ("output,o", po::value<std::string>(&outputFile)->required(), "output file (yaml)");
 
@@ -261,19 +266,95 @@ int main(int argc, char* argv[]) {
   // si->freeState(goalState);
 
   // load motion primitives
-  YAML::Node motions_node = YAML::LoadFile(motionsFile);
+  // YAML::Node motions_node = YAML::LoadFile(motionsFile);
+
+  // load motions primitives
+  std::ifstream is( motionsFile.c_str(), std::ios::in | std::ios::binary );
+  // get length of file
+  is.seekg (0, is.end);
+  int length = is.tellg();
+  is.seekg (0, is.beg);
+  //
+  msgpack::unpacker unpacker;
+  unpacker.reserve_buffer(length);
+  is.read(unpacker.buffer(), length);
+  unpacker.buffer_consumed(length);
+  msgpack::object_handle oh;
+  unpacker.next(oh);
+  msgpack::object msg_obj = oh.get();
+
   std::vector<Motion> motions;
-  for (const auto& motion : motions_node) {
+  size_t num_states = 0;
+  size_t num_invalid_states = 0;
+
+  // create a robot with no position bounds
+  ob::RealVectorBounds position_bounds_no_bound(env_min.size());
+  position_bounds_no_bound.setLow(-1e6);//std::numeric_limits<double>::lowest());
+  position_bounds_no_bound.setHigh(1e6);//std::numeric_limits<double>::max());
+  std::shared_ptr<Robot> robot_no_pos_bound = create_robot(robotType, position_bounds_no_bound);
+  auto si_no_pos_bound = robot_no_pos_bound->getSpaceInformation();
+  si_no_pos_bound->setPropagationStepSize(1);
+  si_no_pos_bound->setMinMaxControlDuration(1, 1);
+  si_no_pos_bound->setStateValidityChecker(stateValidityChecker);
+  si_no_pos_bound->setStatePropagator(statePropagator);
+  si_no_pos_bound->setup();
+
+  if (msg_obj.type != msgpack::type::ARRAY) {
+    throw msgpack::type_error();
+  }
+  for (size_t i = 0; i < msg_obj.via.array.size; ++i) {
     Motion m;
-    for (const auto& state : motion["states"]) {
-      m.states.push_back(allocAndFillState(si, state));
+    // find the states
+    auto item = msg_obj.via.array.ptr[i];
+    if (item.type != msgpack::type::MAP) {
+      throw msgpack::type_error();
     }
-    for (const auto& action : motion["actions"]) {
-      m.actions.push_back(allocAndFillControl(si, action));
+    // load the states
+    for (size_t j = 0; j < item.via.map.size; ++j) {
+      auto key = item.via.map.ptr[j].key.as<std::string>();
+      if (key == "states") {
+        auto val = item.via.map.ptr[j].val;
+        for (size_t k = 0; k < val.via.array.size; ++k) {
+          ob::State* state = si->allocState();
+          std::vector<double> reals;
+          val.via.array.ptr[k].convert(reals);
+          si->getStateSpace()->copyFromReals(state, reals);
+          m.states.push_back(state);
+          if (!si_no_pos_bound->satisfiesBounds(m.states.back())) {
+            // std::cout << "State in motion primitive is invalid! Enforcing bounds!\n";
+            // si->printState(m.states.back());
+            si_no_pos_bound->enforceBounds(m.states.back());
+            ++num_invalid_states;
+            // si->printState(m.states.back());
+          }
+        }
+        break;
+      }
     }
-    m.cost = m.actions.size() / 10.0f; // time in seconds
+    num_states += m.states.size();
+    // load the actions
+    for (size_t j = 0; j < item.via.map.size; ++j) {
+      auto key = item.via.map.ptr[j].key.as<std::string>();
+      if (key == "actions") {
+        auto val = item.via.map.ptr[j].val;
+        for (size_t k = 0; k < val.via.array.size; ++k) {
+          oc::Control *control = si->allocControl();
+          std::vector<double> reals;
+          val.via.array.ptr[k].convert(reals);
+          for (size_t idx = 0; idx < reals.size(); ++idx) {
+            double* address = si->getControlSpace()->getValueAddressAtIndex(control, idx);
+            if (address) {
+              *address = reals[idx];
+            }
+          }
+          m.actions.push_back(control);
+        }
+        break;
+      }
+    }
+    m.cost = m.actions.size() * robot->dt(); // time in seconds
     m.idx = motions.size();
-    m.name = motion["name"].as<std::string>();
+    // m.name = motion["name"].as<std::string>();
 
     // generate collision objects and collision manager
     for (const auto &state : m.states)
@@ -295,6 +376,7 @@ int main(int argc, char* argv[]) {
 
     motions.push_back(m);
   }
+  std::cout << "Info: " << num_invalid_states << " states are invalid of " << num_states << std::endl;
 
   auto rng = std::default_random_engine{};
   std::shuffle(std::begin(motions), std::end(motions), rng);
@@ -318,7 +400,12 @@ int main(int argc, char* argv[]) {
   }
 
   std::cout << "There are " << motions.size() << " motions!" << std::endl;
+  std::cout << "Max cost is " << maxCost << std::endl;
 
+  if (alpha <= 0 || alpha >= 1) {
+    std::cerr << "Alpha needs to be between 0 and 1!" << std::endl;
+    return 1;
+  }
 
   //////////////////////////
   if (delta < 0) {
@@ -327,27 +414,32 @@ int main(int argc, char* argv[]) {
     fakeMotion.states.push_back(si->allocState());
     std::vector<Motion *> neighbors_m;
     size_t num_desired_neighbors = (size_t)-delta;
-    size_t num_samples = 100;
+    size_t num_samples = std::min<size_t>(1000, motions.size());
 
     auto state_sampler = si->allocStateSampler();
     float sum_delta = 0.0;
     for (size_t k = 0; k < num_samples; ++k) {
-      state_sampler->sampleUniform(fakeMotion.states[0]);
+      // state_sampler->sampleUniform(fakeMotion.states[0]);
+      si->copyState(fakeMotion.states[0], motions[k].states.back());
       robot->setPosition(fakeMotion.states[0], fcl::Vector3f(0, 0, 0));
 
-      T_m->nearestK(&fakeMotion, num_desired_neighbors, neighbors_m);
+      T_m->nearestK(&fakeMotion, num_desired_neighbors+1, neighbors_m);
 
       float max_delta = si->distance(fakeMotion.states[0], neighbors_m.back()->states.front());
+      // std::cout << "k " << k << std::endl;
+      // si->printState(fakeMotion.states[0]);
+      // si->printState(neighbors_m[1]->states.front());
+      // std::cout << "dist " << si->distance(fakeMotion.states[0], neighbors_m.front()->states.front()) << std::endl;
       sum_delta += max_delta;
     }
-    float adjusted_delta = (sum_delta / num_samples) * 2;
+    float adjusted_delta = (sum_delta / num_samples) / alpha;
     std::cout << "Automatically adjusting delta to: " << adjusted_delta << std::endl;
     delta = adjusted_delta;
 
   }
   //////////////////////////
 
-  // if (false)
+  if (filterDuplicates)
   {
     size_t num_duplicates = 0;
     Motion fakeMotion;
@@ -360,14 +452,14 @@ int main(int argc, char* argv[]) {
       }
 
       si->copyState(fakeMotion.states[0], m.states[0]);
-      T_m->nearestR(&fakeMotion, delta/2, neighbors_m);
+      T_m->nearestR(&fakeMotion, delta*alpha, neighbors_m);
 
       for (Motion* nm : neighbors_m) {
         if (nm == &m || nm->disabled) {
           continue;
         }
         float goal_delta = si->distance(m.states.back(), nm->states.back());
-        if (goal_delta < delta/2) {
+        if (goal_delta < delta*(1-alpha)) {
           // std::cout << nm->idx << " " << goal_delta << " " << delta/2 << std::endl;
           nm->disabled = true;
           ++num_duplicates;
@@ -468,7 +560,7 @@ int main(int argc, char* argv[]) {
         out << "      # ";
         printState(out, si, node_state);
         out << std::endl;
-        out << "      # motion " << motion.name << " with cost " << motion.cost << std::endl;
+        out << "      # motion " << motion.idx << " with cost " << motion.cost << std::endl;
         // skip last state each
         for (size_t k = 0; k < motion.states.size(); ++k)
         {
@@ -494,7 +586,7 @@ int main(int argc, char* argv[]) {
       for (size_t i = 0; i < result.size() - 1; ++i)
       {
         const auto &motion = motions[result[i+1]->used_motion];
-        out << "      # motion " << motion.name << " with cost " << motion.cost << std::endl;
+        out << "      # motion " << motion.idx << " with cost " << motion.cost << std::endl;
         for (size_t k = 0; k < motion.actions.size(); ++k)
         {
           const auto& action = motion.actions[k];
@@ -518,7 +610,14 @@ int main(int argc, char* argv[]) {
       }
       out << "    motion_stats:" << std::endl;
       for (const auto& kv : motionsCount) {
-        out << "      " << motions[kv.first].name << ": " << kv.second << std::endl;
+        out << "      " << motions[kv.first].idx << ": " << kv.second << std::endl;
+      }
+
+      // statistics on where the motion splits are
+      out << "    splits:" << std::endl;
+      for (size_t i = 0; i < result.size() - 1; ++i) {
+        const auto &motion = motions.at(result[i+1]->used_motion);
+        out << "      - " << motion.states.size() - 1 << std::endl;
       }
 
       // {
@@ -554,11 +653,14 @@ int main(int argc, char* argv[]) {
     current->is_in_open = false;
     open.pop();
 
+    // std::cout << "top " << std::endl;
+    // si->printState(current->state);
+
     // find relevant motions (within delta/2 of current state)
     si->copyState(fakeMotion.states[0], current->state);
     robot->setPosition(fakeMotion.states[0], fcl::Vector3f(0,0,0));
 
-    T_m->nearestR(&fakeMotion, delta/2, neighbors_m);
+    T_m->nearestR(&fakeMotion, delta*alpha, neighbors_m);
     // std::shuffle(std::begin(neighbors_m), std::end(neighbors_m), rng);
 
     // std::cout << "found " << neighbors_m.size() << " motions" << std::endl;
@@ -567,6 +669,7 @@ int main(int argc, char* argv[]) {
       if (motion->disabled) {
         continue;
       }
+      // si->printState(motion->states.front());
 
 #if 1
       fcl::Vector3f computed_offset(0, 0, 0);
@@ -615,10 +718,17 @@ int main(int argc, char* argv[]) {
       float tentative_hScore = epsilon * heuristic(robot, tmpState, goalState);
       float tentative_fScore = tentative_gScore + tentative_hScore;
 
-      // skip motions that would exceed cost bound, or that are invalid
-      if (tentative_fScore > maxCost || !si->satisfiesBounds(tmpState))
+      // skip motions that would exceed cost bound
+      if (tentative_fScore > maxCost)
       {
-        // std::cout << "skip " << tentative_fScore << " " << maxCost << std::endl;
+        // std::cout << "skip b/c cost " << tentative_fScore << " " << tentative_gScore << " " << tentative_hScore << " " << maxCost << std::endl;
+        continue;
+      }
+      // skip motions that are invalid
+      if (!si->satisfiesBounds(tmpState))
+      {
+        // std::cout << "skip invalid state" << std::endl;
+        // si->printState(tmpState);
         continue;
       }
 
@@ -670,6 +780,7 @@ int main(int argc, char* argv[]) {
 
       // Skip this motion, if it isn't valid
       if (!motionValid) {
+        // std::cout << "skip invalid motion" << std::endl;
         continue;
       }
       // std::cout << "valid " <<  std::endl;
@@ -681,7 +792,7 @@ int main(int argc, char* argv[]) {
       // float motion_distance = si->distance(query_n->state, current->state);
       // const float eps = 1e-6;
       // float radius = std::min(delta/2, motion_distance-eps);
-      float radius = delta/2;
+      float radius = delta*(1-alpha);
       T_n->nearestR(query_n, radius, neighbors_n);
       // auto nearest = T_n->nearest(query_n);
       // float nearest_distance = si->distance(nearest->state, tmpState);
@@ -779,7 +890,7 @@ int main(int argc, char* argv[]) {
     out << "      # ";
     printState(out, si, node_state);
     out << std::endl;
-    out << "      # motion " << motion.name << " with cost " << motion.cost << std::endl;
+    out << "      # motion " << motion.idx << " with cost " << motion.cost << std::endl;
     // skip last state each
     for (size_t k = 0; k < motion.states.size(); ++k)
     {
@@ -805,7 +916,7 @@ int main(int argc, char* argv[]) {
   for (size_t i = 0; i < result.size() - 1; ++i)
   {
     const auto &motion = motions[result[i+1]->used_motion];
-    out << "      # motion " << motion.name << " with cost " << motion.cost << std::endl;
+    out << "      # motion " << motion.idx << " with cost " << motion.cost << std::endl;
     for (size_t k = 0; k < motion.actions.size(); ++k)
     {
       const auto& action = motion.actions[k];
@@ -829,7 +940,7 @@ int main(int argc, char* argv[]) {
   }
   out << "    motion_stats:" << std::endl;
   for (const auto& kv : motionsCount) {
-    out << "      " << motions[kv.first].name << ": " << kv.second << std::endl;
+    out << "      " << motions[kv.first].idx << ": " << kv.second << std::endl;
   }
 
   return 0;

@@ -1,8 +1,9 @@
 environment:
-  min: [0.0, 0.0, 0.0]
-  max: [3, 3, 2]
+  min: [-5, -5, 0]
+  max: [5, 5, 6]
   obstacles: []
 robots:
   - type: quadrotor_0
-    start: [1,1,1, 0,0,0,1, 0,0,0, 0,0,0] # x,y,z, qx, qy, qz, qw, vx, vy, vz, wx, wy, wz
-    goal: [1.5,1,1, 0,0,0,1, 0,0,0, 0,0,0] # x,y,z, qx, qy, qz, qw, vx, vy, vz, wx, wy, wz
+    start: [0,0,3, 0,0,0,1, 0,0,0, 0,0,0] # x,y,z, qx, qy, qz, qw, vx, vy, vz, wx, wy, wz
+    # start: [2,5,5, 0.819152, 0, 0, 0.5735764, 0,0,0, 0,0,0] # x,y,z, qx, qy, qz, qw, vx, vy, vz, wx, wy, wz
+    goal: [2,0,3, 0,0,0,1, 0,0,0, 0,0,0] # x,y,z, qx, qy, qz, qw, vx, vy, vz, wx, wy, wz

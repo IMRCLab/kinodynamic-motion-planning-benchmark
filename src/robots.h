@@ -46,10 +46,22 @@ public:
     return dt_;
   }
 
+  float is2D() const
+  {
+    return is2D_;
+  }
+
+  float maxSpeed() const
+  {
+    return max_speed_;
+  }
+
 protected:
   std::vector<std::shared_ptr<fcl::CollisionGeometryf>> geom_;
   std::shared_ptr<ompl::control::SpaceInformation> si_;
   float dt_;
+  bool is2D_;
+  float max_speed_;
 };
 
 // Factory Method

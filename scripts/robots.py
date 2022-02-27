@@ -4,6 +4,9 @@ from jax import lax
 def normalize_angle(angle):
 	return (angle + np.pi) % (2 * np.pi) - np.pi
 
+def diff_angle(angle1, angle2):
+	return np.arctan2(np.sin(angle1-angle2), np.cos(angle1-angle2))
+
 # Quaternion routines adapted from rowan to use autograd
 
 
@@ -52,25 +55,31 @@ def qnormalize(q):
 
 class RobotUnicycleFirstOrder:
 
-	def __init__(self, v_limit, w_limit):
+	def __init__(self, v_min, v_max, w_min, w_max):
 		self.action_desc = ["v [m/s]", "w [rad/s]"]
-		self.min_u = np.array([-v_limit, -w_limit])
-		self.max_u = np.array([v_limit, w_limit])
+		self.min_u = np.array([v_min, w_min])
+		self.max_u = np.array([v_max, w_max])
 
 		self.state_desc = ["x [m]", "y [m]", "yaw [rad]"]
 		self.min_x = np.array([-np.inf, -np.inf, -np.pi])
 		self.max_x = np.array([np.inf, np.inf, np.pi])
 
+		self.dt = 0.1
+		self.is2D = True
+
+	def valid_state(self, state):
+		return 	(state >= self.min_x).all() and \
+				(state <= self.max_x).all()
+
 	def step(self, state, action):
-		dt = 0.1
 		x, y, yaw = state
 		v, w = action
 
-		x_next = x + v * np.cos(yaw) * dt
-		y_next = y + v * np.sin(yaw) * dt
-		yaw_next = yaw + w * dt
-		# normalize yaw between -pi and pi
+		yaw_next = yaw + w * self.dt
 		yaw_next_norm = (yaw_next + np.pi) % (2 * np.pi) - np.pi
+		x_next = x + v * np.cos(yaw_next_norm) * self.dt
+		y_next = y + v * np.sin(yaw_next_norm) * self.dt
+		# normalize yaw between -pi and pi
 
 		state_next = np.array([x_next, y_next, yaw_next_norm])
 		return state_next
@@ -87,18 +96,24 @@ class RobotUnicycleSecondOrder:
 		self.min_x = np.array([-np.inf, -np.inf, -np.pi, -v_limit, -w_limit])
 		self.max_x = np.array([np.inf, np.inf, np.pi, v_limit, w_limit])
 
+		self.dt = 0.1
+		self.is2D = True
+
+	def valid_state(self, state):
+		return 	(state >= self.min_x).all() and \
+				(state <= self.max_x).all()
+
 	def step(self, state, action):
-		dt = 0.1
 		x, y, yaw, v, w = state
 		a, w_dot = action
 
 		# For compatibility with KOMO, update v and yaw first
-		v_next = v + a * dt
-		w_dot_next = w + w_dot * dt
-		yaw_next = yaw + w_dot_next * dt
+		v_next = v + a * self.dt
+		w_dot_next = w + w_dot * self.dt
+		yaw_next = yaw + w_dot_next * self.dt
 		yaw_next_norm = (yaw_next + np.pi) % (2 * np.pi) - np.pi
-		x_next = x + v_next * np.cos(yaw_next) * dt
-		y_next = y + v_next * np.sin(yaw_next) * dt
+		x_next = x + v_next * np.cos(yaw_next) * self.dt
+		y_next = y + v_next * np.sin(yaw_next) * self.dt
 
 		# x_next = x + v * np.cos(yaw) * dt
 		# y_next = y + v * np.sin(yaw) * dt
@@ -112,10 +127,10 @@ class RobotUnicycleSecondOrder:
 # LaValle book, Equation 13.19
 class RobotCarFirstOrderWithTrailers:
 
-	def __init__(self, v_limit, phi_limit, L, hitch_lengths):
+	def __init__(self, v_min, v_max, phi_min, phi_max, L, hitch_lengths):
 		self.action_desc = ["v [m/s]", "steering angle [rad]"]
-		self.min_u = np.array([-v_limit, -phi_limit])
-		self.max_u = np.array([v_limit, phi_limit])
+		self.min_u = np.array([v_min, phi_min])
+		self.max_u = np.array([v_max, phi_max])
 
 		self.state_desc = ["x [m]", "y [m]", "yaw [rad]"]
 		min_x = [-np.inf, -np.inf, -np.pi]
@@ -129,6 +144,16 @@ class RobotCarFirstOrderWithTrailers:
 
 		self.L = L
 		self.hitch_lengths = hitch_lengths
+		self.dt = 0.1
+		self.is2D = True
+
+	def valid_state(self, state):
+		# check if theta0 and theta1 have a reasonable relative angle
+		dangle = diff_angle(state[2], state[3])
+
+		return 	(state >= self.min_x).all() and \
+				(state <= self.max_x).all() and \
+				np.absolute(dangle) <= np.pi / 4
 
 	def step(self, state, action):
 		""""
@@ -138,15 +163,14 @@ class RobotCarFirstOrderWithTrailers:
 		theta_1_dot = v / hitch_lengths[0] * sin(theta_0 - theta_1)
 		...
 		"""
-		dt = 0.1
 		x, y, yaw = state[0], state[1], state[2]
 		v, phi = action
 
-		x_next = x + v * np.cos(yaw) * dt
-		y_next = y + v * np.sin(yaw) * dt
-		yaw_next = yaw + v / self.L * np.tan(phi) * dt
+		yaw_next = yaw + v / self.L * np.tan(phi) * self.dt
 		# normalize yaw between -pi and pi
 		yaw_next_norm = normalize_angle(yaw_next)
+		x_next = x + v * np.cos(yaw_next) * self.dt
+		y_next = y + v * np.sin(yaw_next) * self.dt
 
 		state_next_list = [x_next, y_next, yaw_next_norm]
 
@@ -157,7 +181,7 @@ class RobotCarFirstOrderWithTrailers:
 			theta_dot *= np.sin(state[2+i] - state[3+i])
 
 			theta = state[3+i]
-			theta_next = theta + theta_dot * dt
+			theta_next = theta + theta_dot * self.dt
 			theta_next_norm = normalize_angle(theta_next)
 			state_next_list.append(theta_next_norm)
 
@@ -171,6 +195,8 @@ class Quadrotor:
 		self.action_desc = ["f1 [N]", "f2 [N]", "f3 [N]", "f4 [N]"]
 		self.min_u = np.zeros(4)
 		self.max_u = np.ones(4) * 12.0 / 1000.0 * 9.81
+		max_v = 2
+		max_omega = 4
 
 		self.state_desc = [
 			"x [m]", "y [m]", "z [m]",
@@ -178,13 +204,13 @@ class Quadrotor:
 			"vx [m/s]", "vy [m/s]", "vz [m/s]",
 			"w_x", "w_y", "w_z"]
 		min_x = [-np.inf, -np.inf, -np.inf,
-				-0.5, -0.5, -0.5,
 				-1.001, -1.001, -1.001, -1.001,
-				-5, -5, -5]
+				-max_v, -max_v, -max_v,
+				-max_omega, -max_omega, -max_omega]
 		max_x = [np.inf, np.inf, np.inf,
-				0.5, 0.5, 0.5,
 				1.001, 1.001, 1.001, 1.001,
-				5, 5, 5]
+				max_v, max_v, max_v,
+				max_omega, max_omega, max_omega]
 		self.min_x = np.array(min_x)
 		self.max_x = np.array(max_x)
 
@@ -215,6 +241,11 @@ class Quadrotor:
 			self.inv_J = 1 / self.J  # diagonal matrix -> division
 
 		self.dt = 0.01
+		self.is2D = False
+
+	def valid_state(self, state):
+		return 	(state >= self.min_x).all() and \
+				(state <= self.max_x).all()
 
 	def step(self, state, action):
 		# compute next state
@@ -249,13 +280,17 @@ class Quadrotor:
 
 def create_robot(robot_type):
 	if robot_type == "unicycle_first_order_0":
-		return RobotUnicycleFirstOrder(0.5, 0.5)
+		return RobotUnicycleFirstOrder(-0.5, 0.5, -0.5, 0.5)
+	elif robot_type == "unicycle_first_order_1":
+		return RobotUnicycleFirstOrder(0.25, 0.5, -0.5, 0.5)
+	elif robot_type == "unicycle_first_order_2":
+		return RobotUnicycleFirstOrder(0.25, 0.5, -0.25, 0.5)
 	elif robot_type == "unicycle_second_order_0":
 		return RobotUnicycleSecondOrder(0.5, 0.5, 0.25, 0.25)
-	elif robot_type == "car_first_order__0":
-		return RobotCarFirstOrderWithTrailers(0.5, np.pi/3, 0.4, [])
+	elif robot_type == "car_first_order_0":
+		return RobotCarFirstOrderWithTrailers(-0.1, 0.5, -np.pi/3, np.pi/3, 0.25, [])
 	elif robot_type == "car_first_order_with_1_trailers_0":
-		return RobotCarFirstOrderWithTrailers(0.5, np.pi/3, 0.4, [0.5])
+		return RobotCarFirstOrderWithTrailers(-0.1, 0.5, -np.pi/3, np.pi/3, 0.25, [0.5])
 	elif robot_type == "quadrotor_0":
 		return Quadrotor()
 	else:

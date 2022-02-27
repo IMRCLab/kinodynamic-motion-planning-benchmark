@@ -1,9 +1,10 @@
 import numpy as np
 # from scp import SCP
 from main_komo import run_komo_standalone
-from utils_motion_primitives import sort_primitives, visualize_motion
+from utils_motion_primitives import sort_primitives, visualize_motion, plot_stats
 import robots
 import yaml
+import msgpack
 import multiprocessing as mp
 import tqdm
 import itertools
@@ -19,7 +20,8 @@ import time
 import sys, os
 sys.path.append(os.getcwd())
 
-def gen_motion(robot_type, start, goal):
+def gen_motion(robot_type, start, goal, is2D, cfg):
+
 	dbg = False
 	with tempfile.TemporaryDirectory() as tmpdirname:
 		if dbg:
@@ -28,8 +30,8 @@ def gen_motion(robot_type, start, goal):
 			p = Path(tmpdirname)
 		env = {
 			"environment":{
-				"min": [-2, -2],
-				"max": [2, 2],
+				"min": [-10, -10],
+				"max": [10, 10],
 				"obstacles": []
 			},
 			"robots": [{
@@ -38,16 +40,40 @@ def gen_motion(robot_type, start, goal):
 				"goal": list(goal),
 			}]
 		}
+		if not is2D:
+			env["environment"]["min"].append(-10)
+			env["environment"]["max"].append(10)
 
 		filename_env = str(p / "env.yaml")
 		with open(filename_env, 'w') as f:
 			yaml.dump(env, f, Dumper=yaml.CSafeDumper)
+		
+		filename_result = p / "result_komo.yaml"
 
-		success = run_komo_standalone(filename_env, str(p), 120, "action_factor: 1.0", search="linear", initialguess="none")
+		# success = run_komo_standalone(filename_env, str(p), 120, "", search="linear", initialguess="none")
+		# use_T = np.random.randint(20, 100)
+		# success = run_komo_standalone(filename_env, str(p), 5 * 60, "soft_goal: 1", search="none", initialguess="none", use_T=use_T)
+		success = run_komo_standalone(filename_env, str(p), cfg['timelimit'], cfg['rai_cfg'], cfg['search'], initialguess="none", T_range_abs=[0, 200])
+		# print("SDF", success)
+		# if success:
+		# 	print("PPPPSDF")
+		# 	# read the result
+		# 	with open(filename_result) as f:
+		# 		result = yaml.load(f, Loader=yaml.CSafeLoader)
+		# 	xf = result["result"][0]["states"][-1]
+		# 	# update env
+		# 	env["robots"][0]["goal"] = xf
+		# 	with open(filename_env, 'w') as f:
+		# 		yaml.dump(env, f, Dumper=yaml.CSafeDumper)
+		# 	# try to find a solution with lower T
+		# 	success = run_komo_standalone(filename_env, str(p), 5 * 60, "", search="linearReverse", initialguess="none", T_range_abs=[1, use_T-1])
+		# else:
+		# 	return []
+
+
 		if not success:
 			return []
 
-		filename_result = p / "result_komo.yaml"
 		# checker.check(str(filename_env), str(filename_result))
 
 		if dbg:
@@ -67,7 +93,10 @@ def gen_motion(robot_type, start, goal):
 		eucledian_distance = 0
 		split = [0]
 		for k in range(1, len(states)):
-			eucledian_distance += np.linalg.norm(states[k-1][0:2] - states[k][0:2])
+			if is2D:
+				eucledian_distance += np.linalg.norm(states[k-1][0:2] - states[k][0:2])
+			else:
+				eucledian_distance += np.linalg.norm(states[k-1][0:3] - states[k][0:3])
 			if eucledian_distance >= 0.5:
 				split.append(k)
 				eucledian_distance = 0
@@ -82,7 +111,10 @@ def gen_motion(robot_type, start, goal):
 			start_k = split[idx-1]
 			k = split[idx]
 			# shift states
-			states[start_k:, 0:2] -= states[start_k, 0:2]
+			if is2D:
+				states[start_k:, 0:2] -= states[start_k, 0:2]
+			else:
+				states[start_k:, 0:3] -= states[start_k, 0:3]
 			# create motion
 			motion = dict()
 			motion['x0'] = states[start_k].tolist()
@@ -103,13 +135,33 @@ def gen_random_motion(robot_type):
 	#       random numbers may repeat, when using multiprocessing
 	from motionplanningutils import RobotHelper
 
-	rh = RobotHelper(robot_type)
+	# load tuning settings for this case
+	tuning_path = Path("../tuning")
+
+	cfg = tuning_path / robot_type / "algorithms.yaml"
+	assert(cfg.is_file())
+
+	with open(cfg) as f:
+		cfg = yaml.safe_load(f)
+
+	# find cfg
+	mycfg = cfg['gen-motion']
+
+	rh = RobotHelper(robot_type, mycfg["env_limit"])
 	start = rh.sampleUniform()
-	goal = rh.sampleUniform()
 	# shift to center (at 0,0)
 	start[0] = 0
 	start[1] = 0
-	motions =  gen_motion(robot_type, start, goal)
+	if not rh.is2D():
+		start[2] = 0
+	# if "quadrotor" in robot_type:
+		# goal = [0,0,0, 0,0,0,1, 0,0,0, 0,0,0]
+	# else:
+		# goal = rh.sampleUniform()
+	goal = rh.sampleUniform()
+	# print(start, goal)
+	# exit()
+	motions =  gen_motion(robot_type, start, goal, rh.is2D(), mycfg)
 	for motion in motions:
 		motion['distance'] = rh.distance(motion['x0'], motion['xf'])
 	return motions
@@ -130,17 +182,18 @@ def main():
 	tmp_path.mkdir(parents=True, exist_ok=True)
 
 	def add_motions(additional_motions):
-		motions.extend(additional_motions)
-		print("Generated {} motions".format(len(motions)), flush=True)
-		# Store intermediate results, in case we need to interupt the generation
-		i = 0
-		while True:
-			p = tmp_path / "{}.yaml".format(i)
-			if not p.exists():
-				with open(p, 'w') as f:
-					yaml.dump(additional_motions, f)
-				break
-			i = i + 1
+		if len(additional_motions) > 0:
+			motions.extend(additional_motions)
+			print("Generated {} motions".format(len(motions)), flush=True)
+			# Store intermediate results, in case we need to interupt the generation
+			i = 0
+			while True:
+				p = tmp_path / "{}.yaml".format(i)
+				if not p.exists():
+					with open(p, 'w') as f:
+						yaml.dump(additional_motions, f)
+					break
+				i = i + 1
 
 	# if args.N <= 10:
 	if False:
@@ -173,12 +226,17 @@ def main():
 
 	# now sort the primitives
 	sorted_motions = sort_primitives(motions, args.robot_type)
-	with open(out_path / "{}_sorted.yaml".format(args.robot_type), 'w') as file:
-		yaml.dump(sorted_motions, file, Dumper=yaml.CSafeDumper)
+	# with open(out_path / "{}_sorted.yaml".format(args.robot_type), 'w') as file:
+	# 	yaml.dump(sorted_motions, file, Dumper=yaml.CSafeDumper)
+	with open(out_path / "{}_sorted.msgpack".format(args.robot_type), 'wb') as file:
+		msgpack.pack(sorted_motions, file)
 
 	# visualize the top 100
-	for k, m in enumerate(sorted_motions[0:100]):
+	for k, m in enumerate(sorted_motions[0:10]):
 		visualize_motion(m, args.robot_type, tmp_path / "top_{}.mp4".format(k))
+
+	# plot statistics
+	plot_stats(sorted_motions, args.robot_type, tmp_path / "stats.pdf")
 
 
 if __name__ == '__main__':

@@ -12,6 +12,7 @@ import shutil
 from collections import defaultdict
 import tempfile
 from pathlib import Path
+import msgpack
 
 import sys
 import os
@@ -100,10 +101,14 @@ def run_dbastar(filename_env, folder, timelimit, cfg, opt_alg="scp", motions_sta
 	add_prims = cfg["add_primitives_per_iteration"]
 	desired_branching_factor = cfg["desired_branching_factor"]
 	epsilon = cfg["suboptimality_bound"]
+	alpha = cfg["alpha"]
+	filter_duplicates = cfg["filter_duplicates"]
 
 	with tempfile.TemporaryDirectory() as tmpdirname:
 		p = Path(tmpdirname)
-		filename_motions = p / "motions.yaml"
+		# p = Path("../results/dbg")
+
+		filename_motions = p / "motions.msgpack"
 
 		sol = 0
 		filename_stats = "{}/stats.yaml".format(folder)
@@ -124,14 +129,21 @@ def run_dbastar(filename_env, folder, timelimit, cfg, opt_alg="scp", motions_sta
 
 
 		# load existing motions
-		with open('../cloud/motions/{}_sorted.yaml'.format(robot_node["type"])) as f:
-			all_motions = yaml.load(f, Loader=yaml.CSafeLoader)
+		# with open('../cloud/motions/{}_sorted.yaml'.format(robot_node["type"])) as f:
+		# 	all_motions = yaml.load(f, Loader=yaml.CSafeLoader)
+
+		with open('../cloud/motions/{}_sorted.msgpack'.format(robot_node["type"]), 'rb') as f:
+			all_motions = msgpack.unpack(f)
+
 		# all_motions = sort_primitives(all_motions, robot_type, 100)
-		# all_motions = all_motions[0:300]
+		# all_motions = all_motions[0:1000]
+		print("Have {} motions in total".format(len(all_motions)))
 		motions = all_motions[0:add_prims]
 		del all_motions[0:add_prims]
-		with open(filename_motions, 'w') as file:
-			yaml.dump(motions, file, Dumper=yaml.CSafeDumper)
+		# with open(filename_motions, 'w') as file:
+		# 	yaml.dump(motions, file, Dumper=yaml.CSafeDumper)
+		with open(filename_motions, 'wb') as file:
+			msgpack.pack(motions, file)
 
 		# print(len(motions))
 		# exit()
@@ -145,6 +157,8 @@ def run_dbastar(filename_env, folder, timelimit, cfg, opt_alg="scp", motions_sta
 		# initialDelta = delta
 
 		start = time.time()
+		duration_dbastar = 0
+		duration_opt = 0
 
 		with open(filename_stats, 'w') as stats:
 			stats.write("stats:\n")
@@ -157,19 +171,24 @@ def run_dbastar(filename_env, folder, timelimit, cfg, opt_alg="scp", motions_sta
 				# find_smallest_delta(filename_env, filename_motions, filename_result_dbastar, delta, maxCost)
 				# exit()
 
+				t_dbastar_start = time.time()
 				result = subprocess.run(["./dbastar", 
 					"-i", filename_env,
 					"-m", filename_motions,
 					"-o", filename_result_dbastar,
 					"--delta", str(-desired_branching_factor),
 					"--epsilon", str(epsilon),
+					"--alpha", str(alpha),
+					"--filterDuplicates", str(filter_duplicates),
 					"--maxCost", str(maxCost)])
+				t_dbastar_stop = time.time()
+				duration_dbastar += t_dbastar_stop - t_dbastar_start
 				if result.returncode != 0:
 					# print("dbA* failed; Generating more primitives")
 
 
 					print("dbA* failed; Using more primitives", len(motions))
-					if len(all_motions) > add_prims:
+					if len(all_motions) >= add_prims:
 						motions.extend(all_motions[0:add_prims])
 						del all_motions[0:add_prims]
 					else:
@@ -180,8 +199,10 @@ def run_dbastar(filename_env, folder, timelimit, cfg, opt_alg="scp", motions_sta
 						# 	motion['distance'] = rh.distance(motion['x0'], motion['xf'])
 						# 	motions.append(motion)
 
-					with open(filename_motions, 'w') as file:
-						yaml.dump(motions, file, Dumper=yaml.CSafeDumper)
+					# with open(filename_motions, 'w') as file:
+					# 	yaml.dump(motions, file, Dumper=yaml.CSafeDumper)
+					with open(filename_motions, 'wb') as file:
+						msgpack.pack(motions, file)
 
 					# median = np.median([m['distance'] for m in motions])
 					# if delta > median:
@@ -194,18 +215,29 @@ def run_dbastar(filename_env, folder, timelimit, cfg, opt_alg="scp", motions_sta
 					print("DELTA CHECK", delta_achieved)
 					# assert(delta_achieved <= delta)
 
-					shutil.copyfile(filename_motions, "{}/motions_sol{}.yaml".format(folder, sol))
+					# shutil.copyfile(filename_motions, "{}/motions_sol{}.msgpack".format(folder, sol))
 
+					t_opt_start = time.time()
 					if opt_alg == "scp":
 						success = main_scp.run_scp(filename_env, filename_result_dbastar, filename_result_opt)
 					elif opt_alg == "komo":
 						success = main_komo.run_komo_with_T_scaling(
-							filename_env, filename_result_dbastar, filename_result_opt, cfg["rai_cfg"], max_T=int(maxCost*10))
+							filename_env, filename_result_dbastar, filename_result_opt, cfg["rai_cfg"], max_T=int(maxCost/robot.dt))
 
 						# success = main_komo.run_komo(filename_env, filename_result_dbastar, filename_result_opt, cfg["rai_cfg"])
 					else:
 						raise Exception("Unknown optimization algorithm {}!".format(opt_alg))
+					t_opt_stop = time.time()
+					duration_opt += t_opt_stop - t_opt_start
 
+					# extract solution, independent of success
+					if Path(filename_result_opt).exists():
+						opt_motions = checker.extract_valid_motions(filename_env, filename_result_opt, success)
+						print("Extracted {} motions from optimization".format(len(opt_motions)))
+						motions.extend(opt_motions)
+
+					# checker_success = checker.check(filename_env, filename_result_opt)
+					# success = success and checker_success
 					if not success:
 						# print("Optimization failed; Reducing delta")
 						# delta = delta * 0.9
@@ -219,11 +251,18 @@ def run_dbastar(filename_env, folder, timelimit, cfg, opt_alg="scp", motions_sta
 							# compute_motion_importance(filename_env, filename_motions, filename_result_dbastar, delta, maxCost, motions_stats)
 						with open(filename_result_opt) as f:
 							result = yaml.safe_load(f)
-							cost = len(result["result"][0]["actions"]) / 10
+							cost = len(result["result"][0]["actions"]) * robot.dt
 						now = time.time()
 						t = now - start
 						print("success!", cost, t)
-						stats.write("  - t: {}\n    cost: {}\n".format(t, cost))
+						stats.write("  - t: {}\n".format(t))
+						stats.write("    cost: {}\n".format(cost))
+						stats.write("    delta_achieved: {}\n".format(delta_achieved))
+						stats.write("    duration_dbastar: {}\n".format(duration_dbastar))
+						stats.write("    duration_opt: {}\n".format(duration_opt))
+						stats.flush()
+						duration_dbastar = 0
+						duration_opt = 0
 						maxCost = cost * 0.99
 
 						shutil.copyfile(filename_result_opt, "{}/result_opt_sol{}.yaml".format(folder, sol))
@@ -233,7 +272,7 @@ def run_dbastar(filename_env, folder, timelimit, cfg, opt_alg="scp", motions_sta
 					sol += 1
 
 					# use more primitives in all cases
-					if len(all_motions) > add_prims:
+					if len(all_motions) >= add_prims:
 						motions.extend(all_motions[0:add_prims])
 						del all_motions[0:add_prims]
 					else:
@@ -244,9 +283,10 @@ def run_dbastar(filename_env, folder, timelimit, cfg, opt_alg="scp", motions_sta
 						# 	motion['distance'] = rh.distance(motion['x0'], motion['xf'])
 						# 	motions.append(motion)
 
-					with open(filename_motions, 'w') as file:
-						yaml.dump(motions, file, Dumper=yaml.CSafeDumper)
-
+					# with open(filename_motions, 'w') as file:
+					# 	yaml.dump(motions, file, Dumper=yaml.CSafeDumper)
+					with open(filename_motions, 'wb') as file:
+						msgpack.pack(motions, file)
 
 						# delta = initialDelta
 						# break
