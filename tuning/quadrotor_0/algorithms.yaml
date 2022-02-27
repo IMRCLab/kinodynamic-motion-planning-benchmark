@@ -6,15 +6,16 @@ sst:
     pruning_radius: 0.02  # delta_s in paper
     propagation_step_size: 0.05 #s
     control_duration: [1, 1] # multiples of step size
-    # rai_cfg: |
-      # opt/muInit = 1e1
-      # opt/damping = 1e-2
-      # KOMO/verbose: 4
-      # opt/stopTolerance = 1e-3
+    rai_cfg: |
+      opt/muInit = 1e1
+      opt/damping = 1e-2
+      KOMO/verbose: 4
+      opt/stopTolerance = 1e-3
+      add_init_noise = 0
 
 dbAstar-komo:
   default:
-    add_primitives_per_iteration: 10000
+    add_primitives_per_iteration: 5000
     desired_branching_factor: 4
     suboptimality_bound: 1.0
     alpha: 0.5
@@ -25,7 +26,7 @@ dbAstar-komo:
       opt/damping = 1e-2
       KOMO/verbose: 4
       opt/stopTolerance = 1e-3
-      add_init_noise = 0.1
+      add_init_noise = 0
 
 komo:
   default:

@@ -55,6 +55,10 @@ def main():
 			"system": "car_first_order_with_1_trailers_0",
 			"instance": "bugtrap_0",
 		},
+		{
+			"system": "quadrotor_0",
+			"instance": "empty_0",
+		},
 	]
 	algs = [
 		"sst",
@@ -70,6 +74,7 @@ def main():
 		'unicycle_first_order_2': "unicycle $1^{\mathrm{st}}$ order, v2",
 		'unicycle_second_order_0': "unicycle $2^{\mathrm{nd}}$ order",
 		'car_first_order_with_1_trailers_0': "car with trailer",
+		'quadrotor_0': "quadrotor",
 	}
 
 	instance_names = {
@@ -77,13 +82,14 @@ def main():
 		'kink_0': "kink",
 		'bugtrap_0': "bugtrap",
 		'wall_0': "wall",
+		'empty_0': "empty",
 	}
 
 	alg_names = {
 		"sst": "SST*",
 		"sbpl": "SBPL",
 		"komo": "geom. RRT*+KOMO",
-		"dbAstar-komo": "kMP-db-A*"
+		"dbAstar-komo": "kMP-db-A*",
 	}
 
 	T = 5*60

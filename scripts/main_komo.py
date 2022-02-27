@@ -6,6 +6,7 @@ from pathlib import Path
 import subprocess
 import shutil
 import time
+import robots
 
 from utils_optimization import UtilsSolutionFile
 import translate_g
@@ -131,6 +132,7 @@ def run_komo_standalone(filename_env, folder, timelimit, cfg = "",
 		with open(filename_env) as f:
 			env = yaml.safe_load(f)
 		robot_type = env["robots"][0]["type"]
+		robot = robots.create_robot(robot_type)
 
 		if "unicycle" in robot_type:
 			robot_type_guess = "unicycle_first_order_0"
@@ -256,7 +258,7 @@ def run_komo_standalone(filename_env, folder, timelimit, cfg = "",
 					print("KOMO SUCCESS with T", T)
 					now = time.time()
 					t = now - start
-					stats.write("  - t: {}\n    cost: {}\n".format(t, T / 10))
+					stats.write("  - t: {}\n    cost: {}\n".format(t, T * robot.dt))
 
 					if search == "linear":
 						best_T = T
