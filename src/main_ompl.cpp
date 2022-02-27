@@ -126,6 +126,7 @@ int main(int argc, char* argv[]) {
     reals.push_back(v.as<double>());
   }
   si->getStateSpace()->copyFromReals(startState, reals);
+  si->enforceBounds(startState);
   pdef->addStartState(startState);
   si->freeState(startState);
 
@@ -136,6 +137,7 @@ int main(int argc, char* argv[]) {
     reals.push_back(v.as<double>());
   }
   si->getStateSpace()->copyFromReals(goalState, reals);
+  si->enforceBounds(goalState);
   pdef->setGoalState(goalState, cfg["goal_epsilon"].as<double>());
   si->freeState(goalState);
 
