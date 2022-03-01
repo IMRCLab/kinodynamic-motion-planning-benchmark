@@ -76,7 +76,7 @@ class Vis:
     # axes.plot([-1, 1.5], [1, 1], color='black', lw=1, transform=axes.transAxes, clip_on=False)
 
     max_delta = None
-    plot_idx = "a)"
+    plot_idx = "A)"
     for ax, filename_result in zip(axs[0,:], filenames_result):
         ax.set_aspect('equal')
         ax.axis('off')
@@ -140,18 +140,19 @@ class Vis:
             if max_delta is None:
                 max_delta = max(dist)
             widths = dist / max_delta * 5 + 3
-
+            colors = ["g" if x < 1e-3 else "r" for x in dist]
+            # print(dist)
             from  matplotlib.colors import LinearSegmentedColormap
-            cmap=LinearSegmentedColormap.from_list('rg',["g", "r"], N=256) 
-
-            lc = mcoll.LineCollection(segments, array=dist, norm=plt.Normalize(0.0, max_delta), linewidth=widths, cmap=cmap)
+            cmap=LinearSegmentedColormap.from_list('rg',["g", "r"], N=3) 
+            lc = mcoll.LineCollection(segments, array=dist, norm=plt.Normalize(0.0, max_delta), cmap=cmap, linewidth=3, capstyle='round')#, linewidth=widths, cmap=cmap)
+            # lc = mcoll.LineCollection(segments, array=dist, linewidth=widths, colors=colors)
             ax.add_collection(lc)
-            ax.text(0.4,1, r"{} $\delta = {:.2f} \quad T = {}$".format(plot_idx, max(dist), T))
+            ax.text(0.3,1, r"{} $\delta = {:.2f} \quad T\Delta t = {:.1f} s$".format(plot_idx, max(dist), T/10))
 
-            if plot_idx == "a)":
-              plot_idx = "b)"
-            elif plot_idx == "b)":
-              plot_idx = "c)"
+            if plot_idx == "A)":
+              plot_idx = "B)"
+            elif plot_idx == "B)":
+              plot_idx = "C)"
             # plt.colorbar(lc)
 
   def show(self):

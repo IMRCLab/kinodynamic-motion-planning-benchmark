@@ -83,8 +83,8 @@ class Vis:
       if robot["type"] in ["car_first_order_with_1_trailers_0"]:
         self.size = [np.array([0.5, 0.25]), np.array([0.3, 0.25])]
         self.hitch_length = [0.5]
-        self.draw_robot(robot["start"], facecolor='red', alpha=0.6)
-        self.draw_robot(robot["goal"], facecolor='green', alpha=0.6)
+        self.draw_robot(robot["start"], facecolor='blue', alpha=0.6)
+        self.draw_robot(robot["goal"], edgecolor='blue', facecolor='none', alpha=0.6, linewidth=2)
       else:
         raise Exception("Unknown robot type!")
 
@@ -106,7 +106,7 @@ class Vis:
         states = np.array(robot["states"])
         segments = make_segments(states[:,0], states[:,1])
         z = np.arange(0, T/10, 0.1) #np.linspace(0.0, 1.0, T)
-        lc = mcoll.LineCollection(segments, array=z, norm=plt.Normalize(0.0, T/10))
+        lc = mcoll.LineCollection(segments, array=z, norm=plt.Normalize(0.0, T/10), linewidth=5, capstyle='round')
         self.ax.add_collection(lc)
         # plt.colorbar(lc)
 
@@ -129,18 +129,29 @@ class Vis:
     return [patch1, patch2, line]
 
 def main():
-  filename_env = "../benchmark/car_first_order_with_1_trailers_0/bugtrap_0.yaml"
-  filename_result = "../paper/fig2/bugtrap.yaml"
-  # filename_result = "../paper/fig2/result_dbastar_sol2.yaml"
 
-  # filename_env = "../benchmark/car_first_order_with_1_trailers_0/kink_0.yaml"
-  # filename_result = "../paper/fig2/kink.yaml"
+  l = [
+    {
+    'env': "../benchmark/car_first_order_with_1_trailers_0/bugtrap_0.yaml",
+    'result': "../paper/fig2/bugtrap.yaml",
+    'out': "fig2c.svg",
+    },
+    {
+    'env': "../benchmark/car_first_order_with_1_trailers_0/kink_0.yaml",
+    'result': "../paper/fig2/kink.yaml",
+    'out': "fig2b.svg",
+    },
+    {
+    'env': "../benchmark/car_first_order_with_1_trailers_0/parallelpark_0.yaml",
+    'result': "../paper/fig2/parallelpark.yaml",
+    'out': "fig2a.svg",
+    },
+  ]
 
-  # filename_env = "../benchmark/car_first_order_with_1_trailers_0/parallelpark_0.yaml"
-  # filename_result = "../paper/fig2/parallelpark.yaml"
-
-  v = Vis(filename_env, filename_result)
-  plt.savefig('fig2c.svg', bbox_inches='tight')
+  for item in l:
+    v = Vis(item['env'], item['result'])
+    plt.savefig(item['out'], bbox_inches='tight')
+    # inkscape fig2b.svg --export-pdf=fig2b.pdf
   # v.show()
 
 if __name__ == "__main__":
