@@ -214,17 +214,10 @@ def main() -> None:
 
 	# exit()
 
-	motions = merge_motions(tmp_path, 10000)
+	motions = merge_motions(tmp_path) #, 10000)
+	# tmp_path2 = Path("../results/tmp/motions/quadrotor_0_server")
+	# motions.extend(merge_motions(tmp_path2))
 
-	# # Hack to fix bad quadrotor motions (z wasn't shifted)
-	# for m in motions:
-	# 	x0 = list(m["states"][0])
-	# 	for s in m["states"]:
-	# 		s[0] -= x0[0]
-	# 		s[1] -= x0[1]
-	# 		s[2] -= x0[2]
-	# 	m["x0"] = list(m["states"][0])
-	# 	m["xf"] = list(m["states"][-1])
 
 	# now sort the primitives
 	# sorted_motions = motions

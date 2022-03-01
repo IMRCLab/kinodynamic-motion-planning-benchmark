@@ -4,13 +4,29 @@ from mimetypes import init
 import numpy as np
 import matplotlib.pyplot as plt
 import yaml
-# from matplotlib.backends.backend_pdf import PdfPages
-from matplotlib.backends.backend_pgf import PdfPages
+from matplotlib.backends.backend_pdf import PdfPages
+# from matplotlib.backends.backend_pgf import PdfPages
 from matplotlib.cm import get_cmap
 from collections import defaultdict
 
 class Report:
   def __init__(self, filename, T, dt):
+
+    tex_fonts = {
+        # Use LaTeX to write all text
+        "text.usetex": True,
+        "font.family": "serif",
+        # "axes.labelsize": 12,
+        "font.size": 11,
+        # Make the legend/label fonts a little smaller
+        # "legend.fontsize": 10,
+        # "xtick.labelsize": 10,
+        # "ytick.labelsize": 10
+    }
+
+    plt.rcParams.update(tex_fonts)
+
+
     self.pp = PdfPages(filename)
     self.fig = None
     cmap = get_cmap("Dark2")
@@ -86,7 +102,7 @@ class Report:
     ax[0].set_title(exp_name)
 
     for i in range(2):
-      ax[i].set_xscale('symlog')
+      ax[i].set_xscale('log')
       ax[i].grid(which='both', axis='x', linestyle='dashed')
       ax[i].grid(which='major', axis='y', linestyle='dashed')
 
@@ -94,7 +110,7 @@ class Report:
       if exp_name_stats != exp_name:
         continue
 
-      success = np.count_nonzero(~np.isnan(costs), axis=0) / 5 * 100
+      success = np.count_nonzero(~np.isnan(costs), axis=0) / 10 * 100
       median = np.nanmedian(costs, axis=0)
       percentileH = np.nanpercentile(costs, 75, axis=0)
       percentileL = np.nanpercentile(costs, 25, axis=0)
@@ -105,7 +121,7 @@ class Report:
 
       ax[0].plot(self.times, success, label=self.alg_dict[algo]['name'], color=self.color_dict[algo], linewidth=3, alpha=0.8)
     ax[0].legend()
-    ax[0].set_ylabel("Success [%]")
+    ax[0].set_ylabel(r"Success [\%]")
     ax[1].set_ylabel("Cost [s]")
 
     ax[1].set_xlabel("Time [s]")
@@ -290,12 +306,6 @@ def main():
   #   "text.usetex": True,
   #   "font.family": "sans-serif",
   #   "font.sans-serif": ["Helvetica"]})
-
-  plt.rcParams.update({
-    "text.usetex": True,
-    "font.family": "serif",
-    "font.serif": ["Times"],
-  })
 
   fig, ax = plt.subplots()
 
