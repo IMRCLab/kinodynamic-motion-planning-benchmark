@@ -55,10 +55,10 @@ T = 50
 
 featss = [] 
 for i in range(T): 
-    feats = FeatUniversal([AuglagFeat(Feat_terminal(goal, weight_goal),len(goal),0), CostFeat(Feat_control(weight_control),2,1.) , AuglagFeat(Feat_obstacles(obs, obs_radius , weight_obstacles),1,1.)])
+    feats = FeatUniversal([AuglagFeat(Feat_terminal(goal, weight_goal),len(goal),0), CostFeat(Feat_control(weight_control),2,1.) , AuglagFeat(Feat_obstacles(obs, obs_radius , weight_obstacles),len(obs),1.)])
     featss.append(feats)
 
-feats = FeatUniversal([AuglagFeat(Feat_terminal(goal, weight_goal),len(goal),1.0), CostFeat(Feat_control(weight_control),2,0.0) , AuglagFeat(Feat_obstacles(obs, obs_radius, weight_obstacles),1,1.)])
+feats = FeatUniversal([AuglagFeat(Feat_terminal(goal, weight_goal),len(goal),1.0), CostFeat(Feat_control(weight_control),2,0.0) , AuglagFeat(Feat_obstacles(obs, obs_radius, weight_obstacles),len(obs),1.)])
 featss.append(feats)
 
 rM_basic = []

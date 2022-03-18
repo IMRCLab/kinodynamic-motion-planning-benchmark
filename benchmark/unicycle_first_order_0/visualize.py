@@ -12,12 +12,16 @@ import sys
 
 def draw_box_patch(ax, center, size, angle = 0, **kwargs):
   xy = np.asarray(center) - np.asarray(size) / 2
-  rect = Rectangle(xy, size[0], size[1], **kwargs)
-  t = matplotlib.transforms.Affine2D().rotate_around(
-      center[0], center[1], angle)
-  rect.set_transform(t + ax.transData)
-  ax.add_patch(rect)
-  return rect
+  if (len(size)==2):
+      o = Rectangle(xy, size[0], size[1], **kwargs)
+      t = matplotlib.transforms.Affine2D().rotate_around(
+          center[0], center[1], angle)
+      o.set_transform(t + ax.transData)
+  else:
+      o = Circle(center,radius=size[0],**kwargs)
+
+  ax.add_patch(o)
+  return o
 
 
 class Animation:
@@ -36,11 +40,12 @@ class Animation:
     self.ax.set_ylim(env["environment"]["min"][1], env["environment"]["max"][1])
 
     for obstacle in env["environment"]["obstacles"]:
-      if obstacle["type"] == "box":
+      if obstacle["type"] == "box" or obstacle["type"] == "sphere":
         draw_box_patch(
             self.ax, obstacle["center"], obstacle["size"], facecolor='gray', edgecolor='black')
       else:
         print("ERROR: unknown obstacle type")
+        assert False
 
     for robot in env["robots"]:
       if robot["type"] in ["unicycle_first_order_0"]:

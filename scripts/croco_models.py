@@ -117,6 +117,9 @@ class FeatUniversal():
     def __init__(self,list_feats):
         self.list_feats = list_feats
         self.nr = sum( i.nr for i in self.list_feats)
+    def append(self,list_feats):
+        self.list_feats += list_feats
+        self.nr = sum( i.nr for i in self.list_feats)
     def __call__(self, *args):
         out = np.zeros(self.nr)
         a = 0
@@ -157,7 +160,7 @@ class Feat_obstacles( ):
         # distance to goal
         return self.weight * dist
 
-def penalty_solver(ddp, xs , us, featss, visualize, extra_plot):
+def penalty_solver(ddp, xs , us, featss, visualize, plot_fun):
     penalty = [1,5,10,50,100,200]
     for p in penalty:
 
@@ -174,15 +177,18 @@ def penalty_solver(ddp, xs , us, featss, visualize, extra_plot):
 
         done = ddp.solve(init_xs=xs,init_us=us)
 
+
         if visualize:
-            plt.clf()
-            for x in ddp.xs: 
-                plotUnicycle(x)
+            plot_fun(ddp.xs)
+            # plt.clf()
+            # for x in ddp.xs: 
+            #     plotUnicycle(x)
+            # plt.scatter(ddp.xs[-1][0],ddp.xs[-1][1],c="yellow",marker=".")
 
-            extra_plot(plt)
+            # extra_plot(plt)
 
-            plt.axis([-2, 2, -2, 2])
-            plt.show()
+            # plt.axis([-2, 2, -2, 2])
+            # plt.show()
         # plot
 
         xs= ddp.xs
@@ -287,7 +293,7 @@ def plot_feats(xs,us,featss,unone):
 
 
 
-def auglag_solver(ddp, xs, us, featss, unone,  visualize , extra_plot):
+def auglag_solver(ddp, xs, us, featss, unone,  visualize , plot_fun):
     """
     update lagrange multipliers
     Eq. 17.39 Nocedal Numerical optimization v2
@@ -332,18 +338,38 @@ def auglag_solver(ddp, xs, us, featss, unone,  visualize , extra_plot):
 
         if visualize:
             plt.clf()
-            for x in ddp.xs: 
-                plotUnicycle(x)
-
-            extra_plot(plt)
-
-            plt.axis([-2, 2, -2, 2])
-            plt.show()
-
+            plot_fun(xs)
             plot_feats(xs,us,featss, np.zeros(2))
             plot_feats_raw(xs,us, featss, np.zeros(2))
 
     return xs, us
+
+class FeatObstaclesFcl():
+    def __init__(self,obs,weight,cc):
+        self.obs = obs
+        self.weight = weight
+        self.cc = cc # collision checker against the environment
+    def __call__(self,xx,uu):
+        x,y,theta= xx[0].item(), xx[1].item(),xx[2].item()
+        p = np.array([x,y])
+        dist = np.zeros(1)
+        dis, _, _ = self.cc.distance(np.array([x,y,theta])) # Float, Vector, Vector
+        # TODO: Only one min distance per time step. Is this a real limitation?
+        dist[0] = min(0, dis)
+        return self.weight * dist
+
+class FeatBoundsX():
+    def __init__(self,lb,ub,weight):
+        self.weight = weight
+        self.lb = lb
+        self.ub = ub
+    def __call__(self,xx,uu):
+        # x < ub
+        r_ub = np.minimum( 0 ,  self.ub - xx )
+        # x > lb 
+        r_lb = np.minimum( 0 , xx - self.lb )
+        return np.concatenate(r_lb,r_ub)
+        
 
 
 
