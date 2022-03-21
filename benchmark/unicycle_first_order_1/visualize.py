@@ -36,7 +36,7 @@ class Animation:
     self.ax.set_ylim(env["environment"]["min"][1], env["environment"]["max"][1])
 
     for obstacle in env["environment"]["obstacles"]:
-      if obstacle["type"] == "box":
+      if obstacle["type"] == "box" or obstacle["type"] == "sphere":
         draw_box_patch(
             self.ax, obstacle["center"], obstacle["size"], facecolor='gray', edgecolor='black')
       else:
