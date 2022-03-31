@@ -1,6 +1,10 @@
 import sys
 import os
+import pytest
 import subprocess as sp
+
+# skip all tests in this module
+pytestmark = pytest.mark.skip(reason="Test needs to be updated")
 
 
 def test_trailer_komo():
