@@ -348,6 +348,30 @@ public:
       distance_data[min_idx].result.nearest_points[1]);
   }
 
+
+  // negative means collision 
+  auto distanceWithFDiffGradient( const std::vector<double>& state) {
+
+  const auto dd = std::get<0>(distance(state)) ;
+  const double faraway_zero_gradient_bound = .1; 
+  const double epsilon = 1e-3;
+
+  std::vector<double> out(state.size(), 0.);
+  if (dd < faraway_zero_gradient_bound) {
+    std::vector<double>eps(state.size(),0.);
+    for (size_t i = 0; i < state.size(); i++) {
+      std::copy(state.begin(), state.end(), eps.begin());
+      eps[i] += epsilon;
+      auto dd_eps= std::get<0>(distance(eps)) ;
+      out[i] = (dd_eps - dd ) / epsilon;
+    }
+  }
+  return std::make_tuple( dd, out);
+  }
+
+
+
+
 private:
   std::shared_ptr<fcl::CollisionGeometryf> geom_;
   std::shared_ptr<fcl::BroadPhaseCollisionManagerf> env_;
@@ -360,7 +384,8 @@ PYBIND11_MODULE(motionplanningutils, m)
   pybind11::class_<CollisionChecker>(m, "CollisionChecker")
       .def(pybind11::init())
       .def("load", &CollisionChecker::load)
-      .def("distance", &CollisionChecker::distance);
+      .def("distance", &CollisionChecker::distance)
+      .def("distanceWithFDiffGradient", &CollisionChecker::distanceWithFDiffGradient);
 
   pybind11::class_<RobotHelper>(m, "RobotHelper")
       .def(pybind11::init<const std::string &, float>(), py::arg("robot_type"), py::arg("pos_limit") = 2)
