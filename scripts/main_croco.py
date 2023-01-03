@@ -833,5 +833,5 @@ def data_generation(free_time=False):
 
 
 if __name__ == '__main__':
-    # main()
-    data_generation()
+    main()
+    # data_generation()

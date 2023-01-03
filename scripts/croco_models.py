@@ -13,6 +13,24 @@ import sys
 from jax.interpreters import ad
 
 
+class Feat_Quat():
+    name = "quat"
+
+    def __init__(self, weight=1.):
+        self.weight = weight
+        # self.quat_idx = [3,4,5,6]
+
+    def __call__(self, xx, uu):
+        if isinstance(xx, np.ndarray):
+            quat_norm_sq = np.sum(np.square(xx[3:7]))
+            out = self.weight * np.array([1. - quat_norm_sq])
+        else:
+            quat_norm_sq = jnp.sum(jnp.square(xx[3:7]))
+            out = self.weight * jnp.array([1. - quat_norm_sq])
+        return out
+
+
+
 def dist_modpi(x, y):
     d = x - y
     if isinstance(x, np.ndarray):
@@ -1071,21 +1089,6 @@ class OCP_trailer(OCP_abstract):
         normalize_trailer(X, U)
 
 
-class Feat_Quat():
-    name = "quat"
-
-    def __init__(self, weight=1.):
-        self.weight = weight
-        # self.quat_idx = [3,4,5,6]
-
-    def __call__(self, xx, uu):
-        if isinstance(xx, np.ndarray):
-            quat_norm = np.sum(np.square(xx[3:7]))
-            out = self.weight * np.array([1. - quat_norm])
-        else:
-            quat_norm = jnp.sum(jnp.square(xx[3:7]))
-            out = self.weight * jnp.array([1. - quat_norm])
-        return out
 
 
 def add_noise_quadcopter(xs, us, k):
@@ -1138,6 +1141,7 @@ class OCP_quadrotor(OCP_abstract):
 
         def create_features():
             feats = [CostTerm(Feat_control(weight_control, ureg), len(self.min_u)),
+                    CostTerm(Feat_Quat(),1),
                      # CostTerm(Feat_regx(weight_regx), 13, 1.),
                      AuglagTerm(FeatBoundsX(jnp.array(self.min_x), jnp.array(self.max_x),
                                             self.weight_bounds), 2 * len(self.min_x))]

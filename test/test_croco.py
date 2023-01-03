@@ -44,6 +44,7 @@ def test_unicycle1_park_noguess():
 
 def test_unicycle2_park():
     """
+    TODO: check issue with collisions. It is not in collision, but the Lag multiplier is very big. why? Maybe is unstable because of the inequalities?
     """
     cmd = "python3  ../scripts/main_croco.py ../benchmark/unicycle_second_order_0/parallelpark_0.yaml   ../test/unicycle_second_order_0/guess_parallelpark_0_sol0.yaml out.yaml"
     print("Running", cmd)
@@ -96,22 +97,16 @@ def test_croco6():
     print("Running DONE", cmd)
     assert out.returncode == 0
 
-def test_coco_quad():
-    script = "../scripts/main_croco.py" 
-    env = "../benchmark/quadrotor_0/empty_test_easy.yaml" 
-    guess = "../benchmark/quadrotor_0/empty_easy_guess.yml"
-    cmd = f"python3  {script} {env} {guess} out.yaml"
+def test_coco_quad_hover():
+    cmd = f"python3 ../scripts/main_croco.py ../benchmark/quadrotor_0/empty_test_easy.yaml ../benchmark/quadrotor_0/empty_easy_guess.yml out.yaml"
     print("Running", cmd)
     out = sp.run(cmd.split())
     print("Running DONE", cmd)
     assert out.returncode == 0
 
 
-def test_coco_quad2():
-    script = "../scripts/main_croco.py" 
-    env = "../benchmark/quadrotor_0/empty_test_easy2.yaml" 
-    guess = "../benchmark/quadrotor_0/empty_easy_guess.yml"
-    cmd = f"python3  {script} {env} {guess} out.yaml"
+def test_coco_quad():
+    cmd = f"python3  ../scripts/main_croco.py ../benchmark/quadrotor_0/empty_test_easy2.yaml ../benchmark/quadrotor_0/empty_easy_guess.yml out.yaml"
     print("Running", cmd)
     out = sp.run(cmd.split())
     print("Running DONE", cmd)
