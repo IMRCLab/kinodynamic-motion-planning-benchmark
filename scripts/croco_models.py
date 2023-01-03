@@ -3,16 +3,14 @@ import numpy as np
 import matplotlib.pylab as plt
 from unicycle_utils import *
 import time
-from robots import Quadrotor, RobotUnicycleFirstOrder, RobotCarFirstOrderWithTrailers, RobotUnicycleSecondOrder, qnormalize, qrotate, qintegrate
-
+from robots import Quadrotor, RobotUnicycleFirstOrder, RobotCarFirstOrderWithTrailers, \
+    RobotUnicycleSecondOrder, RobotSingleIntegratorN, RobotDoubleIntegratorN
 from jax.config import config
 config.update("jax_enable_x64", True)
-from jax import grad, jacfwd, jacrev, jit
+from jax import  jacfwd,  jit ,core , lax
 import jax.numpy as jnp
 import sys
-from functools import partial
-from jax.interpreters import ad, batching, xla
-from jax import core, dtypes, lax
+from jax.interpreters import ad
 
 
 def dist_modpi(x, y):
@@ -148,7 +146,6 @@ class ActionModelAD(crocoddyl.ActionModelAbstract):
 
         self.Jx_fn = jacfwd(self.feat_fn, 0)
         self.Ju_fn = jacfwd(self.feat_fn, 1)
-
         if use_jit:
             self.step_fn = jit(self.step_fn)
             self.feat_fn = jit(self.feat_fn)
@@ -203,53 +200,6 @@ class ActionModelAD(crocoddyl.ActionModelAbstract):
         self.timer += time.perf_counter() - tic
 
 
-# class Trailer_DT():
-
-#     def __init__(self, L, hitch_lengths, free_time):
-
-#         self.L = L
-#         self.hitch_lengths = hitch_lengths
-#         self.dt = 0.1
-#         self.is2D = True
-#         self.free_time = free_time
-
-#     def step(self, state, action):
-#         """"
-#         x_dot = v * cos (theta_0)
-#         y_dot = v * sin (theta_0)
-#         theta_0_dot = v / L * tan(phi)
-#         theta_1_dot = v / hitch_lengths[0] * sin(theta_0 - theta_1)
-#         ...
-#         """
-#         x, y, yaw = state[0], state[1], state[2]
-
-#         if self.free_time:
-#             v, phi, t = action
-#         else:
-#             v, phi = action
-#             t = 1.
-
-#         yaw_next = yaw + v / self.L * jnp.tan(phi) * self.dt * t
-#         x_next = x + v * jnp.cos(yaw) * self.dt * t
-#         y_next = y + v * jnp.sin(yaw) * self.dt * t
-
-#         state_next_list = [x_next, y_next, yaw_next]
-
-#         for i, d in enumerate(self.hitch_lengths):
-#             theta_dot = v / d
-#             for j in range(0, i):
-#                 theta_dot *= jnp.cos(state[2 + j] - state[3 + j])
-#             theta_dot *= jnp.sin(state[2 + i] - state[3 + i])
-
-#             theta = state[3 + i]
-#             theta_next = theta + theta_dot * self.dt * t
-#             # theta_next_norm = normalize_angle(theta_next)
-#             state_next_list.append(theta_next)
-
-#         state_next = jnp.array(state_next_list)
-#         return state_next
-
-
 class AM_Trailer_AD(ActionModelAD, crocoddyl.ActionModelAbstract):
     def __init__(self, features, nr, free_time=False):
         nu = 3 if free_time else 2
@@ -266,30 +216,6 @@ class AM_Trailer_AD(ActionModelAD, crocoddyl.ActionModelAbstract):
                 normalize=False),
             features)
 
-        # Trailer_DT(
-        # L=.25, hitch_lengths=[.5], free_time=self.free_time),
-
-
-# class Unicycle_order1_DT:
-
-#     def __init__(self, free_time=False):
-#         self.dt = 0.1
-#         self.free_time = free_time
-
-#     def step(self, state, action):
-#         x, y, yaw = state
-#         if self.free_time:
-#             v, w, t = action
-#         else:
-#             v, w = action
-#             t = 1.
-#         yaw_next = yaw + w * t * self.dt
-#         x_next = x + v * jnp.cos(yaw) * t * self.dt
-#         y_next = y + v * jnp.sin(yaw) * t * self.dt
-
-#         state_next = jnp.array([x_next, y_next, yaw_next])
-#         return state_next
-
 
 class AM_unicycle_order1_AD(ActionModelAD,
                             crocoddyl.ActionModelAbstract):
@@ -302,6 +228,32 @@ class AM_unicycle_order1_AD(ActionModelAD,
             self, RobotUnicycleFirstOrder(free_time=free_time,
                                           semi_implicit=False,
                                           normalize=False), features)
+
+
+class AM_Single_intergrator_n(ActionModelAD,
+                              crocoddyl.ActionModelAbstract):
+
+    def __init__(self, features, nr, dim=2, free_time=False):
+        nu = dim + 1 if free_time else dim
+        crocoddyl.ActionModelAbstract.__init__(
+            self, crocoddyl.StateVector(dim), nu, nr)
+        self.unone = np.zeros(self.nu)
+        ActionModelAD.__init__(
+            self, RobotSingleIntegratorN(dim=dim, free_time=free_time,
+                                         semi_implicit=False), features)
+
+
+class AM_Double_intergrator_n(ActionModelAD,
+                              crocoddyl.ActionModelAbstract):
+
+    def __init__(self, features, nr, dim=2, free_time=False):
+        nu = dim + 1 if free_time else dim
+        crocoddyl.ActionModelAbstract.__init__(
+            self, crocoddyl.StateVector(2 * dim), nu, nr)
+        self.unone = np.zeros(self.nu)
+        ActionModelAD.__init__(
+            self, RobotDoubleIntegratorN(dim=dim, free_time=free_time,
+                                         semi_implicit=False), features)
 
 
 class AM_unicycle_order2_AD(ActionModelAD,
@@ -318,7 +270,7 @@ class AM_unicycle_order2_AD(ActionModelAD,
 
 
 class AM_quadrotor(ActionModelAD,
-                            crocoddyl.ActionModelAbstract):
+                   crocoddyl.ActionModelAbstract):
     def __init__(self, features, nr, free_time=False, use_jit=False):
         nu = 5 if free_time else 4
         crocoddyl.ActionModelAbstract.__init__(
@@ -326,120 +278,9 @@ class AM_quadrotor(ActionModelAD,
         self.unone = np.zeros(self.nu)
         ActionModelAD.__init__(
             self, Quadrotor(free_time=free_time,
-                                           semi_implicit=False,
-                                           normalize=False), features, 
+                            semi_implicit=False,
+                            normalize=False), features,
             use_jit=use_jit)
-
-
-
-
-
-# class Unicycle_order2_DT:
-
-#     def __init__(self, free_time=False):
-#         self.dt = 0.1
-#         self.free_time = free_time
-
-#     def step(self, state, action):
-#         x, y, yaw, v, w = state
-
-#         if self.free_time:
-#             a, w_dot, t = action
-#         else:
-#             a, w_dot = action
-#             t = 1.
-
-#         # For compatibility with KOMO, update v and yaw first
-#         v_next = v + a * self.dt * t
-#         w_dot_next = w + w_dot * self.dt * t
-#         yaw_next = yaw + w_dot_next * self.dt * t
-#         # yaw_next_norm = (yaw_next + np.pi) % (2 * np.pi) - np.pi
-#         yaw_next_norm = yaw_next
-#         x_next = x + v_next * jnp.cos(yaw_next) * self.dt * t
-#         y_next = y + v_next * jnp.sin(yaw_next) * self.dt * t
-
-#         # x_next = x + v * np.cos(yaw) * dt
-#         # y_next = y + v * np.sin(yaw) * dt
-#         # yaw_next = yaw + w * dt
-#         # normalize yaw between -pi and pi
-
-#         state_next = jnp.array(
-#             [x_next, y_next, yaw_next_norm, v_next, w_dot_next])
-#         return state_next
-
-
-# class QuadrotorDT:
-
-#     def __init__(self, free_time=False):
-#         self.free_time = free_time
-#         # parameters (Crazyflie 2.0 quadrotor)
-#         self.mass = 0.034  # kg
-#         # self.J = np.array([
-#         #   [16.56,0.83,0.71],
-#         #   [0.83,16.66,1.8],
-#         #   [0.72,1.8,29.26]
-#         #   ]) * 1e-6  # kg m^2
-#         self.J = np.array([16.571710e-6, 16.655602e-6, 29.261652e-6])
-
-#         # Note: we assume here that our control is forces
-#         arm_length = 0.046  # m
-#         arm = 0.707106781 * arm_length
-#         t2t = 0.006  # thrust-to-torque ratio
-#         self.B0 = np.array([
-#             [1, 1, 1, 1],
-#             [-arm, -arm, arm, arm],
-#             [-arm, arm, arm, -arm],
-#             [-t2t, t2t, -t2t, t2t]
-#         ])
-#         self.g = 9.81  # not signed
-
-#         if self.J.shape == (3, 3):
-#             # full matrix -> pseudo inverse
-#             self.inv_J = np.linalg.pinv(self.J)
-#         else:
-#             self.inv_J = 1 / self.J  # diagonal matrix -> division
-
-#         self.dt = 0.01
-#         self.is2D = False
-
-#     def step(self, _state, _action):
-#         state = jnp.array(_state)
-
-#         if self.free_time:
-#             action = jnp.asarray(_action[:-1])
-#             t = _action[-1]
-#         else:
-#             action = jnp.asarray(_action)
-#             t = 1.
-
-#         q = jnp.concatenate((state[6:7], state[3:6]))
-#         q = qnormalize(q)
-#         omega = state[10:]
-
-#         eta = jnp.dot(self.B0, action)
-
-#         f_u = jnp.array([0, 0, eta[0]])
-#         tau_u = jnp.array([eta[1], eta[2], eta[3]])
-
-#         # dynamics
-#         # dot{p} = v
-#         pos_next = state[0:3] + state[7:10] * self.dt * t
-#         # mv = mg + R f_u
-#         vel_next = state[7:10] + (jnp.array([0, 0, -self.g]) +
-#                                   qrotate(q, f_u) / self.mass) * self.dt * t
-
-#         # dot{R} = R S(w)
-#         # to integrate the dynamics, see
-#         # https://www.ashwinnarayan.com/post/how-to-integrate-quaternions/, and
-#         # https://arxiv.org/pdf/1604.08139.pdf
-#         q_next = qnormalize(qintegrate(q, omega, self.dt * t))
-
-#         # mJ = Jw x w + tau_u
-#         omega_next = state[10:] + (self.inv_J *
-#                                    (jnp.cross(self.J * omega, omega) + tau_u)) * self.dt * t
-
-#         return jnp.concatenate(
-#             (pos_next, q_next[1:4], q_next[0:1], vel_next, omega_next))
 
 
 class OT():
@@ -458,7 +299,6 @@ class PenaltyFeat():
         self.nr = nr
 
     def __call__(self, *args):
-        # TODO: what happens with the 1/2?
         return (self.mu / 2.0)**.5 * self.fn(*args)
 
 
@@ -488,9 +328,11 @@ class AuglagTerm():
         self.name = "a-" + fn.name
 
     def __call__(self, *args):
-        # r =  ( mu / 2 ) ** .5  * ( c - l / mu  )
-        return ((self.mu / 2.) ** .5 *
-                (self.fn(*args) - self.l / self.mu))
+        """
+        residual is:
+        r =  ( mu / 2 ) ** .5  * ( c - l / mu  )
+        """
+        return (self.mu / 2.) ** .5 * (self.fn(*args) - self.l / self.mu)
 
 
 class FeatUniversal():
@@ -576,7 +418,10 @@ class Feat_regx():
 
     def __call__(self, xx, uu):
         if self.ref is None:
-            ref = np.zeros_like(xx)
+            if isinstance(xx, np.ndarray):
+                ref = np.zeros_like(xx)
+            else:
+                ref = jnp.zeros_like(xx)
         else:
             ref = self.ref
         return self.weight * (xx - ref)
@@ -616,9 +461,6 @@ def plot_feats_raw(xs, us, featss, unone):
         feat = featss[i]
         for f in feat.list_feats:
             OUT.append([i, f.name, f.fn(xx, uu), f(xx, uu)])
-            # print("fname", f.name)
-            # print("out", out)
-            # print("fn",  f.fn(xx, uu))
             out = np.concatenate((out, f.fn(xx, uu)))
             if f.tt == OT.auglag:
                 OUTL.append([i, f.name, f.l])
@@ -669,33 +511,6 @@ def plot_feats_raw(xs, us, featss, unone):
     plt.title("multipliers")
     plt.legend()
     plt.show()
-
-    # plt.clf()
-    # nr = len(datas[0].r)
-    # nd = len(datas)
-    # r =  []
-    # for j in range(nr):
-    #     rr = [ np.asscalar(d.r[j]) for d in datas]
-    #     r.append(rr)
-
-    # for i in range(len(r)):
-    #     plt.plot(r[i], 'o-' ,label="f" + str(i))
-    # plt.legend()
-
-    # plt.show()
-
-   # # multis to plot
-    # nl = len(multis[0])
-    # multi_plot = []
-    # for j in range(nl):
-    #    multi_plot.append( [ m[j] for m in multis ] )
-
-    # for j in range(len(multi_plot)):
-    #     plt.plot(multi_plot[j], 'o-' ,label="l" + str(j))
-
-    # plt.legend()
-    # plt.show()
-    # multi_plot
 
 
 def plot_feats(xs, us, featss, unone):
@@ -825,8 +640,10 @@ def auglag_solver(ddp, xs, us, problem, unone, visualize, plot_fn=None,
     print(f"AL of x0, u0 : running,terminal {cost_0[0]:.3f}, {cost_0[1]:.3f}")
     print(
         f"AL of rollout(u0), u0 : running, terminal {cost_roll[0]:.3f}, {cost_roll[1]:.3f}")
-
+    counter_xtol = 0
     for it in range(max_it):
+        # TODO: lets plot the cost in the current ddp before
+        # starting, so that I can have a reference!
 
         # set penalty in Auglag
         for i in problem.featss:
@@ -889,7 +706,6 @@ def auglag_solver(ddp, xs, us, problem, unone, visualize, plot_fn=None,
             mu *= 10
             eta = 1. / mu ** 0.1
 
-
         delta = np.linalg.norm(xs - xprev) + np.linalg.norm(us - uprev)
         print(f"it {it} f {obj:.4f} c {c:.4f} delta xu {delta:4f} eta {eta:3f}")
 
@@ -900,6 +716,11 @@ def auglag_solver(ddp, xs, us, problem, unone, visualize, plot_fn=None,
             plot_feats_raw(xs, us, problem.featss, np.zeros(2))
 
         if delta < xtol:
+            counter_xtol += 1
+        else:
+            counter_xtol = 0
+
+        if counter_xtol > 3:
             print("Terminate:  Criteria = XTOL")
             break
         else:
@@ -995,41 +816,43 @@ class OCP_abstract():
         self.cc = kwargs.get("cc")
         self.free_time = kwargs.get("free_time", False)
 
-        self.col_primitive = CollisionJax(self.cc)  # register a primitive
+        self.col_primitive = CollisionJax(self.cc)
+        self.goal_is_constraint = kwargs.get("goal_constraint", True)
 
         self.disturbance = 1e-4
         self.weight_goal = 10
-        # self.weight_control = np.array([.5, .5])
         self.weight_control = .5
         self.weight_bounds = 5
         self.weight_diff = 10
         self.weight_obstacles = 10
         self.featss = []
         self.running_model = []
-        self.running_modelx = []
+        self.terminal_model = None
         self.dist_fn = None
         self.feat_run = lambda: None
         self.feat_terminal = lambda: None
-        self.use_finite_diff = True  # default
+        self.use_finite_diff = True
 
     def get_ctrl_feat(self):
-        return CostTerm(Feat_control(self.weight_control), len(self.min_u), 1.)
+        return CostTerm(Feat_control(self.weight_control), len(self.min_u))
 
     def get_obs_feat(self):
         return AuglagTerm(FeatObstaclesFcl(
             self.weight_obstacles, self.col_primitive), 1)
 
     def get_goal_feat(self):
-        return AuglagTerm(Feat_terminal(
-            self.goal, self.weight_goal, self.dist_fn), len(self.goal))
+        if self.goal_is_constraint:
+            return AuglagTerm(Feat_terminal(
+                self.goal, self.weight_goal, self.dist_fn), len(self.goal))
+        else:
+            return CostTerm(Feat_terminal(self.goal, 10 *
+                                          self.weight_goal, self.dist_fn), len(self.goal))
 
     def get_xbounds_feat(self):
         return AuglagTerm(FeatBoundsX(self.min_x, self.max_x,
                                       self.weight_bounds), 2 * len(self.min_x))
 
     def add_noise(self, xs, us, k=1.):
-        """
-        """
         delta = 0.001
         for i in range(len(xs)):
             for j in range(len(xs[i])):
@@ -1073,6 +896,74 @@ class OCP_abstract():
         pass
 
 
+class OCP_Single_integrator_n(OCP_abstract):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+
+        self.actionModel = AM_Single_intergrator_n
+        self.weight_regx = 1.
+        dim = kwargs.get("dim", 2)
+        if self.free_time:
+            ureg = np.array(dim * [0.] + [.7])
+            weight_control = np.array(dim * [1.] + [5.])
+        else:
+            ureg = np.array(dim * [0.])
+            weight_control = np.array(dim * [1.])
+
+        col = kwargs.get("col")
+
+        def create_features():
+            feats = [
+                CostTerm(
+                    Feat_control(
+                        weight_control, ureg), len(ureg)), CostTerm(
+                    Feat_regx(
+                        self.weight_regx), 5)]
+            if col:
+                feats.append(self.get_obs_feat())
+            return FeatUniversal(feats)
+
+        self.feat_run = create_features
+        self.feat_terminal = lambda: FeatUniversal([self.get_goal_feat()])
+        self.use_finite_diff = False
+        self.create_problem(free_time=self.free_time, dim=dim)
+
+
+class OCP_double_integrator_n(OCP_abstract):
+    # TODO: I should be able to pass arguments to when I create the action
+    # Model
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+
+        self.actionModel = AM_Double_intergrator_n
+        self.weight_regx = kwargs.get("weight_regx", 1.)
+        dim = kwargs.get("dim", 2)
+        if self.free_time:
+            ureg = np.array(dim * [0.] + [.7])
+            weight_control = np.array(dim * [1.] + [5.])
+        else:
+            ureg = np.array(dim * [0.])
+            weight_control = np.array(dim * [1.])
+
+        col = kwargs.get("col")
+
+        def create_features():
+            feats = [
+                CostTerm(
+                    Feat_control(
+                        weight_control, ureg), len(ureg)), CostTerm(
+                    Feat_regx(
+                        self.weight_regx), 2 * dim)]
+            if col:
+                feats.append(self.get_obs_feat())
+            return FeatUniversal(feats)
+
+        self.feat_run = create_features
+        self.feat_terminal = lambda: FeatUniversal([self.get_goal_feat()])
+        self.use_finite_diff = False
+        self.create_problem(free_time=self.free_time, dim=dim)
+
+
 class OCP_unicycle_order2(OCP_abstract):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -1086,11 +977,22 @@ class OCP_unicycle_order2(OCP_abstract):
         else:
             ureg = np.array([0., 0.])
             weight_control = np.array([1., 1.])
-        self.feat_run = lambda: FeatUniversal(
-            [self.get_obs_feat(),
-             CostTerm(Feat_control(weight_control, ureg), len(self.min_u)),
-                CostTerm(Feat_regx(self.weight_regx), 5),
-                self.get_xbounds_feat()])
+
+        col = kwargs.get("col")
+
+        def create_features():
+            feats = [
+                CostTerm(
+                    Feat_control(
+                        weight_control, ureg), len(
+                        self.min_u)), CostTerm(
+                    Feat_regx(
+                        self.weight_regx), 5), self.get_xbounds_feat()]
+            if col:
+                feats.append(self.get_obs_feat())
+            return FeatUniversal(feats)
+
+        self.feat_run = create_features
         self.feat_terminal = lambda: FeatUniversal([self.get_goal_feat()])
         self.use_finite_diff = False
         self.create_problem(free_time=self.free_time)
@@ -1145,9 +1047,20 @@ class OCP_trailer(OCP_abstract):
             ureg = np.array([0., 0.])
             weight_control = np.array([1., 1.])
 
-        self.feat_run = lambda: FeatUniversal([
-            CostTerm(Feat_control(weight_control), len(ureg)), self.get_obs_feat(), CostTerm(
-                Feat_regx(self.weight_regx), 4), AuglagTerm(FeatDiffAngle(10.), 2)])
+        col = kwargs.get("col")
+
+        def create_features():
+            feats = [
+                CostTerm(
+                    Feat_control(weight_control), len(ureg)), CostTerm(
+                    Feat_regx(
+                        self.weight_regx), 4), AuglagTerm(
+                    FeatDiffAngle(10.), 2)]
+            if col:
+                feats.append(self.get_obs_feat())
+            return FeatUniversal(feats)
+
+        self.feat_run = create_features
         self.feat_terminal = lambda: FeatUniversal([self.get_goal_feat()])
         self.create_problem(free_time=self.free_time)
 
@@ -1221,11 +1134,19 @@ class OCP_quadrotor(OCP_abstract):
             ureg = np.append(ureg, [.8])
             weight_control = np.append(weight_control, [1.])
 
-        self.feat_run = lambda: FeatUniversal(
-            [CostTerm(Feat_control(weight_control, ureg), len(self.min_u)),
-             # CostTerm(Feat_regx(weight_regx), 13, 1.),
-             AuglagTerm(FeatBoundsX(jnp.array(self.min_x), jnp.array(self.max_x),
-                                    self.weight_bounds), 2 * len(self.min_x))])
+        col = kwargs.get("col")
+
+        def create_features():
+            feats = [CostTerm(Feat_control(weight_control, ureg), len(self.min_u)),
+                     # CostTerm(Feat_regx(weight_regx), 13, 1.),
+                     AuglagTerm(FeatBoundsX(jnp.array(self.min_x), jnp.array(self.max_x),
+                                            self.weight_bounds), 2 * len(self.min_x))]
+            if col:
+                feats.append(self.get_obs_feat())
+            return FeatUniversal(feats)
+
+        self.feat_run = create_features
+
         self.feat_terminal = lambda: FeatUniversal([self.get_goal_feat()])
         self.create_problem(use_jit=use_jit, free_time=self.free_time)
 
@@ -1279,10 +1200,23 @@ class OCP_unicycle_order1(OCP_abstract):
         else:
             ureg = np.array([0., 0.])
             weight_control = np.array([1., 1])
-        self.feat_run = lambda: FeatUniversal(
-            [CostTerm(Feat_control(weight_control, ureg), len(self.min_u)),
-             self.get_obs_feat(), CostTerm(Feat_regx(self.weight_regx), 3),
-             ])
+
+        col = kwargs.get("col")
+
+        def create_features():
+            feats = [
+                CostTerm(
+                    Feat_control(
+                        weight_control, ureg), len(
+                        self.min_u)), CostTerm(
+                    Feat_regx(
+                        self.weight_regx), 3)]
+            if col:
+                feats.append(self.get_obs_feat())
+            return FeatUniversal(feats)
+
+        self.feat_run = create_features
+
         self.feat_terminal = lambda: FeatUniversal([self.get_goal_feat()])
         self.use_finite_diff = False
         self.create_problem(free_time=self.free_time)

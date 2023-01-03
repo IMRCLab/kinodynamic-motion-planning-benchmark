@@ -1,18 +1,20 @@
 import jax.numpy as np
 from jax import lax
 
+
 def normalize_angle(angle):
     return (angle + np.pi) % (2 * np.pi) - np.pi
 
+
 def diff_angle(angle1, angle2):
-    return np.arctan2(np.sin(angle1-angle2), np.cos(angle1-angle2))
+    return np.arctan2(np.sin(angle1 - angle2), np.cos(angle1 - angle2))
 
 # Quaternion routines adapted from rowan to use autograd
 
 
 def qmultiply(q1, q2):
     return np.concatenate((
-        np.array([q1[0] * q2[0] - np.sum(q1[1:4]*q2[1:4])]),
+        np.array([q1[0] * q2[0] - np.sum(q1[1:4] * q2[1:4])]),
         q1[0] * q2[1:4] + q2[0] * q1[1:4] + np.cross(q1[1:4], q2[1:4])))
 
 
@@ -41,11 +43,12 @@ def qexp_zero_norm(q):
 
 
 def qexp(q):
-    return lax.cond(np.allclose(q[1:4], 0), q, qexp_zero_norm, q, qexp_regular_norm)
+    return lax.cond(np.allclose(q[1:4], 0), q,
+                    qexp_zero_norm, q, qexp_regular_norm)
 
 
 def qintegrate(q, v, dt):
-    quat_v = np.concatenate((np.array([0]), v*dt/2))
+    quat_v = np.concatenate((np.array([0]), v * dt / 2))
     return qmultiply(qexp(quat_v), q)
 
 
@@ -53,12 +56,109 @@ def qnormalize(q):
     return q / np.linalg.norm(q)
 
 
+class RobotSingleIntegratorN:
+
+    margin = 0.
+
+    def __init__(
+            self,
+            dim=2,
+            u_min=-np.inf,
+            u_max=np.inf,
+            free_time=False,
+            semi_implicit=True):
+
+        self.action_desc = [f"v_i [m/s] dim{dim}"]
+        self.dim = dim
+        self.min_u = np.array([u_min for _ in range(self.dim)])
+        self.max_u = np.array([u_max for _ in range(self.dim)])
+
+        self.state_desc = [f"x_i [m] dim{dim}"]
+        self.min_x = np.array([u_min for _ in range(self.dim)])
+        self.max_x = np.array([u_max for _ in range(self.dim)])
+
+        self.dt = 0.1
+        self.is2D = dim == 2
+
+        self.free_time = free_time
+        self.semi_implicit = semi_implicit
+
+    def valid_state(self, state):
+        return (state >= self.min_x - self.margin).all() and \
+            (state <= self.max_x + self.margin).all()
+
+    def step(self, state, action):
+
+        if self.free_time:
+            v = action[:-1]
+            dt_scaling = action[-1]
+        else:
+            v = action
+            dt_scaling = 1.
+
+        state_next = state + self.dt * dt_scaling * v
+        return state_next
+
+
+class RobotDoubleIntegratorN:
+
+    margin = 0.
+
+    def __init__(
+            self,
+            dim=2,
+            u_min=-np.inf,
+            u_max=np.inf,
+            free_time=False,
+            semi_implicit=True):
+
+        self.action_desc = [f"a_i [m/s^2] dim:{dim}"]
+        self.dim = dim
+        self.min_u = np.array([u_min for _ in range(self.dim)])
+        self.max_u = np.array([u_max for _ in range(self.dim)])
+
+        self.state_desc = [f"x_i [m] v_i[m/s] dim:{dim}"]
+        self.min_x = np.array([u_min for _ in range(2 * self.dim)])
+        self.max_x = np.array([u_max for _ in range(2 * self.dim)])
+
+        self.dt = 0.1
+        self.is2D = dim == 2
+
+        self.free_time = free_time
+        self.semi_implicit = semi_implicit
+
+    def valid_state(self, state):
+        return (state >= self.min_x - self.margin).all() and \
+            (state <= self.max_x + self.margin).all()
+
+    def step(self, state, action):
+
+        if self.free_time:
+            a = action[:-1]
+            dt_scaling = action[-1]
+        else:
+            a = action
+            dt_scaling = 1.
+
+        pos = state[:self.dim] + self.dt * dt_scaling * state[self.dim:]
+        vel = state[self.dim:] + self.dt * dt_scaling * a
+        return np.concatenate((pos, vel))
+
+
 class RobotUnicycleFirstOrder:
 
-    margin=0.
-    def __init__(self, v_min=-np.inf, v_max=np.inf, w_min=-np.inf, w_max=np.inf,
-                 free_time=False,semi_implicit=True,
-                 normalize=True):
+    margin = 0.
+
+    def __init__(
+            self,
+            v_min=-np.inf,
+            v_max=np.inf,
+            w_min=-np.inf,
+            w_max=np.inf,
+            free_time=False,
+            semi_implicit=True,
+            normalize=True):
+
         self.action_desc = ["v [m/s]", "w [rad/s]"]
         self.min_u = np.array([v_min, w_min])
         self.max_u = np.array([v_max, w_max])
@@ -70,15 +170,13 @@ class RobotUnicycleFirstOrder:
         self.dt = 0.1
         self.is2D = True
 
-        self.free_time=free_time
-        self.semi_implicit=semi_implicit
-        self.normalize=normalize
-
-
+        self.free_time = free_time
+        self.semi_implicit = semi_implicit
+        self.normalize = normalize
 
     def valid_state(self, state):
-        return  (state >= self.min_x - self.margin).all() and \
-                (state <= self.max_x + self.margin).all()
+        return (state >= self.min_x - self.margin).all() and \
+            (state <= self.max_x + self.margin).all()
 
     def step(self, state, action):
         x, y, yaw = state
@@ -100,8 +198,6 @@ class RobotUnicycleFirstOrder:
         state_next = np.array([x_next, y_next, yaw_next])
         return state_next
 
-
-
     # def step(self, state, action):
     #     x, y, yaw = state
     #     v, w = action
@@ -117,29 +213,40 @@ class RobotUnicycleFirstOrder:
 
 class RobotUnicycleSecondOrder:
 
-    margin=0.
-    def __init__(self, v_limit=np.inf, w_limit=np.inf, a_limit=np.inf, w_dot_limit=np.inf,
-                 free_time=False,semi_implicit=True,
-                 normalize=True):
+    margin = 0.
+
+    def __init__(
+            self,
+            v_limit=np.inf,
+            w_limit=np.inf,
+            a_limit=np.inf,
+            w_dot_limit=np.inf,
+            free_time=False,
+            semi_implicit=True,
+            normalize=True):
         self.action_desc = ["a [m^2/s]", "w_dot [rad^2/s]"]
         self.min_u = np.array([-a_limit, -w_dot_limit])
         self.max_u = np.array([a_limit, w_dot_limit])
 
-        self.state_desc = ["x [m]", "y [m]", "yaw [rad]", "v [m/s]", "w [rad/s]"]
+        self.state_desc = [
+            "x [m]",
+            "y [m]",
+            "yaw [rad]",
+            "v [m/s]",
+            "w [rad/s]"]
         self.min_x = np.array([-np.inf, -np.inf, -np.pi, -v_limit, -w_limit])
         self.max_x = np.array([np.inf, np.inf, np.pi, v_limit, w_limit])
 
         self.dt = 0.1
         self.is2D = True
 
-        self.free_time=free_time
-        self.semi_implicit=semi_implicit
-        self.normalize=normalize
-
+        self.free_time = free_time
+        self.semi_implicit = semi_implicit
+        self.normalize = normalize
 
     def valid_state(self, state):
-        return  (state >= self.min_x - self.margin).all() and \
-                (state <= self.max_x + self.margin).all()
+        return (state >= self.min_x - self.margin).all() and \
+            (state <= self.max_x + self.margin).all()
 
     def step(self, state, action):
 
@@ -154,9 +261,9 @@ class RobotUnicycleSecondOrder:
         dt = self.dt * dt_scaling
 
         v_next = v + a * dt
-        w_dot_next = w + w_dot * dt
-        w_dot_eval = w_dot_next if self.semi_implicit else w_dot
-        yaw_next = yaw + w_dot_eval * dt
+        w_next = w + w_dot * dt
+        w_eval = w_next if self.semi_implicit else w
+        yaw_next = yaw + w_eval * dt
         if self.normalize:
             yaw_next = (yaw_next + np.pi) % (2 * np.pi) - np.pi
         yaw_eval = yaw_next if self.semi_implicit else yaw
@@ -164,17 +271,24 @@ class RobotUnicycleSecondOrder:
         x_next = x + v_eval * np.cos(yaw_eval) * dt
         y_next = y + v_eval * np.sin(yaw_eval) * dt
 
-        state_next = np.array([x_next, y_next, yaw_next, v_next, w_dot_next])
+        state_next = np.array([x_next, y_next, yaw_next, v_next, w_next])
         return state_next
 
 
 # LaValle book, Equation 13.19
 class RobotCarFirstOrderWithTrailers:
 
-    def __init__(self, v_min=-np.inf, v_max =np.inf, phi_min=-np.pi, 
-                 phi_max=np.pi, L=.25, hitch_lengths=[.5],
-                 free_time=False,semi_implicit=True,
+    def __init__(self,
+                 v_min=-np.inf,
+                 v_max=np.inf,
+                 phi_min=-np.pi,
+                 phi_max=np.pi,
+                 L=.25,
+                 hitch_lengths=[.5],
+                 free_time=False,
+                 semi_implicit=True,
                  normalize=True):
+
         self.action_desc = ["v [m/s]", "steering angle [rad]"]
         self.min_u = np.array([v_min, phi_min])
         self.max_u = np.array([v_max, phi_max])
@@ -183,7 +297,7 @@ class RobotCarFirstOrderWithTrailers:
         min_x = [-np.inf, -np.inf, -np.pi]
         max_x = [np.inf, np.inf, np.pi]
         for k in range(len(hitch_lengths)):
-            self.state_desc.append("trailer{} yaw [rad]".format(k+1))
+            self.state_desc.append("trailer{} yaw [rad]".format(k + 1))
             min_x.append(-np.pi)
             max_x.append(np.pi)
         self.min_x = np.array(min_x)
@@ -194,10 +308,9 @@ class RobotCarFirstOrderWithTrailers:
         self.dt = 0.1
         self.is2D = True
 
-        self.free_time=free_time
-        self.semi_implicit=semi_implicit
-        self.normalize=normalize
-
+        self.free_time = free_time
+        self.semi_implicit = semi_implicit
+        self.normalize = normalize
 
     def valid_state(self, state):
         # check if theta0 and theta1 have a reasonable relative angle
@@ -205,9 +318,9 @@ class RobotCarFirstOrderWithTrailers:
         dangle = diff_angle(state[2], state[3])
         print(state, self.min_x, self.max_x)
         print(np.absolute(dangle))
-        return  (state >= self.min_x - tol).all() and \
-                (state <= self.max_x + tol).all() and \
-                np.absolute(dangle) <= np.pi / 4 + tol
+        return (state >= self.min_x - tol).all() and \
+            (state <= self.max_x + tol).all() and \
+            np.absolute(dangle) <= np.pi / 4 + tol
 
     def step(self, state, action):
         """"
@@ -224,13 +337,12 @@ class RobotCarFirstOrderWithTrailers:
         else:
             v, phi = action
             dt_scaling = 1.0
-    
-        dt = self.dt * dt_scaling
 
+        dt = self.dt * dt_scaling
 
         yaw_next = yaw + v / self.L * np.tan(phi) * dt
         # normalize yaw between -pi and pi
-        if self.normalize: 
+        if self.normalize:
             yaw_next = normalize_angle(yaw_next)
         yaw_eval = yaw_next if self.semi_implicit else yaw
         x_next = x + v * np.cos(yaw_eval) * dt
@@ -241,12 +353,12 @@ class RobotCarFirstOrderWithTrailers:
         for i, d in enumerate(self.hitch_lengths):
             theta_dot = v / d
             for j in range(0, i):
-                theta_dot *= np.cos(state[2+j] - state[3+j])
-            theta_dot *= np.sin(state[2+i] - state[3+i])
+                theta_dot *= np.cos(state[2 + j] - state[3 + j])
+            theta_dot *= np.sin(state[2 + i] - state[3 + i])
 
-            theta = state[3+i]
+            theta = state[3 + i]
             theta_next = theta + theta_dot * dt
-            if self.normalize: 
+            if self.normalize:
                 theta_next = normalize_angle(theta_next)
             state_next_list.append(theta_next)
 
@@ -256,8 +368,7 @@ class RobotCarFirstOrderWithTrailers:
 
 class Quadrotor:
 
-    def __init__(self, free_time=False,semi_implicit=True,
-                 normalize=True):
+    def __init__(self, free_time=False, semi_implicit=True, normalize=True):
         self.action_desc = ["f1 [N]", "f2 [N]", "f3 [N]", "f4 [N]"]
         self.min_u = np.zeros(4)
         self.max_u = np.ones(4) * 12.0 / 1000.0 * 9.81
@@ -270,13 +381,13 @@ class Quadrotor:
             "vx [m/s]", "vy [m/s]", "vz [m/s]",
             "w_x", "w_y", "w_z"]
         min_x = [-np.inf, -np.inf, -np.inf,
-                -1.001, -1.001, -1.001, -1.001,
-                -max_v, -max_v, -max_v,
-                -max_omega, -max_omega, -max_omega]
+                 -1.001, -1.001, -1.001, -1.001,
+                 -max_v, -max_v, -max_v,
+                 -max_omega, -max_omega, -max_omega]
         max_x = [np.inf, np.inf, np.inf,
-                1.001, 1.001, 1.001, 1.001,
-                max_v, max_v, max_v,
-                max_omega, max_omega, max_omega]
+                 1.001, 1.001, 1.001, 1.001,
+                 max_v, max_v, max_v,
+                 max_omega, max_omega, max_omega]
         self.min_x = np.array(min_x)
         self.max_x = np.array(max_x)
 
@@ -294,35 +405,33 @@ class Quadrotor:
         arm = 0.707106781 * arm_length
         t2t = 0.006  # thrust-to-torque ratio
         self.B0 = np.array([
-                    [1, 1, 1, 1],
-                            [-arm, -arm, arm, arm],
-                            [-arm, arm, arm, -arm],
-                            [-t2t, t2t, -t2t, t2t]
-                ])
+            [1, 1, 1, 1],
+            [-arm, -arm, arm, arm],
+            [-arm, arm, arm, -arm],
+            [-t2t, t2t, -t2t, t2t]
+        ])
         self.g = 9.81  # not signed
 
         if self.J.shape == (3, 3):
-            self.inv_J = np.linalg.pinv(self.J)  # full matrix -> pseudo inverse
+            # full matrix -> pseudo inverse
+            self.inv_J = np.linalg.pinv(self.J)
         else:
             self.inv_J = 1 / self.J  # diagonal matrix -> division
 
         self.dt = 0.01
         self.is2D = False
 
-        self.free_time=free_time
-        self.semi_implicit=semi_implicit
-        self.normalize=normalize
-
-
+        self.free_time = free_time
+        self.semi_implicit = semi_implicit
+        self.normalize = normalize
 
     def valid_state(self, state):
         out = (state >= self.min_x).all() and \
-                (state <= self.max_x).all()
+            (state <= self.max_x).all()
         if not out:
             print(state >= self.min_x)
             print(state <= self.max_x)
         return out
-
 
     def step(self, state, _action):
         # compute next state
@@ -352,7 +461,7 @@ class Quadrotor:
         pos_next = state[0:3] + state[7:10] * dt
         # mv = mg + R f_u
         vel_next = state[7:10] + (np.array([0, 0, -self.g]) +
-                                 qrotate(q, f_u) / self.mass) * dt
+                                  qrotate(q, f_u) / self.mass) * dt
 
         # dot{R} = R S(w)
         # to integrate the dynamics, see
@@ -361,10 +470,12 @@ class Quadrotor:
         q_next = qnormalize(qintegrate(q, omega, dt))
 
         # mJ = Jw x w + tau_u
-        omega_next = state[10:] + (self.inv_J *
+        omega_next = state[10:] + (self.inv_J * \
                                    (np.cross(self.J * omega, omega) + tau_u)) * dt
 
-        return np.concatenate((pos_next, q_next[1:4], q_next[0:1], vel_next, omega_next))
+        return np.concatenate(
+            (pos_next, q_next[1:4], q_next[0:1], vel_next, omega_next))
+
 
 def create_robot(robot_type):
     if robot_type == "unicycle_first_order_0":
@@ -376,9 +487,11 @@ def create_robot(robot_type):
     elif robot_type == "unicycle_second_order_0":
         return RobotUnicycleSecondOrder(0.5, 0.5, 0.25, 0.25)
     elif robot_type == "car_first_order_0":
-        return RobotCarFirstOrderWithTrailers(-0.1, 0.5, -np.pi/3, np.pi/3, 0.25, [])
+        return RobotCarFirstOrderWithTrailers(-0.1,
+                                              0.5, -np.pi / 3, np.pi / 3, 0.25, [])
     elif robot_type == "car_first_order_with_1_trailers_0":
-        return RobotCarFirstOrderWithTrailers(-0.1, 0.5, -np.pi/3, np.pi/3, 0.25, [0.5])
+        return RobotCarFirstOrderWithTrailers(-0.1,
+                                              0.5, -np.pi / 3, np.pi / 3, 0.25, [0.5])
     elif robot_type == "quadrotor_0":
         return Quadrotor()
     else:
@@ -419,7 +532,6 @@ if __name__ == '__main__':
 # RealVectorState [-2.45169 3.16259 -0.10482]
 # ]
 
-
     # import matplotlib.pyplot as plt
 
     # position = np.arange(-1.2, 0.6, 0.05)
@@ -440,7 +552,6 @@ if __name__ == '__main__':
     #   states.append(x)
 
     # states = np.array(states)
-
 
     # fig, axs = plt.subplots(3, 1, sharex='all')
     # axs[0].plot(states[:,0])
