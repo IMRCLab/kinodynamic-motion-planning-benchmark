@@ -184,7 +184,8 @@ class ActionModelAD(crocoddyl.ActionModelAbstract):
         # should I convert to matrix?
         data.xnext = np.matrix(np.asarray(_xnext)).T
         data.r = np.matrix(np.asarray(_r)).T
-        data.cost = .5 * np.asscalar(sum(np.asarray(data.r)**2))
+        # data.cost = .5 * np.asscalar(sum(np.asarray(data.r)**2))
+        data.cost = .5 * np.sum(np.asarray(data.r)**2)
         self.timer += time.perf_counter() - tic
 
     def calcDiff(self, data, x, u=None):
@@ -683,7 +684,7 @@ def auglag_solver(ddp, xs, us, problem, unone, visualize, plot_fn=None,
         print(f"Start ddp iteration {it}")
         a = time.perf_counter()
         ddp.solve(init_xs=xs, init_us=us, maxiter=max_it_ddp,
-                  isFeasible=False, regInit=regInit)
+                  is_feasible=False, init_reg=regInit)
 
         ddp_time = time.perf_counter() - a
         ddp_time_py = np.sum([mm.timer for mm in problem.running_model]) + \
