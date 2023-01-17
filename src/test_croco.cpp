@@ -14,6 +14,7 @@
 #include "Eigen/Core"
 #include "crocoddyl/core/actions/unicycle.hpp"
 #include "crocoddyl/core/numdiff/action.hpp"
+#include "crocoddyl/core/solvers/box-fddp.hpp"
 #include "crocoddyl/core/solvers/ddp.hpp"
 #include "crocoddyl/core/solvers/fddp.hpp"
 #include "crocoddyl/core/utils/callbacks.hpp"
@@ -25,8 +26,14 @@
 using namespace crocoddyl;
 
 // Eigen::Vector3d goal(1.9, .3, 0);
-static double collision_weight = 10.;
+static double collision_weight = 100.;
 // issue with derivatives...
+
+template <class T> using ptr = boost::shared_ptr<T>;
+
+template <typename T, typename... Args> auto mk(Args &&...args) {
+  return boost::make_shared<T>(std::forward<Args>(args)...);
+}
 
 struct ActionDataQuim : public ActionDataAbstractTpl<double> {
   EIGEN_MAKE_ALIGNED_OPERATOR_NEW
@@ -96,9 +103,12 @@ struct Dynamics_unicycle2 : Dynamics {
 
   double dt = .1;
 
-  Dynamics_unicycle2() {
+  bool free_time;
+  Dynamics_unicycle2(bool free_time = false) : free_time(free_time) {
     nx = 5;
     nu = 2;
+    if (free_time)
+      nu += 1;
   }
 
   typedef MathBaseTpl<double> MathBase;
@@ -131,13 +141,16 @@ struct Dynamics_unicycle2 : Dynamics {
     const double a = u[0];
     const double w_dot = u[1];
 
-    const double v_next = v + a * dt;
-    const double w_next = w + w_dot * dt;
-    const double yaw_next = yaw + w * dt;
-    const double x_next = xx + v * c * dt;
-    const double y_next = y + v * s * dt;
+    double dt_ = dt;
+    if (free_time)
+      dt_ *= u[2];
 
-    std::cout <<xnext.size() << std::endl;
+    const double v_next = v + a * dt_;
+    const double w_next = w + w_dot * dt_;
+    const double yaw_next = yaw + w * dt_;
+    const double x_next = xx + v * c * dt_;
+    const double y_next = y + v * s * dt_;
+
     xnext << x_next, y_next, yaw_next, v_next, w_next;
   };
 
@@ -164,31 +177,52 @@ struct Dynamics_unicycle2 : Dynamics {
     Fx.setZero();
     Fu.setZero();
 
+    double dt_ = dt;
+    if (free_time)
+      dt_ *= u[2];
+
     Fx(0, 0) = 1;
     Fx(1, 1) = 1;
     Fx(2, 2) = 1;
     Fx(3, 3) = 1;
     Fx(4, 4) = 1;
 
-    Fx(0, 2) = -s * v * dt;
-    Fx(1, 2) = c * v * dt;
+    Fx(0, 2) = -s * v * dt_;
+    Fx(1, 2) = c * v * dt_;
 
-    Fx(0, 3) = c * dt;
-    Fx(1, 3) = s * dt;
-    Fx(2, 4) = dt;
+    Fx(0, 3) = c * dt_;
+    Fx(1, 3) = s * dt_;
+    Fx(2, 4) = dt_;
 
-    Fu(3, 0) = dt;
-    Fu(4, 1) = dt;
+    Fu(3, 0) = dt_;
+    Fu(4, 1) = dt_;
+
+    if (free_time) {
+
+      const double a = u[0];
+      const double w_dot = u[1];
+      const double w = x[4];
+
+      Fu(0, 2) = v * c * dt;
+      Fu(1, 2) = v * s * dt;
+      Fu(2, 2) = w * dt;
+      Fu(3, 2) = a * dt;
+      Fu(4, 2) = w_dot * dt;
+    }
   }
 };
 
 struct Dynamics_unicycle : Dynamics {
 
   double dt = .1;
+  bool free_time;
 
-  Dynamics_unicycle() {
+  Dynamics_unicycle(bool free_time = false) : free_time(free_time) {
     nx = 3;
-    nu = 2;
+    if (free_time)
+      nu = 3;
+    else
+      nu = 2;
   }
 
   typedef MathBaseTpl<double> MathBase;
@@ -212,7 +246,11 @@ struct Dynamics_unicycle : Dynamics {
     const double c = cos(x[2]);
     const double s = sin(x[2]);
 
-    xnext << x[0] + c * u[0] * dt, x[1] + s * u[0] * dt, x[2] + u[1] * dt;
+    double dt_ = dt;
+    if (free_time)
+      dt_ *= u[2];
+
+    xnext << x[0] + c * u[0] * dt_, x[1] + s * u[0] * dt_, x[2] + u[1] * dt_;
   };
 
   virtual void calcDiff(Eigen::Ref<Eigen::MatrixXd> Fx,
@@ -234,17 +272,27 @@ struct Dynamics_unicycle : Dynamics {
     const double c = cos(x[2]);
     const double s = sin(x[2]);
 
+    double dt_ = dt;
+    if (free_time)
+      dt_ *= u[2];
+
     Fx.setZero();
     Fu.setZero();
 
     Fx(0, 0) = 1;
     Fx(1, 1) = 1;
     Fx(2, 2) = 1;
-    Fx(0, 2) = -s * u[0] * dt;
-    Fx(1, 2) = c * u[0] * dt;
-    Fu(0, 0) = c * dt;
-    Fu(1, 0) = s * dt;
-    Fu(2, 1) = dt;
+    Fx(0, 2) = -s * u[0] * dt_;
+    Fx(1, 2) = c * u[0] * dt_;
+    Fu(0, 0) = c * dt_;
+    Fu(1, 0) = s * dt_;
+    Fu(2, 1) = dt_;
+
+    if (free_time) {
+      Fu(0, 2) = c * u[0] * dt;
+      Fu(1, 2) = s * u[0] * dt;
+      Fu(2, 2) = u[1] * dt;
+    }
   }
 };
 
@@ -274,6 +322,12 @@ struct Col_cost : Cost {
 
   boost::shared_ptr<CollisionChecker> cl;
 
+  double faraway_zero_gradient_bound = 5 * 1e-2;              // returns 0 gradient if distance is > than THIS.
+  double epsilon = 1e-4; // finite diff
+  std::vector<bool> non_zero_flags; // if not nullptr, non_zero_flags[i] = True
+                                    // means compute gradient, non_zero_flags[i]
+                                    // = false is no compute gradient
+
   Col_cost(size_t nx, size_t nu, size_t nr,
            boost::shared_ptr<CollisionChecker> cl)
       : Cost(nx, nu, nr), cl(cl) {}
@@ -283,6 +337,9 @@ struct Col_cost : Cost {
                     const Eigen::Ref<const Eigen::VectorXd> &u) {
     // check that r
     assert(static_cast<std::size_t>(r.size()) == nr);
+    assert(static_cast<std::size_t>(x.size()) == nx);
+    assert(static_cast<std::size_t>(u.size()) == nu);
+
     std::vector<double> query{x.data(), x.data() + x.size()};
     double d = collision_weight * std::get<0>(cl->distance(query));
     auto out = Eigen::Matrix<double, 1, 1>(std::min(d, 0.));
@@ -291,7 +348,7 @@ struct Col_cost : Cost {
 
   virtual void calc(Eigen::Ref<Eigen::VectorXd> r,
                     const Eigen::Ref<const Eigen::VectorXd> &x) {
-    calc(r, x, Eigen::VectorXd(1));
+    calc(r, x, Eigen::VectorXd(nu));
   }
 
   virtual void calcDiff(Eigen::Ref<Eigen::MatrixXd> Jx,
@@ -299,12 +356,17 @@ struct Col_cost : Cost {
                         const Eigen::Ref<const Eigen::VectorXd> &x,
                         const Eigen::Ref<const Eigen::VectorXd> &u) {
 
+    assert(static_cast<std::size_t>(x.size()) == nx);
+    assert(static_cast<std::size_t>(u.size()) == nu);
+
     std::vector<double> query{x.data(), x.data() + x.size()};
-    auto out = cl->distanceWithFDiffGradient(query);
+    auto out = cl->distanceWithFDiffGradient(
+        query, faraway_zero_gradient_bound, epsilon,
+        non_zero_flags.size() ? &non_zero_flags : nullptr);
     auto dist = collision_weight * std::get<0>(out);
     auto grad = std::get<1>(out);
-    Eigen::VectorXd v = collision_weight * Eigen::VectorXd::Map(grad.data(), 3);
-
+    Eigen::VectorXd v =
+        collision_weight * Eigen::VectorXd::Map(grad.data(), grad.size());
     if (dist <= 0) {
       Jx = v.transpose();
     } else {
@@ -334,6 +396,9 @@ struct Control_cost : Cost {
                     const Eigen::Ref<const Eigen::VectorXd> &u) {
     // check that r
     assert(static_cast<std::size_t>(r.size()) == nr);
+    assert(static_cast<std::size_t>(x.size()) == nx);
+    assert(static_cast<std::size_t>(u.size()) == nu);
+
     r = u.cwiseProduct(u_weight);
   }
 
@@ -348,6 +413,9 @@ struct Control_cost : Cost {
                         Eigen::Ref<Eigen::MatrixXd> Ju,
                         const Eigen::Ref<const Eigen::VectorXd> &x,
                         const Eigen::Ref<const Eigen::VectorXd> &u) {
+
+    assert(static_cast<std::size_t>(x.size()) == nx);
+    assert(static_cast<std::size_t>(u.size()) == nu);
 
     assert(static_cast<std::size_t>(Jx.rows()) == nr);
     assert(static_cast<std::size_t>(Ju.rows()) == nr);
@@ -426,6 +494,8 @@ struct All_cost : Cost {
                     const Eigen::Ref<const Eigen::VectorXd> &u) {
     // check that r
     assert(static_cast<std::size_t>(r.size()) == nr);
+    assert(static_cast<std::size_t>(x.size()) == nx);
+    assert(static_cast<std::size_t>(u.size()) == nu);
 
     int index = 0;
     for (size_t i = 0; i < costs.size(); i++) {
@@ -456,6 +526,9 @@ struct All_cost : Cost {
                         const Eigen::Ref<const Eigen::VectorXd> &x,
                         const Eigen::Ref<const Eigen::VectorXd> &u) {
 
+    assert(static_cast<std::size_t>(x.size()) == nx);
+    assert(static_cast<std::size_t>(u.size()) == nu);
+
     // TODO: I shoudl only give the residuals...
     int index = 0;
     for (size_t i = 0; i < costs.size(); i++) {
@@ -469,6 +542,8 @@ struct All_cost : Cost {
 
   virtual void calcDiff(Eigen::Ref<Eigen::MatrixXd> Jx,
                         const Eigen::Ref<const Eigen::VectorXd> &x) {
+
+    assert(static_cast<std::size_t>(x.size()) == nx);
 
     // TODO: I shoudl only give the residuals...
     int index = 0;
@@ -983,6 +1058,44 @@ void print_data(boost::shared_ptr<ActionDataAbstractTpl<double>> data) {
   std::cout << "***\n";
 }
 
+#if 0
+void check_data() {
+
+  auto model_run_numdiff =
+      boost::make_shared<crocoddyl::ActionModelNumDiff>(model_run, true);
+  model_run_numdiff->set_disturbance(1e-4);
+
+  std::vector<ptr<crocoddyl::ActionModelAbstract>> runningModels_q(N, amq);
+
+  // Formulating the optimal control problem
+  ptr<crocoddyl::ShootingProblem> problem =
+      boost::make_shared<crocoddyl::ShootingProblem>(x0, runningModels,
+                                                     model_terminal);
+
+  Eigen::Vector3d x =
+      boost::static_pointer_cast<Derived>(model_terminal)->goal +
+      Eigen::Vector3d(2.2, .3, .1);
+  {
+    std::cout << "A" << std::endl;
+    auto data = model_run->createData();
+    model_run->checkData(data);
+
+    model_run->calc(data, x, us.at(0));
+    model_run->calcDiff(data, x, us.at(0));
+    print_data(data);
+  }
+  {
+    std::cout << "B" << std::endl;
+    auto data = model_run_numdiff->createData();
+    model_run_numdiff->calc(data, x, us.at(0));
+    model_run_numdiff->calcDiff(data, x, us.at(0));
+    print_data(data);
+  }
+
+
+}
+#endif
+
 void check_dyn(boost::shared_ptr<Dynamics> dyn, double eps) {
 
   int nx = dyn->nx;
@@ -1039,14 +1152,17 @@ void check_dyn(boost::shared_ptr<Dynamics> dyn, double eps) {
   std::cout << "Fx\n" << FxD << std::endl;
   std::cout << "Fu\n" << FuD << std::endl;
 
-  assert ( (Fx - FxD).cwiseAbs().maxCoeff() < 10* eps);
-  assert ( (Fu - FuD).cwiseAbs().maxCoeff() < 10* eps);
-
-
-
+  assert((Fx - FxD).cwiseAbs().maxCoeff() < 10 * eps);
+  assert((Fu - FuD).cwiseAbs().maxCoeff() < 10 * eps);
 }
 
 void quim_test(int argc, char *argv[]) {
+
+  double th_stop = 1e-2;
+  double init_reg = 1e-1;
+  int max_iter = 30;
+  bool CALLBACKS = true;
+  bool use_finite_diff = false;
 
   namespace po = boost::program_options;
 
@@ -1072,13 +1188,6 @@ void quim_test(int argc, char *argv[]) {
     return;
   }
 
-  double dt = .1;
-  // auto env_file =
-  // "../benchmark/unicycle_first_order_0/parallelpark_0.yaml"; const char
-  // *init_guess =
-  //     "../test/unicycle_first_order_0/guess_parallelpark_0_sol0.yaml";
-
-  // load initial guess
   YAML::Node init = YAML::LoadFile(init_guess);
   YAML::Node env = YAML::LoadFile(env_file);
 
@@ -1088,7 +1197,6 @@ void quim_test(int argc, char *argv[]) {
     std::vector<double> p;
     for (const auto &elem : state) {
       p.push_back(elem.as<double>());
-      // We only care about pose, not higher-order derivatives
     }
     states.push_back(p);
   }
@@ -1100,7 +1208,6 @@ void quim_test(int argc, char *argv[]) {
     std::vector<double> p;
     for (const auto &elem : state) {
       p.push_back(elem.as<double>());
-      // We only care about pose, not higher-order derivatives
     }
     actions.push_back(p);
   }
@@ -1114,36 +1221,28 @@ void quim_test(int argc, char *argv[]) {
     goal.push_back(e.as<double>());
   }
 
-  // - type: unicycle_first_order_0
-  //   start: [0.7,0.8,0] # x,y,theta
-  //   goal: [1.9,0.3,0] # x,y,theta
-  //
-  //   start: [0.7,0.8,0] # x,y,theta
-  //   goal: [1.9,0.3,0] # x,y,theta
+  int verbose = 1;
 
-  std::cout << "states " << std::endl;
-  for (auto &x : states) {
-    for (auto &e : x) {
-      std::cout << e << " ";
+  if (verbose) {
+    std::cout << "states " << std::endl;
+    for (auto &x : states) {
+      for (auto &e : x) {
+        std::cout << e << " ";
+      }
+      std::cout << std::endl;
     }
-    std::cout << std::endl;
+
+    std::cout << "actions " << std::endl;
+    for (auto &x : actions) {
+      for (auto &e : x) {
+        std::cout << e << " ";
+      }
+      std::cout << std::endl;
+    }
   }
 
-  std::cout << "actions " << std::endl;
-  for (auto &x : actions) {
-    for (auto &e : x) {
-      std::cout << e << " ";
-    }
-    std::cout << std::endl;
-  }
-
-  // create a collision checker
-
-  auto cl = boost::make_shared<CollisionChecker>();
+  auto cl = mk<CollisionChecker>();
   cl->load(env_file);
-
-  // start: [0.7,0.8,0] # x,y,theta
-  // goal: [1.9,0.3,0] # x,y,theta
 
   bool repair_init_guess = true;
 
@@ -1155,348 +1254,191 @@ void quim_test(int argc, char *argv[]) {
     }
   }
 
-  std::cout << "states " << std::endl;
-  for (auto &x : states) {
-    for (auto &e : x) {
-      std::cout << e << " ";
+  if (verbose) {
+    std::cout << "states " << std::endl;
+    for (auto &x : states) {
+      for (auto &e : x) {
+        std::cout << e << " ";
+      }
+      std::cout << std::endl;
     }
-    std::cout << std::endl;
   }
 
-  Eigen::VectorXd x0 = Eigen::Vector3d::Map(start.data(), 3);
+  std::string name = env["robots"][0]["type"].as<std::string>();
 
-  using Derived = ActionModelQuim;
-  boost::shared_ptr<crocoddyl::ActionModelAbstract> model_run =
-      boost::make_shared<Derived>(cl);
-  boost::shared_ptr<crocoddyl::ActionModelAbstract> model_terminal =
-      boost::make_shared<Derived>(cl);
+  size_t nx, nu;
 
-  boost::static_pointer_cast<Derived>(model_run)->set_cost_weights(
-      Eigen::Vector2d(0., 1.));
-  boost::static_pointer_cast<Derived>(model_terminal)
-      ->set_cost_weights(Eigen::Vector2d(100., 0.));
+  ptr<Cost> feats_run;
+  ptr<Cost> feats_terminal;
+  ptr<crocoddyl::ActionModelAbstract> am_run;
+  ptr<crocoddyl::ActionModelAbstract> am_terminal;
+  ptr<Dynamics> dyn;
 
-  boost::static_pointer_cast<Derived>(model_terminal)->goal =
-      Eigen::VectorXd::Map(goal.data(), goal.size());
+  if (name == "unicycle_first_order_0") {
+    nx = 3;
+    nu = 2;
+    dyn = mk<Dynamics_unicycle>();
+    ptr<Cost> cl_feature = mk<Col_cost>(nx, nu, 1, cl);
 
-  // boost::static_pointer_cast<Derived>(model_terminal)
-  //     ->set_u_lb(Eigen::Vector2d(-.5, -.5));
-  //
-  // boost::static_pointer_cast<Derived>(model_terminal)
-  //     ->set_u_ub(Eigen::Vector2d(.5, .5));
-  //
-  // boost::static_pointer_cast<Derived>(model_run)
-  //     ->set_u_lb(Eigen::Vector2d(-.5, -.5));
-  //
-  // boost::static_pointer_cast<Derived>(model_run)
-  //     ->set_u_ub(Eigen::Vector2d(.5, .5));
+    boost::static_pointer_cast<Col_cost>(cl_feature)->non_zero_flags = {
+        true, true, true};
 
-  auto model_run_numdiff =
-      boost::make_shared<crocoddyl::ActionModelNumDiff>(model_run, true);
+    ptr<Cost> control_feature =
+        mk<Control_cost>(nx, nu, nu, Eigen::Vector2d(1., 1.));
+    ptr<Cost> state_feature =
+        mk<State_cost>(nx, nu, nx, Eigen::Vector3d(100., 100., 100.),
+                       Eigen::VectorXd::Map(goal.data(), goal.size()));
 
-  model_run_numdiff->set_disturbance(1e-4);
+    feats_run =
+        mk<All_cost>(nx, nu,
+                     cl_feature->nr + 
+                      control_feature->nr,
+                     std::vector<ptr<Cost>>{
+                       cl_feature, 
+                       control_feature});
 
-  auto model_terminal_numdiff =
-      boost::make_shared<crocoddyl::ActionModelNumDiff>(model_terminal, true);
+    feats_terminal = mk<All_cost>(nx, nu, state_feature->nr,
+                                  std::vector<ptr<Cost>>{state_feature});
 
-  model_terminal_numdiff->set_disturbance(1e-4);
+    am_run = to_am_base(mk<ActionModelQ>(dyn, feats_run));
+    am_run->set_u_lb(Eigen::Vector2d(-.5, -.5));
+    am_run->set_u_ub(Eigen::Vector2d(.5, .5));
+    am_terminal = to_am_base(mk<ActionModelQ>(dyn, feats_terminal));
 
-  // lets add some sphere obstacles.
+  } else if (name == "unicycle_second_order_0") {
+    nx = 5;
+    nu = 2;
+    dyn = mk<Dynamics_unicycle2>();
+    ptr<Cost> cl_feature = mk<Col_cost>(nx, nu, 1, cl);
+    boost::static_pointer_cast<Col_cost>(cl_feature)->non_zero_flags = {
+        true, true, true, false, false};
 
+    ptr<Cost> control_feature =
+        mk<Control_cost>(nx, nu, nu, Eigen::Vector2d(5., 5.));
+
+    ptr<Cost> state_feature =
+        mk<State_cost>(nx, nu, nx, 100. * Eigen::VectorXd::Ones(nx),
+                       Eigen::VectorXd::Map(goal.data(), goal.size()));
+
+    ptr<Cost> state_feature_reg = mk<State_cost>(
+        nx, nu, nx, 0.0 * Eigen::VectorXd::Ones(nx), Eigen::VectorXd::Zero(nx));
+
+    feats_run = mk<All_cost>(
+        nx, nu, cl_feature->nr + control_feature->nr + state_feature_reg->nr,
+        std::vector<ptr<Cost>>{cl_feature, control_feature, state_feature_reg});
+
+    feats_terminal = mk<All_cost>(nx, nu, state_feature->nr,
+                                  std::vector<ptr<Cost>>{state_feature});
+
+    am_run = to_am_base(mk<ActionModelQ>(dyn, feats_run));
+    am_run->set_u_lb(Eigen::Vector2d(-.25, -.25));
+    am_run->set_u_ub(Eigen::Vector2d(.25, .25));
+    am_terminal = to_am_base(mk<ActionModelQ>(dyn, feats_terminal));
+
+    // TODO: option to regularize w.r.t. intial guess.
+
+  } else {
+    throw -1;
+  }
+
+  Eigen::VectorXd x0 = Eigen::VectorXd::Map(start.data(), start.size());
   std::vector<Eigen::VectorXd> xs(N + 1, x0);
-  std::vector<Eigen::VectorXd> us(N, Eigen::Vector2d::Zero());
+  std::vector<Eigen::VectorXd> us(N, Eigen::VectorXd::Zero(nu));
 
   bool use_warmstart = true;
+
   if (use_warmstart) {
     for (size_t t = 0; t < N + 1; t++) {
-      xs.at(t) = Eigen::VectorXd::Map(states.at(t).data(), 3);
+      xs.at(t) = Eigen::VectorXd::Map(states.at(t).data(), states.at(t).size());
     }
     for (size_t t = 0; t < N; t++) {
-      us.at(t) = Eigen::VectorXd::Map(actions.at(t).data(), 2);
+      us.at(t) =
+          Eigen::VectorXd::Map(actions.at(t).data(), actions.at(t).size());
     }
   }
 
-  std::vector<boost::shared_ptr<crocoddyl::ActionModelAbstract>>
-      runningModels_numdiff(N, model_run_numdiff);
 
-  std::vector<boost::shared_ptr<crocoddyl::ActionModelAbstract>> runningModels(
-      N, model_run);
+  if (use_finite_diff) {
+    auto lb = am_run->get_u_lb();
+    auto ub = am_run->get_u_ub();
+    am_run = mk<crocoddyl::ActionModelNumDiff>(am_run, true);
+    boost::static_pointer_cast<crocoddyl::ActionModelNumDiff>(am_run)
+        ->set_disturbance(1e-4);
+    am_run->set_u_lb(lb);
+    am_run->set_u_ub(ub);
 
-  // Formulating the optimal control problem
+    auto lbT = am_terminal->get_u_lb();
+    auto ubT = am_terminal->get_u_ub();
+    am_terminal = mk<crocoddyl::ActionModelNumDiff>(am_terminal, true);
+    boost::static_pointer_cast<crocoddyl::ActionModelNumDiff>(am_terminal)
+        ->set_disturbance(1e-4);
+    am_terminal->set_u_lb(lbT);
+    am_terminal->set_u_ub(ubT);
+  }
 
-  boost::shared_ptr<crocoddyl::ShootingProblem> problem_num_diff =
-      boost::make_shared<crocoddyl::ShootingProblem>(x0, runningModels_numdiff,
-                                                     model_terminal_numdiff);
+  std::vector<boost::shared_ptr<crocoddyl::ActionModelAbstract>> amq_runs(
+      N, am_run);
 
-  boost::shared_ptr<crocoddyl::ShootingProblem> problem =
-      boost::make_shared<crocoddyl::ShootingProblem>(x0, runningModels,
-                                                     model_terminal);
+  ptr<crocoddyl::ShootingProblem> problem =
+      mk<crocoddyl::ShootingProblem>(x0, amq_runs, am_terminal);
 
-  int MAXITER = 20;
-  // Solving the optimal control problem
+  crocoddyl::SolverBoxFDDP ddp(problem);
+  ddp.set_th_stop(th_stop);
 
-  // TODO: add parametric.
-
-  Eigen::Vector3d x =
-      boost::static_pointer_cast<Derived>(model_terminal)->goal +
-      Eigen::Vector3d(.7, 0, .1);
-  {
-    std::cout << "A" << std::endl;
-    auto data = model_run->createData();
-    model_run->calc(data, x, us.at(0));
-    model_run->calcDiff(data, x, us.at(0));
-    std::cout << "Lx:" << data->Lx << std::endl;
-    std::cout << "Lxx:" << data->Lxx << std::endl;
-    std::cout << "Fx:" << data->Fx << std::endl;
-    std::cout << "Fu:" << data->Fu << std::endl;
-    std::cout << "Lx:" << data->Lx << std::endl;
-    std::cout << "Lxu:" << data->Lxu << std::endl;
-    std::cout << "r:" << data->r << std::endl;
-    std::cout << "cost:" << data->cost << std::endl;
-    std::cout << "xnext:" << data->xnext << std::endl;
+  if (CALLBACKS) {
+    std::vector<ptr<crocoddyl::CallbackAbstract>> cbs;
+    cbs.push_back(mk<crocoddyl::CallbackVerbose>());
+    ddp.setCallbacks(cbs);
   }
 
   {
-    std::cout << "B" << std::endl;
-    auto data = model_run_numdiff->createData();
-    model_run_numdiff->calc(data, x, us.at(0));
-    model_run_numdiff->calcDiff(data, x, us.at(0));
-    std::cout << "Lx:" << data->Lx << std::endl;
-    std::cout << "Lxx:" << data->Lxx << std::endl;
-    std::cout << "Fx:" << data->Fx << std::endl;
-    std::cout << "Fu:" << data->Fu << std::endl;
-    std::cout << "Lx:" << data->Lx << std::endl;
-    std::cout << "Lxu:" << data->Lxu << std::endl;
-    std::cout << "r:" << data->r << std::endl;
-    std::cout << "cost:" << data->cost << std::endl;
-    std::cout << "xnext:" << data->xnext << std::endl;
-  }
-
-  {
-    std::cout << "C" << std::endl;
-    auto data = model_terminal->createData();
-    model_terminal->calc(data, x, us.at(0));
-    model_terminal->calcDiff(data, x, us.at(0));
-    std::cout << "Lx:" << data->Lx << std::endl;
-    std::cout << "Lxx:" << data->Lxx << std::endl;
-  }
-
-  {
-    std::cout << "D" << std::endl;
-    auto data = model_terminal_numdiff->createData();
-    model_terminal_numdiff->calc(data, x, us.at(0));
-    model_terminal_numdiff->calcDiff(data, x, us.at(0));
-    std::cout << "Lx:" << data->Lx << std::endl;
-    std::cout << "Lxx:" << data->Lxx << std::endl;
-  }
-
-  {
-    std::cout << "Cb" << std::endl;
-    auto data = model_terminal->createData();
-    model_terminal->calc(data, x);
-    model_terminal->calcDiff(data, x);
-    std::cout << "Lx:" << data->Lx << std::endl;
-    std::cout << "Lxx:" << data->Lxx << std::endl;
-  }
-
-  {
-    std::cout << "Db" << std::endl;
-    auto data = model_terminal_numdiff->createData();
-    model_terminal_numdiff->calc(data, x);
-    model_terminal_numdiff->calcDiff(data, x);
-    std::cout << "Lx:" << data->Lx << std::endl;
-    std::cout << "Lxx:" << data->Lxx << std::endl;
-  }
-
-  // std::cout << "hello world" << std::endl;
-  {
-    int repeat_n = 10;
+    std::cout <<  problem->calc(xs, us) << std::endl;
     crocoddyl::Timer timer;
-    for (size_t i = 0; i < repeat_n; i++)
-      problem->calcDiff(xs, us);
-    std::cout << "time: " << timer.get_duration() << std::endl;
-
-    std::cout << "num diff" << std::endl;
-    for (size_t i = 0; i < repeat_n; i++)
-      problem_num_diff->calcDiff(xs, us);
-    std::cout << "time: " << timer.get_duration() << std::endl;
-  }
-  // TODO: check with finite grad
-
-  bool solve = true;
-  if (solve) {
-    crocoddyl::SolverFDDP ddp(problem);
-
-    bool CALLBACKS = true;
-    if (CALLBACKS) {
-      std::vector<boost::shared_ptr<crocoddyl::CallbackAbstract>> cbs;
-      cbs.push_back(boost::make_shared<crocoddyl::CallbackVerbose>());
-      ddp.setCallbacks(cbs);
-    }
-    crocoddyl::Timer timer;
-    std::cout << "cost: " << problem->calc(xs, us) << std::endl;
-    ddp.solve(xs, us, MAXITER, false, 100);
-    double d = timer.get_duration();
-    std::cout << "time: " << d << std::endl;
-
-#if 0
-    {
-      crocoddyl::SolverFDDP ddp(problem_num_diff);
-      bool CALLBACKS = true;
-      if (CALLBACKS) {
-        std::vector<boost::shared_ptr<crocoddyl::CallbackAbstract>> cbs;
-        cbs.push_back(boost::make_shared<crocoddyl::CallbackVerbose>());
-        ddp.setCallbacks(cbs);
-      }
-      crocoddyl::Timer timer;
-      std::cout << "cost: " << problem_num_diff->calc(xs, us) << std::endl;
-      ddp.solve(xs, us, MAXITER, false, 100);
-      double d = timer.get_duration();
-      std::cout << "time num diff: " << d << std::endl;
-    }
-#endif
-
-    std::cout << "solution" << std::endl;
-    std::cout << problem->calc(ddp.get_xs(), ddp.get_us()) << std::endl;
-
-    std::ofstream results("out.txt");
-
-    const Eigen::IOFormat fmt(6, Eigen::DontAlignCols, ",", " ", "", "", "",
-                              "");
-
-    for (auto &x : ddp.get_xs()) {
-      results << x.transpose().format(fmt) << std::endl;
-    }
-
-    results << "---" << std::endl;
-
-    for (auto &u : ddp.get_us()) {
-      results << u.transpose().format(fmt) << std::endl;
-    }
-
-    // store in the good format
-
-    // write the results.
-    std::ofstream out("out_croco.yaml");
-    // out << std::setprecision(std::numeric_limits<double>::digits10 + 1);
-    out << "result:" << std::endl;
-    out << "  - states:" << std::endl;
-    for (auto &x : ddp.get_xs()) {
-      out << "      - [" << x[0] << "," << x[1] << ","
-          << std::remainder(x[2], 2 * M_PI) << "]" << std::endl;
-    }
-
-    out << "    actions:" << std::endl;
-    for (auto &u : ddp.get_us()) {
-      out << "      - [" << u[0] << "," << u[1] << "]" << std::endl;
-    }
+    problem->calc(xs, us) ; 
+    std::cout << "calc time: " << timer.get_duration() << std::endl;
   }
 
   {
-    size_t nx = 3;
-    size_t nu = 2;
-    boost::shared_ptr<Cost> cl_feature =
-        boost::make_shared<Col_cost>(nx, nu, 1, cl);
-    boost::shared_ptr<Cost> control_feature =
-        boost::make_shared<Control_cost>(nx, nu, nu, Eigen::Vector2d(1., 1.));
-    boost::shared_ptr<Cost> state_feature = boost::make_shared<State_cost>(
-        nx, nu, nx, Eigen::Vector3d(100., 100., 100.),
-        Eigen::VectorXd::Map(goal.data(), goal.size()));
-
-    auto feats_run = boost::make_shared<All_cost>(
-        nx, nu, cl_feature->nr + control_feature->nr,
-        std::vector<boost::shared_ptr<Cost>>{cl_feature, control_feature});
-
-    auto feats_terminal = boost::make_shared<All_cost>(
-        nx, nu, state_feature->nr,
-        std::vector<boost::shared_ptr<Cost>>{state_feature});
-
-    auto _all_feats = std::vector<boost::shared_ptr<Cost>>{
-        cl_feature, control_feature, state_feature};
-
-    size_t nr = std::accumulate(
-        _all_feats.begin(), _all_feats.end(), 0,
-        [](size_t accum, auto &cost) { return accum + cost->nr; });
-
-    std::cout << "total nr: " << nr << std::endl;
-
-    auto all_feats = boost::make_shared<All_cost>(nx, nu, nr, _all_feats);
-
-    boost::shared_ptr<Dynamics> dyn = boost::make_shared<Dynamics_unicycle>();
-
-    auto amq = to_am_base(boost::make_shared<ActionModelQ>(dyn, all_feats));
-
-    auto amq_run = to_am_base(boost::make_shared<ActionModelQ>(dyn, feats_run));
-    auto amq_terminal =
-        to_am_base(boost::make_shared<ActionModelQ>(dyn, feats_terminal));
-
-    std::vector<boost::shared_ptr<crocoddyl::ActionModelAbstract>> amq_runs(
-        N, amq_run);
-
-    auto model_terminal = amq;
-
-    {
-      boost::shared_ptr<crocoddyl::ShootingProblem> problem =
-          boost::make_shared<crocoddyl::ShootingProblem>(x0, amq_runs,
-                                                         amq_terminal);
-
-      crocoddyl::SolverFDDP ddp(problem);
-      ddp.set_th_stop(1e-3);
-
-      bool CALLBACKS = true;
-      if (CALLBACKS) {
-        std::vector<boost::shared_ptr<crocoddyl::CallbackAbstract>> cbs;
-        cbs.push_back(boost::make_shared<crocoddyl::CallbackVerbose>());
-        ddp.setCallbacks(cbs);
-      }
-      crocoddyl::Timer timer;
-      std::cout << "cost: " << problem->calc(xs, us) << std::endl;
-      ddp.solve(xs, us, MAXITER, false, 100);
-      double d = timer.get_duration();
-      std::cout << "time: " << d << std::endl;
-      throw -1;
-    }
-
-    auto model_run = amq;
-
-    auto model_run_numdiff =
-        boost::make_shared<crocoddyl::ActionModelNumDiff>(model_run, true);
-    model_run_numdiff->set_disturbance(1e-4);
-
-    std::vector<boost::shared_ptr<crocoddyl::ActionModelAbstract>>
-        runningModels_q(N, amq);
-
-    // Formulating the optimal control problem
-    boost::shared_ptr<crocoddyl::ShootingProblem> problem =
-        boost::make_shared<crocoddyl::ShootingProblem>(x0, runningModels,
-                                                       model_terminal);
-
-    Eigen::Vector3d x =
-        boost::static_pointer_cast<Derived>(model_terminal)->goal +
-        Eigen::Vector3d(2.2, .3, .1);
-    {
-      std::cout << "A" << std::endl;
-      auto data = model_run->createData();
-      model_run->checkData(data);
-
-      model_run->calc(data, x, us.at(0));
-      model_run->calcDiff(data, x, us.at(0));
-      print_data(data);
-    }
-    {
-      std::cout << "B" << std::endl;
-      auto data = model_run_numdiff->createData();
-      model_run_numdiff->calc(data, x, us.at(0));
-      model_run_numdiff->calcDiff(data, x, us.at(0));
-      print_data(data);
-    }
+    crocoddyl::Timer timer;
+    problem->calcDiff(xs, us); 
+    std::cout << "calcDiff time: " << timer.get_duration() << std::endl;
   }
-}
 
-template <class T> using ptr = boost::shared_ptr<T>;
+  crocoddyl::Timer timer;
+  ddp.solve(xs, us, max_iter, false, init_reg);
+  std::cout << "time: " << timer.get_duration()<< std::endl;
 
-template <typename T, typename... Args> auto mk(Args &&...args) {
-  return boost::make_shared<T>(std::forward<Args>(args)...);
+  std::cout << "solution" << std::endl;
+  std::cout << problem->calc(ddp.get_xs(), ddp.get_us()) << std::endl;
+
+  std::ofstream results_txt("out.txt");
+
+  const Eigen::IOFormat fmt(6, Eigen::DontAlignCols, ",", " ", "", "", "", "");
+
+  for (auto &x : ddp.get_xs()) {
+    results_txt << x.transpose().format(fmt) << std::endl;
+  }
+  results_txt << "---" << std::endl;
+  for (auto &u : ddp.get_us()) {
+    results_txt << u.transpose().format(fmt) << std::endl;
+  }
+
+  // store in the good format
+
+  // write the results.
+  std::ofstream results_yaml("out_croco.yaml");
+  // out << std::setprecision(std::numeric_limits<double>::digits10 + 1);
+  results_yaml << "result:" << std::endl;
+  results_yaml << "  - states:" << std::endl;
+  for (auto &x : ddp.get_xs()) {
+    results_yaml << "      - [" << x[0] << "," << x[1] << ","
+                 << std::remainder(x[2], 2 * M_PI) << "]" << std::endl;
+  }
+
+  results_yaml << "    actions:" << std::endl;
+  for (auto &u : ddp.get_us()) {
+    results_yaml << "      - [" << u[0] << "," << u[1] << "]" << std::endl;
+  }
 }
 
 void double_integ(int argc, char *argv[]) {
@@ -1504,21 +1446,44 @@ void double_integ(int argc, char *argv[]) {
   ptr<Dynamics> dyn = mk<Dynamics_unicycle2>();
   check_dyn(dyn, 1e-5);
 
+  ptr<Dynamics> dyn_free_time = mk<Dynamics_unicycle2>(true);
+  check_dyn(dyn_free_time, 1e-5);
+
   // generate the problem... to continue
+}
 
+void test_unifree() {
 
+  ptr<Dynamics> dyn = mk<Dynamics_unicycle>();
+  check_dyn(dyn, 1e-5);
 
+  ptr<Dynamics> dyn_free_time = mk<Dynamics_unicycle>(true);
+  check_dyn(dyn, 1e-5);
 }
 
 int main(int argc, char *argv[]) {
 
   // test(argc, argv);
 
-  // quim_test(argc, argv);
+  double_integ(argc, argv);
+
+  test_unifree();
+
+  // throw -1;
+
+  quim_test(argc, argv);
 
   // double integrator
 
-  double_integ(argc, argv);
-
   //
 }
+
+// TODO: convert into tests
+//
+// (opti) ⋊> ~/s/w/k/build on feat_croco ⨯ make && ./test_croco --env
+// ../benchmark/unicycle_first_order_0/bugtr ap_0.yaml --init
+// ../test/unicycle_first_order_0/guess_bugtrap_0_sol0.yaml
+
+// (opti) ⋊> ~/s/w/k/build on feat_croco ⨯ make &&   ./test_croco --env
+// ../benchmark/unicycle_first_order_0/par allelpark_0.yaml --init
+// ../test/unicycle_first_order_0/guess_parallelpark_0_sol0.yaml
