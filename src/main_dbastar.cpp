@@ -399,7 +399,14 @@ void backward_tree_with_dynamics(
   flann::KDTreeSingleIndex<L2Q<double>> index(
       dataset, flann::KDTreeSingleIndexParams(), L2Q<double>(distance));
 
+  auto tic = std::chrono::high_resolution_clock::now();
   index.buildIndex();
+  auto tac = std::chrono::high_resolution_clock::now();
+  std::cout << "build index for heuristic " << std::chrono::duration<double, std::milli>(tac - tic).count() 
+    << std::endl;
+
+  int num_nn_search = 0;
+
 
   auto is_applicable = [&](auto &primitive, auto &point) {
     ob::State *last = primitive.states.back();
@@ -433,6 +440,7 @@ void backward_tree_with_dynamics(
     flann::Matrix<double> dataset(new double[3], 1, dim);
     std::copy(point.begin(), point.end(), dataset[0]);
     index.radiusSearch(dataset, idxs, v_dis, delta_sq, flann::SearchParams());
+    num_nn_search++;
   };
 
   std::ofstream file("debug_collision.txt");
@@ -455,6 +463,7 @@ void backward_tree_with_dynamics(
   if (debug)
     file << "nodes" << std::endl;
 
+  std::cout << "data SIZE " << data.size() << std::endl;
   for (size_t i = 0; i < data.size(); i++) {
     for (size_t j = 0; j < primitives.size(); j++) {
       bool applicable = is_applicable(primitives[j], data[i]);
@@ -547,6 +556,10 @@ void backward_tree_with_dynamics(
     }
   }
   std::cout << "motion connection DONE" << std::endl;
+  std::cout << "we used nn searches " << num_nn_search << std::endl;
+
+  // it seems I am doing too nn: 2293399
+
 }
 
 using Sample = std::vector<double>;
@@ -1386,7 +1399,8 @@ int main(int argc, char *argv[]) {
       // }
 
     } else if (new_heu == 2) {
-      double backward_delta = std::min(2. * delta, .45);
+      // double backward_delta = std::min(2. * delta, .45);
+      double backward_delta = delta;
       std::cout << "backward delta " << backward_delta << std::endl;
       build_heuristic_motions(batch_samples /* goal should be last */,
                               heuristic_map, motions, bpcm_env,
@@ -1395,6 +1409,34 @@ int main(int argc, char *argv[]) {
 
     write_heuristic_map(heuristic_map);
   }
+
+  ompl::NearestNeighbors<AStarNode *> * T_landmarks;
+  T_landmarks = new ompl::NearestNeighborsGNATNoThreadSafety<AStarNode *>();
+
+  T_landmarks->setDistanceFunction([&](const AStarNode *a, const AStarNode *b) {
+    return si->distance(a->state, b->state);
+  });
+
+  std::vector<AStarNode *> ptrs;
+  for (size_t i = 0; i < batch_samples.size(); i++) {
+    // TODO: is this memory leak?, stop bad code
+    AStarNode *ptr = new AStarNode;
+    ptr->state = _allocAndFillState(si, batch_samples[i]);
+    ptrs.push_back(ptr);
+  }
+
+  T_landmarks->add(ptrs);
+
+  auto tic = std::chrono::high_resolution_clock::now();
+  index.buildIndex();
+  auto tac = std::chrono::high_resolution_clock::now();
+  std::cout << "build index for heuristic " << std::chrono::duration<double, std::milli>(tac - tic).count() 
+    << std::endl;
+
+  int num_nn_search = 0;
+
+
+
 
   ompl::NearestNeighbors<HeuNode *> *T_heu;
   if (si->getStateSpace()->isMetricSpace()) {
@@ -1499,6 +1541,7 @@ int main(int argc, char *argv[]) {
 
   static_cast<ompl::NearestNeighborsGNATNoThreadSafety<AStarNode *> *>(T_n)
       ->rebuildSize_ = 1e8;
+  int counter_nn = 0 ;
 
   while (!open.empty()) {
     AStarNode *current = open.top();
@@ -1567,6 +1610,7 @@ int main(int argc, char *argv[]) {
       out << "time_prepare: " << prepare_time << std::endl;
       out << "time_nearestMotion: " << time_nearestMotion << std::endl;
       out << "time_nearestNode: " << time_nearestNode << std::endl;
+      out << "num nn: " << counter_nn << std::endl;
       out << "time_nearestNode_add: " << time_nearestNode_add << std::endl;
       out << "time_nearestNode_search: " << time_nearestNode_search
           << std::endl;
@@ -1901,6 +1945,7 @@ int main(int argc, char *argv[]) {
       {
         auto out = timed_fun([&] {
           T_n->nearestR(query_n, radius, neighbors_n);
+          counter_nn++;
           return 0;
         });
         time_nearestNode += out.second;
@@ -1935,9 +1980,9 @@ int main(int argc, char *argv[]) {
 
         {
 
-          std::vector<double> _state;
-          si->getStateSpace()->copyToReals(_state, node->state);
-          _states_debug.push_back(_state);
+          // std::vector<double> _state;
+          // si->getStateSpace()->copyToReals(_state, node->state);
+          // _states_debug.push_back(_state);
 
           auto out = timed_fun([&] {
             T_n->add(node);
@@ -1985,6 +2030,7 @@ int main(int argc, char *argv[]) {
 
   query_n->state = goalState;
   const auto nearest = T_n->nearest(query_n);
+
   if (nearest->gScore == 0) {
     std::cout << "No solution found (not even approxmite)" << std::endl;
     return 1;
