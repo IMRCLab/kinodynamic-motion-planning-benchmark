@@ -3,6 +3,7 @@
 #include <chrono>
 #include <fstream>
 #include <iostream>
+#include <limits>
 
 #include <flann/flann.hpp>
 #include <msgpack.hpp>
@@ -621,7 +622,7 @@ void build_heuristic_motions(
 }
 
 void write_heuristic_map(const std::vector<SampleNode> &heuristic_map,
-                         const char *filename = "out.txt") {
+                         const char *filename = "heu_map.txt") {
 
   std::ofstream file(filename);
   for (auto &n : heuristic_map) {
@@ -660,6 +661,7 @@ bool check_edge_at_resolution(
 void build_heuristic_distance(
     const std::vector<Sample> &batch_samples /* goal should be last */,
     std::function<double(const double *, const double *, size_t)> distance_sq,
+    std::function<double(const double *, const double *, size_t)> time,
     std::vector<SampleNode> &heuristic_map, size_t n,
     std::shared_ptr<ompl::control::SpaceInformation> si,
     double distance_threshold_sq,
@@ -689,13 +691,16 @@ void build_heuristic_distance(
           if (d < distance_threshold_sq &&
               check_edge_at_resolution(p1, p2, 3, check_fun, resolution)) {
             edge_list.push_back({i, j});
-            distance_list.push_back(std::sqrt(d));
+            double t = time(p1, p2, n);
+            // std::cout <<  " t " << t << " d " << std::sqrt(d) << std::endl;
+            distance_list.push_back(t);
           }
         }
       }
       return 0;
     });
   } else if (mode == TreeOMPL) {
+    throw -1;
 
     std::cout << si->getStateSpace()->isMetricSpace() << std::endl;
 
@@ -751,6 +756,7 @@ void build_heuristic_distance(
     }
   } else if (mode == TreeFlann) {
 
+    throw -1;
     int dim = 3;
     flann::Matrix<double> dataset(new double[batch_samples.size() * 3],
                                   batch_samples.size(), dim);
@@ -850,14 +856,6 @@ double query_heuristic_map(
   return map[index].dist;
 }
 
-double heuristicCollisionsTree(ompl::NearestNeighbors<HeuNode *> *T_heu,
-                               const ob::State *s) {
-  HeuNode node;
-  node.state = s;
-  auto out = T_heu->nearest(&node);
-  return out->dist;
-}
-
 // dbastar:
 // /home/quim/stg/wolfgang/kinodynamic-motion-planning-benchmark/src/fclHelper.hpp:38:
 // void
@@ -885,6 +883,51 @@ void print_matrix(std::ostream &out,
   }
 }
 
+double time_fun(const double *x, const double *y, size_t n) {
+  if (n != 3) {
+    throw std::runtime_error("n should be 3");
+  }
+  double s[3] = {1., 1., 0.};
+  double max_vel = .5;
+  double max_ang_vel = .5;
+  double time_xy =
+      std::sqrt(euclidean_distance_scale_squared(x, y, s, n)) / max_vel;
+  double time_theta = std::fabs(distance_angle(x[2], y[2]) / max_ang_vel);
+  return std::max(time_xy, time_theta);
+};
+
+double time_fun_si(std::shared_ptr<ompl::control::SpaceInformation> si,
+                   const ob::State *a, const ob::State *b) {
+  std::vector<double> g_std;
+  std::vector<double> c_std;
+
+  si->getStateSpace()->copyToReals(g_std, a);
+  si->getStateSpace()->copyToReals(c_std, b);
+
+  return time_fun(g_std.data(), c_std.data(), 3);
+};
+
+double
+heuristicCollisionsTree(ompl::NearestNeighbors<HeuNode *> *T_heu,
+                        const ob::State *s,
+                        std::shared_ptr<ompl::control::SpaceInformation> si) {
+  HeuNode node;
+  node.state = s;
+  // auto out = T_heu->nearest(&node);
+  std::vector<HeuNode *> neighbors;
+  double max_distance = 0.6;
+  double min = 1e8;
+  T_heu->nearestR(&node, max_distance, neighbors);
+  for (const auto &p : neighbors) {
+    double d = p->dist + time_fun_si(si, p->state, s);
+    if (d < min) {
+      min = d;
+    }
+  }
+  return min;
+}
+
+// I need the same for the goal.
 int main(int argc, char *argv[]) {
 
   auto tic = std::chrono::high_resolution_clock::now();
@@ -909,6 +952,10 @@ int main(int argc, char *argv[]) {
   size_t max_motions;
   std::string outputFile;
   double resolution;
+  double delta_factor_goal;
+  bool add_cost_delta;
+  int rebuild_every;
+
   desc.add_options()("help", "produce help message")(
       "input,i", po::value<std::string>(&inputFile)->required(),
       "input file (yaml)")("motions,m",
@@ -916,13 +963,16 @@ int main(int argc, char *argv[]) {
                            "motions file (yaml)")(
       "resolution", po::value<double>(&resolution)->default_value(0.2),
       "resolution when computing the heuristic map")(
-      "delta", po::value<float>(&delta)->default_value(0.01),
+      "delta", po::value<float>(&delta)->default_value(0.1),
       "discontinuity bound (negative to auto-compute with given k)")(
       "epsilon", po::value<float>(&epsilon)->default_value(1.0),
       "suboptimality bound")(
+      "add_cost_delta", po::value<bool>(&add_cost_delta)->default_value(false))(
+      "rebuild_every", po::value<int>(&rebuild_every)->default_value(5000))(
       "heu", po::value<int>(&new_heu)->default_value(0),
       "heuristic {0:euclidean, 1:euclideanOBS, 2:motionOBS}")(
-      "max_motions", po::value<size_t>(&max_motions)->default_value(500),
+      "rgoal", po::value<double>(&delta_factor_goal)->default_value(1.))(
+      "max_motions", po::value<size_t>(&max_motions)->default_value(INT_MAX),
       "")("alpha", po::value<float>(&alpha)->default_value(0.5),
           "alpha")("filterDuplicates",
                    po::value<bool>(&filterDuplicates)->default_value(true),
@@ -1257,19 +1307,20 @@ int main(int argc, char *argv[]) {
 
   HeuristicMap heuristic_map;
   size_t dim = 3;
+  std::vector<Sample> batch_samples;
+
   if (new_heu == 1 || new_heu == 2) {
     std::vector<double> lb(dim);
     std::vector<double> ub(dim);
 
     std::default_random_engine re;
 
-    // for (size_t i = 0; i < n; ++i) {
-    //   lb[i] = env_min[i].as<double>();
-    //   ub[i] = env_max[i].as<double>();
-    // }
-
-    lb = {0, 0, -M_PI};
-    ub = {6, 6, M_PI};
+    for (size_t i = 0; i < 2; ++i) {
+      lb[i] = env_min[i].as<double>();
+      ub[i] = env_max[i].as<double>();
+    }
+    lb[2] = -M_PI;
+    ub[2] = M_PI;
 
     std::vector<double> goal;
     std::vector<double> start;
@@ -1282,7 +1333,6 @@ int main(int argc, char *argv[]) {
       start.push_back(value.as<double>());
     }
 
-    std::vector<Sample> batch_samples;
 
     ob::State *_allocated_state = _allocAndFillState(si, {0, 0, 0});
     auto allocated_state = _allocated_state->as<ob::SE2StateSpace::StateType>();
@@ -1303,7 +1353,8 @@ int main(int argc, char *argv[]) {
       };
     };
 
-    size_t num_sample_trials = 400;
+    size_t num_sample_trials = 3000;
+    // TODO: make sure that in KINK I have enough
     generate_batch(sample_fun, check_fun, num_sample_trials, dim,
                    batch_samples);
 
@@ -1317,22 +1368,22 @@ int main(int argc, char *argv[]) {
           throw std::runtime_error("n should be 3");
         }
         double s[3] = {1., 1., .1};
-        return euclidean_distance_scale_squared(x, y, s, n);
+        return distance_squared_se2(x, y, s);
       };
 
       // TODO: choose one!
       double distance_threshold_sq = .45 * .45;
       distance_threshold_sq = .7 * .7;
-      distance_threshold_sq = 1.5 * 1.5;
+      // distance_threshold_sq = 1.5 * 1.5;
 
       build_heuristic_distance(batch_samples /* goal should be last */,
-                               fun_dist_sq, heuristic_map, dim, si,
+                               fun_dist_sq, time_fun, heuristic_map, dim, si,
                                distance_threshold_sq, check_fun, resolution);
 
-      for (auto &dd : heuristic_map) {
-        dd.dist *= 2;
-        // because MAX VEL is 0.5
-      }
+      // for (auto &dd : heuristic_map) {
+      //   dd.dist *= 2;
+      //   // because MAX VEL is 0.5
+      // }
 
     } else if (new_heu == 2) {
       double backward_delta = std::min(2. * delta, .45);
@@ -1372,10 +1423,11 @@ int main(int argc, char *argv[]) {
     start_node->fScore = epsilon * heuristic(robot, startState, goalState);
     start_node->hScore = start_node->fScore;
   } else if (new_heu == 1 || new_heu == 2) {
-    start_node->fScore = epsilon * heuristicCollisionsTree(T_heu, startState);
+    start_node->fScore =
+        epsilon * heuristicCollisionsTree(T_heu, startState, si);
     start_node->hScore = start_node->fScore;
     std::cout << "goal heuristic "
-              << epsilon * heuristicCollisionsTree(T_heu, goalState)
+              << epsilon * heuristicCollisionsTree(T_heu, goalState, si)
               << std::endl;
   }
 
@@ -1409,7 +1461,9 @@ int main(int argc, char *argv[]) {
 
   AStarNode *query_n = new AStarNode();
 
+  ob::State *tmpStateq = si->allocState();
   ob::State *tmpState = si->allocState();
+  ob::State *tmpState2 = si->allocState();
   std::vector<Motion *> neighbors_m;
   std::vector<AStarNode *> neighbors_n;
 
@@ -1422,15 +1476,54 @@ int main(int argc, char *argv[]) {
       std::chrono::duration<double, std::milli>(tac - tic).count();
   double total_time;
 
+  // int rebuild_every = 100;
+  // time_nearestNode: 1536.86
+  // time_nearestNode_add: 1128.68
+  // time_nearestNode_search: 408.176
+
+  // 1000
+  // time_nearestNode: 521.063
+  // time_nearestNode_add: 125.819
+  // time_nearestNode_search: 395.244
+  //
+  // 10000
+  // time_nearestNode: 638.08
+  // time_nearestNode_add: 18.8478
+  // time_nearestNode_search: 619.232
+  //
+  //
+  // int rebuild_every = 100000;
+  // time_nearestNode: 904.296
+  // time_nearestNode_add: 11.269
+  // time_nearestNode_search: 893.027
+
+  static_cast<ompl::NearestNeighborsGNATNoThreadSafety<AStarNode *> *>(T_n)
+      ->rebuildSize_ = 1e8;
+
   while (!open.empty()) {
     AStarNode *current = open.top();
 
     ++expands;
-    if (expands % 100 == 0) {
+    if (expands % 1000 == 0 || expands == 1) {
       std::cout << "expanded: " << expands << " open: " << open.size()
                 << " nodes: " << T_n->size() << " f-score " << current->fScore
                 << " h-score " << current->hScore << " g-score "
                 << current->gScore << std::endl;
+    }
+
+    if (expands % rebuild_every == 0) {
+
+      auto out = timed_fun([&] {
+        static_cast<ompl::NearestNeighborsGNATNoThreadSafety<AStarNode *> *>(
+            T_n)
+            ->rebuildDataStructure();
+        static_cast<ompl::NearestNeighborsGNATNoThreadSafety<AStarNode *> *>(
+            T_n)
+            ->rebuildSize_ = 1e8;
+        return 0;
+      });
+      time_nearestNode += out.second;
+      time_nearestNode_add += out.second;
     }
 
     if (new_heu == 0)
@@ -1438,8 +1531,14 @@ int main(int argc, char *argv[]) {
     last_f_score = current->fScore;
     // std::cout << "current";
     // si->printState(current->state);
-    if (si->distance(current->state, goalState) <= delta) {
+    if (si->distance(current->state, goalState) <= delta_factor_goal * delta) {
+
+      double extra_time = time_fun_si(si, current->state, goalState);
+      std::cout << "extra time " << extra_time << std::endl;
+
       std::cout << "SOLUTION FOUND!!!! cost: " << current->gScore << std::endl;
+      std::cout << "SOLUTION FOUND!!!! with cost-to-goal: "
+                << current->gScore + extra_time << std::endl;
       auto tac = std::chrono::high_resolution_clock::now();
       total_time = std::chrono::duration<double, std::milli>(tac - tic).count();
 
@@ -1454,9 +1553,9 @@ int main(int argc, char *argv[]) {
       }
       std::reverse(result.begin(), result.end());
 
+      std::cout << "result size " << result.size() << std::endl;
       std::ofstream out_states("state_out.txt");
       print_matrix(out_states, _states_debug);
-
 
       std::cout << "writing output to " << outputFile << std::endl;
       std::ofstream out(outputFile);
@@ -1474,6 +1573,12 @@ int main(int argc, char *argv[]) {
       out << "expands: " << expands << std::endl;
       out << "result:" << std::endl;
       out << "  - states:" << std::endl;
+      double total_time = 0;
+
+      si->copyState(tmpStateq, startState);
+
+      double time_jumps = 0;
+
       for (size_t i = 0; i < result.size() - 1; ++i) {
         // Compute intermediate states
         const auto node_state = result[i]->state;
@@ -1486,6 +1591,7 @@ int main(int argc, char *argv[]) {
         out << "      # motion " << motion.idx << " with cost " << motion.cost
             << std::endl;
         // skip last state each
+
         for (size_t k = 0; k < motion.states.size(); ++k) {
           const auto state = motion.states[k];
           si->copyState(tmpState, state);
@@ -1496,9 +1602,23 @@ int main(int argc, char *argv[]) {
                                            relative_pos);
 
           if (k < motion.states.size() - 1) {
+            if (k == 0) {
+              out << "      # jump from ";
+              printState(out, si, tmpStateq);
+              out << " to ";
+              printState(out, si, tmpState);
+              out << " delta " << si->distance(tmpStateq, tmpState);
+              double min_time = time_fun_si(si, tmpStateq, tmpState);
+              time_jumps += min_time;
+              out << " min time " << min_time;
+              out << std::endl;
+            }
+
             out << "      - ";
+
           } else {
             out << "      # ";
+            si->copyState(tmpStateq, tmpState);
           }
           printState(out, si, tmpState);
           out << std::endl;
@@ -1506,9 +1626,18 @@ int main(int argc, char *argv[]) {
         out << std::endl;
       }
       out << "      - ";
+
+      std::cout << " time jumps " << time_jumps << std::endl;
+
+      std::cout << "time jumps + extra_time " << time_jumps + extra_time
+                << std::endl;
+
+      // printing the last state
       printState(out, si, result.back()->state);
       out << std::endl;
       out << "    actions:" << std::endl;
+
+      int action_counter = 0;
       for (size_t i = 0; i < result.size() - 1; ++i) {
         const auto &motion = motions[result[i + 1]->used_motion];
         out << "      # motion " << motion.idx << " with cost " << motion.cost
@@ -1516,11 +1645,13 @@ int main(int argc, char *argv[]) {
         for (size_t k = 0; k < motion.actions.size(); ++k) {
           const auto &action = motion.actions[k];
           out << "      - ";
+          action_counter += 1;
           printAction(out, si, action);
           out << std::endl;
         }
         out << std::endl;
       }
+      std::cout << "action counter " << action_counter << std::endl;
       // statistics for the motions used
       std::map<size_t, size_t> motionsCount; // motionId -> usage count
       for (size_t i = 0; i < result.size() - 1; ++i) {
@@ -1643,6 +1774,9 @@ int main(int argc, char *argv[]) {
 #endif
 
       // compute estimated cost
+
+      // tmpState + last_state
+
       float tentative_gScore = current->gScore + motion->cost;
       // compute final state
       si->copyState(tmpState, motion->states.back());
@@ -1653,9 +1787,19 @@ int main(int argc, char *argv[]) {
       robot->setPosition(tmpState, offset + relative_pos);
       // compute estimated fscore
 
+      // compute the delta.
+      si->copyState(tmpState2, motion->states.front());
+      robot->setPosition(tmpState2, current_pos);
+      double delta_ = si->distance(tmpState2, current->state);
+      // std::cout << "delta is " << delta_ << std::endl;
+      double max_ang_vel = .5;
+      double extra_time = delta_ / max_ang_vel;
+      tentative_gScore += add_cost_delta * extra_time;
+
       float tentative_hScore;
       if (new_heu == 2 || new_heu == 1)
-        tentative_hScore = epsilon * heuristicCollisionsTree(T_heu, tmpState);
+        tentative_hScore =
+            epsilon * heuristicCollisionsTree(T_heu, tmpState, si);
       else
         tentative_hScore = epsilon * heuristic(robot, tmpState, goalState);
 
@@ -1808,11 +1952,15 @@ int main(int argc, char *argv[]) {
         for (AStarNode *entry : neighbors_n) {
           // AStarNode* entry = nearest;
           assert(si->distance(entry->state, tmpState) <= delta);
-          float delta_score = entry->gScore - tentative_gScore;
+          double time_to_reach = time_fun_si(si, entry->state, tmpState);
+          // std::cout  << "time to reach " << time_to_reach << std::endl;
+          double tentative_gScore_ = tentative_gScore + time_to_reach;
+          float delta_score = entry->gScore - (tentative_gScore_);
+
           if (delta_score > 0) {
-            entry->gScore = tentative_gScore;
+            entry->gScore = tentative_gScore_;
             entry->fScore -= delta_score;
-            entry->hScore = tentative_hScore;
+            entry->hScore = tentative_gScore_;
             assert(entry->fScore >= 0);
             entry->came_from = current;
             entry->used_motion = motion->idx;
