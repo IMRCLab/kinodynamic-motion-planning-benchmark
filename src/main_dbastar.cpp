@@ -182,6 +182,19 @@ allocAndFillState(std::shared_ptr<ompl::control::SpaceInformation> si,
   return state;
 }
 
+std::ostream &printState(std::ostream &stream, const std::vector<double> &x) {
+  // continue here
+  stream << "[";
+  for (size_t d = 0; d < x.size(); ++d) {
+    stream << x[d];
+    if (d < x.size() - 1) {
+      stream << ",";
+    }
+  }
+  stream << "]";
+  return stream;
+}
+
 std::ostream &printState(std::ostream &stream,
                          std::shared_ptr<ompl::control::SpaceInformation> si,
                          const ob::State *state) {
@@ -282,7 +295,7 @@ struct AStarNode {
   size_t used_motion;
 
   open_t::handle_type handle;
-  bool is_in_open;
+  bool is_in_open = false;
 };
 
 bool compareAStarNode::operator()(const AStarNode *a,
@@ -304,8 +317,17 @@ bool compareAStarNode::operator()(const AStarNode *a,
 float heuristic(std::shared_ptr<Robot> robot, const ob::State *s,
                 const ob::State *g) {
   // heuristic is the time it might take to get to the goal
+  std::cout << "s " << s << std::endl;
+  std::cout << "g " << g << std::endl;
+
   const auto current_pos = robot->getTransform(s).translation();
+  std::cout << "cp " << &current_pos << std::endl;
+  std::cout << "current pos" << current_pos << std::endl;
+  std::cout << "hello" << std::endl;
   const auto goal_pos = robot->getTransform(g).translation();
+  std::cout << "gp " << &goal_pos << std::endl;
+  std::cout << "goal pos" << goal_pos << std::endl;
+  std::cout << "current pos" << current_pos << std::endl;
   float dist = (current_pos - goal_pos).norm();
   const float max_vel = robot->maxSpeed(); // m/s
   const float time = dist / max_vel;
@@ -402,11 +424,11 @@ void backward_tree_with_dynamics(
   auto tic = std::chrono::high_resolution_clock::now();
   index.buildIndex();
   auto tac = std::chrono::high_resolution_clock::now();
-  std::cout << "build index for heuristic " << std::chrono::duration<double, std::milli>(tac - tic).count() 
-    << std::endl;
+  std::cout << "build index for heuristic "
+            << std::chrono::duration<double, std::milli>(tac - tic).count()
+            << std::endl;
 
   int num_nn_search = 0;
-
 
   auto is_applicable = [&](auto &primitive, auto &point) {
     ob::State *last = primitive.states.back();
@@ -559,7 +581,6 @@ void backward_tree_with_dynamics(
   std::cout << "we used nn searches " << num_nn_search << std::endl;
 
   // it seems I am doing too nn: 2293399
-
 }
 
 using Sample = std::vector<double>;
@@ -943,6 +964,7 @@ heuristicCollisionsTree(ompl::NearestNeighbors<HeuNode *> *T_heu,
 // I need the same for the goal.
 int main(int argc, char *argv[]) {
 
+  bool use_landmarks = true;
   auto tic = std::chrono::high_resolution_clock::now();
 
   double time_nearestMotion = 0.0;
@@ -950,6 +972,8 @@ int main(int argc, char *argv[]) {
   double time_nearestNode_add = 0.0;
   double time_nearestNode_search = 0.0;
   double time_collisions = 0.0;
+
+  std::vector<std::vector<std::vector<double>>> expansions;
 
   namespace po = boost::program_options;
 
@@ -966,8 +990,10 @@ int main(int argc, char *argv[]) {
   std::string outputFile;
   double resolution;
   double delta_factor_goal;
-  bool add_cost_delta;
+  double cost_delta_factor;
   int rebuild_every;
+  size_t num_sample_trials;
+  size_t max_expands;
 
   desc.add_options()("help", "produce help message")(
       "input,i", po::value<std::string>(&inputFile)->required(),
@@ -980,8 +1006,11 @@ int main(int argc, char *argv[]) {
       "discontinuity bound (negative to auto-compute with given k)")(
       "epsilon", po::value<float>(&epsilon)->default_value(1.0),
       "suboptimality bound")(
-      "add_cost_delta", po::value<bool>(&add_cost_delta)->default_value(false))(
+      "max_expands", po::value<size_t>(&max_expands)->default_value(1e6))(
+      "cost_delta_factor",
+      po::value<double>(&cost_delta_factor)->default_value(0.))(
       "rebuild_every", po::value<int>(&rebuild_every)->default_value(5000))(
+      "num_sample", po::value<size_t>(&num_sample_trials)->default_value(3000))(
       "heu", po::value<int>(&new_heu)->default_value(0),
       "heuristic {0:euclidean, 1:euclideanOBS, 2:motionOBS}")(
       "rgoal", po::value<double>(&delta_factor_goal)->default_value(1.))(
@@ -1072,6 +1101,10 @@ int main(int argc, char *argv[]) {
 
   // set goal state
   auto goalState = allocAndFillState(si, robot_node["goal"]);
+
+  std::cout << "heuristic at beginning is "
+            << time_fun_si(si, startState, goalState) << std::endl;
+
   // si->freeState(goalState);
 
   // load motion primitives
@@ -1321,59 +1354,71 @@ int main(int argc, char *argv[]) {
   HeuristicMap heuristic_map;
   size_t dim = 3;
   std::vector<Sample> batch_samples;
+  std::vector<Sample> expanded_landmarks;
+  std::vector<Sample> found_nn;
+
+  std::vector<double> lb(dim);
+  std::vector<double> ub(dim);
+
+  std::default_random_engine re;
+
+  for (size_t i = 0; i < 2; ++i) {
+    lb[i] = env_min[i].as<double>();
+    ub[i] = env_max[i].as<double>();
+  }
+  lb[2] = -M_PI;
+  ub[2] = M_PI;
+
+  std::vector<double> goal;
+  std::vector<double> start;
+
+  for (const auto &value : robot_node["goal"]) {
+    goal.push_back(value.as<double>());
+  }
+
+  for (const auto &value : robot_node["start"]) {
+    start.push_back(value.as<double>());
+  }
+
+  ob::State *_allocated_state = _allocAndFillState(si, {0, 0, 0});
+  auto allocated_state = _allocated_state->as<ob::SE2StateSpace::StateType>();
+
+  auto check_fun = [&](const double *x, size_t n) {
+    // ob::SE2StateSpace::StateType state;
+    // ompl::base::ScopedState<ob::SE2StateSpace>  state;
+    allocated_state->setX(x[0]);
+    allocated_state->setY(x[1]);
+    allocated_state->setYaw(x[2]);
+    return stateValidityChecker->isValid(allocated_state);
+  };
+
+  auto sample_fun = [&](double *x, size_t n) {
+    for (size_t i = 0; i < n; i++) {
+      std::uniform_real_distribution<double> uniform(lb[i], ub[i]);
+      x[i] = uniform(re);
+    };
+  };
+
+  // TODO: make sure that in KINK I have enough
+  generate_batch(sample_fun, check_fun, num_sample_trials, dim, batch_samples);
+
+  // add the start and the goal to the batch
+  batch_samples.push_back(start);
+  batch_samples.push_back(goal);
+
+  // print batch
+
+  {
+    std::ofstream file_out("batch_out.txt");
+    for (auto &x : batch_samples) {
+      for (auto &xi : x) {
+        file_out << xi << " ";
+      }
+      file_out << std::endl;
+    }
+  }
 
   if (new_heu == 1 || new_heu == 2) {
-    std::vector<double> lb(dim);
-    std::vector<double> ub(dim);
-
-    std::default_random_engine re;
-
-    for (size_t i = 0; i < 2; ++i) {
-      lb[i] = env_min[i].as<double>();
-      ub[i] = env_max[i].as<double>();
-    }
-    lb[2] = -M_PI;
-    ub[2] = M_PI;
-
-    std::vector<double> goal;
-    std::vector<double> start;
-
-    for (const auto &value : robot_node["goal"]) {
-      goal.push_back(value.as<double>());
-    }
-
-    for (const auto &value : robot_node["start"]) {
-      start.push_back(value.as<double>());
-    }
-
-
-    ob::State *_allocated_state = _allocAndFillState(si, {0, 0, 0});
-    auto allocated_state = _allocated_state->as<ob::SE2StateSpace::StateType>();
-
-    auto check_fun = [&](const double *x, size_t n) {
-      // ob::SE2StateSpace::StateType state;
-      // ompl::base::ScopedState<ob::SE2StateSpace>  state;
-      allocated_state->setX(x[0]);
-      allocated_state->setY(x[1]);
-      allocated_state->setYaw(x[2]);
-      return stateValidityChecker->isValid(allocated_state);
-    };
-
-    auto sample_fun = [&](double *x, size_t n) {
-      for (size_t i = 0; i < n; i++) {
-        std::uniform_real_distribution<double> uniform(lb[i], ub[i]);
-        x[i] = uniform(re);
-      };
-    };
-
-    size_t num_sample_trials = 3000;
-    // TODO: make sure that in KINK I have enough
-    generate_batch(sample_fun, check_fun, num_sample_trials, dim,
-                   batch_samples);
-
-    // add the start and the goal to the batch
-    batch_samples.push_back(start);
-    batch_samples.push_back(goal);
 
     if (new_heu == 1) {
       auto fun_dist_sq = [](const double *x, const double *y, size_t n) {
@@ -1410,33 +1455,32 @@ int main(int argc, char *argv[]) {
     write_heuristic_map(heuristic_map);
   }
 
-  ompl::NearestNeighbors<AStarNode *> * T_landmarks;
+  ompl::NearestNeighbors<AStarNode *> *T_landmarks;
   T_landmarks = new ompl::NearestNeighborsGNATNoThreadSafety<AStarNode *>();
 
   T_landmarks->setDistanceFunction([&](const AStarNode *a, const AStarNode *b) {
     return si->distance(a->state, b->state);
   });
 
+  std::vector<AStarNode> landmarks(batch_samples.size());
   std::vector<AStarNode *> ptrs;
+
   for (size_t i = 0; i < batch_samples.size(); i++) {
     // TODO: is this memory leak?, stop bad code
-    AStarNode *ptr = new AStarNode;
+    auto ptr = &landmarks.at(i);
     ptr->state = _allocAndFillState(si, batch_samples[i]);
     ptrs.push_back(ptr);
   }
 
+  double BIG_NUM = 1e8;
+
+  for (auto &p : ptrs) {
+    p->gScore = BIG_NUM;
+    p->hScore = BIG_NUM;
+    p->fScore = BIG_NUM;
+  }
+
   T_landmarks->add(ptrs);
-
-  auto tic = std::chrono::high_resolution_clock::now();
-  index.buildIndex();
-  auto tac = std::chrono::high_resolution_clock::now();
-  std::cout << "build index for heuristic " << std::chrono::duration<double, std::milli>(tac - tic).count() 
-    << std::endl;
-
-  int num_nn_search = 0;
-
-
-
 
   ompl::NearestNeighbors<HeuNode *> *T_heu;
   if (si->getStateSpace()->isMetricSpace()) {
@@ -1457,12 +1501,22 @@ int main(int argc, char *argv[]) {
     T_heu->add(ptr);
   }
 
-  auto start_node = new AStarNode();
-  start_node->state = startState;
+  auto start_node = ptrs.at(ptrs.size() - 2); // Please write nicer code.
   start_node->gScore = 0;
 
   if (new_heu == 0) {
-    start_node->fScore = epsilon * heuristic(robot, startState, goalState);
+    // std::cout << "state" << std::endl;
+    // printState(std::cout, si, start_node->state);
+    // printState(std::cout, si, goalState);
+    // printState(std::cout, si, startState);
+    // std::cout << std::endl;
+    // double d = heuristic(robot, startState, goalState);
+    // std::cout << "heu:" << d << std::endl;
+    // double d2 = heuristic(robot, start_node->state, goalState);
+    // std::cout << "heu:" << d2 << std::endl;
+    // std::cout << "time " <<
+    double d = time_fun_si(si, startState, goalState);
+    start_node->fScore = epsilon * d;
     start_node->hScore = start_node->fScore;
   } else if (new_heu == 1 || new_heu == 2) {
     start_node->fScore =
@@ -1473,7 +1527,8 @@ int main(int argc, char *argv[]) {
               << std::endl;
   }
 
-  std::cout << "start_node heuristic " << start_node->fScore << std::endl;
+  std::cout << "start_node heuristic " << start_node->gScore << " "
+            << start_node->fScore << std::endl;
   start_node->came_from = nullptr;
   start_node->used_offset = fcl::Vector3f(0, 0, 0);
   start_node->used_motion = -1;
@@ -1482,19 +1537,23 @@ int main(int argc, char *argv[]) {
   start_node->handle = handle;
   start_node->is_in_open = true;
 
+  // throw -1;
   // create a list of nodes that I check and introduce in tree -- debugging
-  std::vector<std::vector<double>> _states_debug;
-  {
-    std::vector<double> _state;
-    si->getStateSpace()->copyToReals(_state, start_node->state);
-    _states_debug.push_back(_state);
 
-    auto out = timed_fun([&] {
-      T_n->add(start_node);
-      return 0;
-    });
-    time_nearestNode += out.second;
-    time_nearestNode_add += out.second;
+  std::vector<std::vector<double>> _states_debug;
+  if (!use_landmarks) {
+    {
+      std::vector<double> _state;
+      si->getStateSpace()->copyToReals(_state, start_node->state);
+      _states_debug.push_back(_state);
+
+      auto out = timed_fun([&] {
+        T_n->add(start_node);
+        return 0;
+      });
+      time_nearestNode += out.second;
+      time_nearestNode_add += out.second;
+    }
   }
 
   Motion fakeMotion;
@@ -1541,13 +1600,95 @@ int main(int argc, char *argv[]) {
 
   static_cast<ompl::NearestNeighborsGNATNoThreadSafety<AStarNode *> *>(T_n)
       ->rebuildSize_ = 1e8;
-  int counter_nn = 0 ;
 
-  while (!open.empty()) {
+  if (use_landmarks)
+    T_n = T_landmarks;
+
+  int counter_nn = 0;
+
+  AStarNode *solution = nullptr;
+
+  bool check_bounds_motion = false;
+  double vmax = 0;
+  double wmax = 0;
+
+  for (auto &motion : motions) {
+    for (size_t k = 0; k < motion.actions.size(); ++k) {
+      const auto &action = motion.actions[k];
+      const size_t dim = si->getControlSpace()->getDimension();
+      for (size_t d = 0; d < dim; ++d) {
+        double v = std::fabs(
+            *si->getControlSpace()->getValueAddressAtIndex(action, 0));
+        double w = std::fabs(
+            *si->getControlSpace()->getValueAddressAtIndex(action, 1));
+        if (v > vmax) {
+          vmax = v;
+        }
+        if (w > wmax) {
+          wmax = w;
+        }
+      }
+    }
+  }
+  std::cout << "v max: " << vmax << " w max: " << wmax << std::endl;
+
+  // check the average min distance in the landmarks
+  //
+  //
+  //
+
+  T_n = T_landmarks;
+
+  double total_d = 0;
+  int counter = 0;
+  double average_min_d = 0;
+  bool check_average_min_d = true;
+  if (check_average_min_d) {
+    for (auto &p : ptrs) {
+      std::vector<AStarNode *> neighbors;
+      T_n->nearestK(p, 2, neighbors);
+      if (neighbors.front() != p) {
+        ERROR_WITH_INFO("why?");
+      }
+      total_d += si->distance(neighbors.at(1)->state, p->state);
+      counter++;
+    }
+    average_min_d = total_d / counter;
+    std::cout << "average min distance " << average_min_d << std::endl;
+  }
+
+  // why is the cost not admissible?
+  //
+
+  while (!open.empty() && expands < max_expands) {
+
+    // std::
+
+    bool print_queue = false;
+    if (print_queue) {
+      std::cout << "QUEUE " << std::endl;
+
+      for (auto &o : open) {
+        std::cout << " *** " << std::endl;
+        std::cout << o->fScore << std::endl;
+        std::cout << o->gScore << std::endl;
+        std::cout << o->hScore << std::endl;
+        printState(std::cout, si, o->state);
+        std::cout << "\n*** " << std::endl;
+      }
+    }
+
     AStarNode *current = open.top();
+    // std::cout << "current state " ;
+    // printState(std::cout , si , current->state);
+    // std::cout << std::endl;
+
+    std::vector<double> landmark;
+    si->getStateSpace()->copyToReals(landmark, current->state);
+    expanded_landmarks.push_back(landmark);
 
     ++expands;
-    if (expands % 1000 == 0 || expands == 1) {
+    if (expands % 100 == 0 || expands == 1) {
       std::cout << "expanded: " << expands << " open: " << open.size()
                 << " nodes: " << T_n->size() << " f-score " << current->fScore
                 << " h-score " << current->hScore << " g-score "
@@ -1569,156 +1710,26 @@ int main(int argc, char *argv[]) {
       time_nearestNode_add += out.second;
     }
 
-    if (new_heu == 0)
-      assert(current->fScore >= last_f_score);
+    if (new_heu == 0) {
+
+      if (current->fScore < last_f_score) {
+
+        std::cout << "current";
+        si->printState(current->state);
+        std::cout << current->fScore << " " << last_f_score << std::endl;
+        std::cout << "expand " << expands
+                  << " WARNING, assert(current->fScore >= last_f_score) "
+                  << std::endl;
+      }
+    }
     last_f_score = current->fScore;
     // std::cout << "current";
     // si->printState(current->state);
-    if (si->distance(current->state, goalState) <= delta_factor_goal * delta) {
-
-      double extra_time = time_fun_si(si, current->state, goalState);
-      std::cout << "extra time " << extra_time << std::endl;
-
+    // if (si->distance(current->state, goalState) <= delta_factor_goal * delta) {
+    if (si->distance(current->state, goalState) <= 0.001 ) {
+      solution = current;
       std::cout << "SOLUTION FOUND!!!! cost: " << current->gScore << std::endl;
-      std::cout << "SOLUTION FOUND!!!! with cost-to-goal: "
-                << current->gScore + extra_time << std::endl;
-      auto tac = std::chrono::high_resolution_clock::now();
-      total_time = std::chrono::duration<double, std::milli>(tac - tic).count();
-
-      std::vector<const AStarNode *> result;
-
-      const AStarNode *n = current;
-      while (n != nullptr) {
-        result.push_back(n);
-        // std::cout << n->used_motion << std::endl;
-        // si->printState(n->state);
-        n = n->came_from;
-      }
-      std::reverse(result.begin(), result.end());
-
-      std::cout << "result size " << result.size() << std::endl;
-      std::ofstream out_states("state_out.txt");
-      print_matrix(out_states, _states_debug);
-
-      std::cout << "writing output to " << outputFile << std::endl;
-      std::ofstream out(outputFile);
-      out << "delta: " << delta << std::endl;
-      out << "epsilon: " << epsilon << std::endl;
-      out << "cost: " << current->gScore << std::endl;
-      out << "time: " << total_time << std::endl;
-      out << "time_collisions: " << time_collisions << std::endl;
-      out << "time_prepare: " << prepare_time << std::endl;
-      out << "time_nearestMotion: " << time_nearestMotion << std::endl;
-      out << "time_nearestNode: " << time_nearestNode << std::endl;
-      out << "num nn: " << counter_nn << std::endl;
-      out << "time_nearestNode_add: " << time_nearestNode_add << std::endl;
-      out << "time_nearestNode_search: " << time_nearestNode_search
-          << std::endl;
-      out << "expands: " << expands << std::endl;
-      out << "result:" << std::endl;
-      out << "  - states:" << std::endl;
-      double total_time = 0;
-
-      si->copyState(tmpStateq, startState);
-
-      double time_jumps = 0;
-
-      for (size_t i = 0; i < result.size() - 1; ++i) {
-        // Compute intermediate states
-        const auto node_state = result[i]->state;
-        const fcl::Vector3f current_pos =
-            robot->getTransform(node_state).translation();
-        const auto &motion = motions.at(result[i + 1]->used_motion);
-        out << "      # ";
-        printState(out, si, node_state);
-        out << std::endl;
-        out << "      # motion " << motion.idx << " with cost " << motion.cost
-            << std::endl;
-        // skip last state each
-
-        for (size_t k = 0; k < motion.states.size(); ++k) {
-          const auto state = motion.states[k];
-          si->copyState(tmpState, state);
-          const fcl::Vector3f relative_pos =
-              robot->getTransform(state).translation();
-          robot->setPosition(tmpState, current_pos +
-                                           result[i + 1]->used_offset +
-                                           relative_pos);
-
-          if (k < motion.states.size() - 1) {
-            if (k == 0) {
-              out << "      # jump from ";
-              printState(out, si, tmpStateq);
-              out << " to ";
-              printState(out, si, tmpState);
-              out << " delta " << si->distance(tmpStateq, tmpState);
-              double min_time = time_fun_si(si, tmpStateq, tmpState);
-              time_jumps += min_time;
-              out << " min time " << min_time;
-              out << std::endl;
-            }
-
-            out << "      - ";
-
-          } else {
-            out << "      # ";
-            si->copyState(tmpStateq, tmpState);
-          }
-          printState(out, si, tmpState);
-          out << std::endl;
-        }
-        out << std::endl;
-      }
-      out << "      - ";
-
-      std::cout << " time jumps " << time_jumps << std::endl;
-
-      std::cout << "time jumps + extra_time " << time_jumps + extra_time
-                << std::endl;
-
-      // printing the last state
-      printState(out, si, result.back()->state);
-      out << std::endl;
-      out << "    actions:" << std::endl;
-
-      int action_counter = 0;
-      for (size_t i = 0; i < result.size() - 1; ++i) {
-        const auto &motion = motions[result[i + 1]->used_motion];
-        out << "      # motion " << motion.idx << " with cost " << motion.cost
-            << std::endl;
-        for (size_t k = 0; k < motion.actions.size(); ++k) {
-          const auto &action = motion.actions[k];
-          out << "      - ";
-          action_counter += 1;
-          printAction(out, si, action);
-          out << std::endl;
-        }
-        out << std::endl;
-      }
-      std::cout << "action counter " << action_counter << std::endl;
-      // statistics for the motions used
-      std::map<size_t, size_t> motionsCount; // motionId -> usage count
-      for (size_t i = 0; i < result.size() - 1; ++i) {
-        auto motionId = result[i + 1]->used_motion;
-        auto iter = motionsCount.find(motionId);
-        if (iter == motionsCount.end()) {
-          motionsCount[motionId] = 1;
-        } else {
-          iter->second += 1;
-        }
-      }
-      out << "    motion_stats:" << std::endl;
-      for (const auto &kv : motionsCount) {
-        out << "      " << motions[kv.first].idx << ": " << kv.second
-            << std::endl;
-      }
-
-      // statistics on where the motion splits are
-      out << "    splits:" << std::endl;
-      for (size_t i = 0; i < result.size() - 1; ++i) {
-        const auto &motion = motions.at(result[i + 1]->used_motion);
-        out << "      - " << motion.states.size() - 1 << std::endl;
-      }
+      break;
 
       // {
       //   T_n->list(neighbors_n);
@@ -1746,9 +1757,6 @@ int main(int argc, char *argv[]) {
       //     }
       //   }
       // }
-
-      return 0;
-      break;
     }
 
     current->is_in_open = false;
@@ -1771,7 +1779,6 @@ int main(int argc, char *argv[]) {
     // std::shuffle(std::begin(neighbors_m), std::end(neighbors_m), rng);
 
     // std::cout << "found " << neighbors_m.size() << " motions" << std::endl;
-    // Loop over all potential applicable motions
     for (const Motion *motion : neighbors_m) {
       if (motion->disabled) {
         continue;
@@ -1829,23 +1836,30 @@ int main(int argc, char *argv[]) {
       const auto offset = current_pos + computed_offset;
       const auto relative_pos = robot->getTransform(tmpState).translation();
       robot->setPosition(tmpState, offset + relative_pos);
+
+      if (!si->satisfiesBounds(tmpState)) {
+        // std::cout << "skip invalid state" << std::endl;
+        // si->printState(tmpState);
+        continue;
+      }
+
       // compute estimated fscore
 
       // compute the delta.
       si->copyState(tmpState2, motion->states.front());
       robot->setPosition(tmpState2, current_pos);
-      double delta_ = si->distance(tmpState2, current->state);
+      // double delta_ = si->distance(tmpState2, current->state);
       // std::cout << "delta is " << delta_ << std::endl;
-      double max_ang_vel = .5;
-      double extra_time = delta_ / max_ang_vel;
-      tentative_gScore += add_cost_delta * extra_time;
-
+      // double max_ang_vel = .5;
+      // double extra_time = delta_ / max_ang_vel;
+      tentative_gScore +=
+          cost_delta_factor * time_fun_si(si, tmpState2, current->state);
       float tentative_hScore;
       if (new_heu == 2 || new_heu == 1)
         tentative_hScore =
             epsilon * heuristicCollisionsTree(T_heu, tmpState, si);
       else
-        tentative_hScore = epsilon * heuristic(robot, tmpState, goalState);
+        tentative_hScore = epsilon * time_fun_si(si, tmpState, goalState);
 
       float tentative_fScore = tentative_gScore + tentative_hScore;
 
@@ -1857,11 +1871,6 @@ int main(int argc, char *argv[]) {
         continue;
       }
       // skip motions that are invalid
-      if (!si->satisfiesBounds(tmpState)) {
-        // std::cout << "skip invalid state" << std::endl;
-        // si->printState(tmpState);
-        continue;
-      }
 
       // Compute intermediate states and check their validity
 
@@ -1885,7 +1894,6 @@ int main(int argc, char *argv[]) {
         }
       }
 #else
-
       bool motionValid;
       {
         auto out = timed_fun([&] {
@@ -1942,6 +1950,23 @@ int main(int argc, char *argv[]) {
       si->getStateSpace()->copyToReals(_state, query_n->state);
       _states_debug.push_back(_state);
 
+      // save the motion
+      {
+        std::vector<std::vector<double>> motion_v;
+
+        for (size_t k = 0; k < motion->states.size(); ++k) {
+          const auto state = motion->states[k];
+          si->copyState(tmpState, state);
+          const fcl::Vector3f relative_pos =
+              robot->getTransform(state).translation();
+          robot->setPosition(tmpState, current_pos + relative_pos);
+          std::vector<double> x;
+          si->getStateSpace()->copyToReals(x, tmpState);
+          motion_v.push_back(x);
+        }
+        expansions.push_back(motion_v);
+      }
+
       {
         auto out = timed_fun([&] {
           T_n->nearestR(query_n, radius, neighbors_n);
@@ -1951,6 +1976,12 @@ int main(int argc, char *argv[]) {
         time_nearestNode += out.second;
         time_nearestNode_search += out.second;
       }
+
+      // TODO: lets check N intermediate points 
+      //
+      //
+      //
+      //
 
       // auto nearest = T_n->nearest(query_n);
       // float nearest_distance = si->distance(nearest->state, tmpState);
@@ -1962,7 +1993,7 @@ int main(int argc, char *argv[]) {
 
       // std::cout << neighbors_n.size() << std::endl;
 
-      if (neighbors_n.size() == 0)
+      if (neighbors_n.size() == 0 && !use_landmarks)
       // if (nearest_distance > radius)
       {
         // new state -> add it to open and T_n
@@ -1995,24 +2026,37 @@ int main(int argc, char *argv[]) {
         // T_n->nearestR(query_n, radius, neighbors_n);
         // check if we have a better path now
         for (AStarNode *entry : neighbors_n) {
+
+          std::vector<double> landmark_;
+          si->getStateSpace()->copyToReals(landmark_, entry->state);
+          found_nn.push_back(landmark_);
+
           // AStarNode* entry = nearest;
           assert(si->distance(entry->state, tmpState) <= delta);
-          double time_to_reach = time_fun_si(si, entry->state, tmpState);
+          double extra_time_to_reach =
+              cost_delta_factor * time_fun_si(si, entry->state, tmpState);
           // std::cout  << "time to reach " << time_to_reach << std::endl;
-          double tentative_gScore_ = tentative_gScore + time_to_reach;
-          float delta_score = entry->gScore - (tentative_gScore_);
+          double tentative_gScore_ = tentative_gScore + extra_time_to_reach;
+          float delta_score = entry->gScore - tentative_gScore_;
 
           if (delta_score > 0) {
             entry->gScore = tentative_gScore_;
-            entry->fScore -= delta_score;
-            entry->hScore = tentative_gScore_;
+            // entry->fScore = tentative_fScore;
+            float hScore;
+            if (new_heu == 2 || new_heu == 1)
+              hScore = epsilon * heuristicCollisionsTree(T_heu, tmpState, si);
+            else
+              hScore = epsilon * time_fun_si(si, entry->state, goalState);
+            entry->hScore = hScore;
+            // NODE: h should be constant, once computed for the first time.
+            entry->fScore = entry->gScore + entry->hScore;
             assert(entry->fScore >= 0);
             entry->came_from = current;
             entry->used_motion = motion->idx;
             entry->used_offset = computed_offset;
             if (entry->is_in_open) {
-              open.increase(entry->handle);
               // std::cout << "improve score " << entry->fScore << std::endl;
+              open.increase(entry->handle);
             } else {
               // TODO: is this correct?
               auto handle = open.push(entry);
@@ -2026,109 +2070,204 @@ int main(int argc, char *argv[]) {
   }
   // clock end
   tac = std::chrono::high_resolution_clock::now();
+  std::cout << "search has ended " << std::endl;
+  std::cout << "STATUS: " << !(!solution) << std::endl;
   total_time = std::chrono::duration<double, std::milli>(tac - tic).count();
 
-  query_n->state = goalState;
-  const auto nearest = T_n->nearest(query_n);
-
-  if (nearest->gScore == 0) {
-    std::cout << "No solution found (not even approxmite)" << std::endl;
-    return 1;
-  }
-
-  float nearest_distance = si->distance(nearest->state, goalState);
-  std::cout << "Nearest to goal: " << nearest_distance << " (delta: " << delta
-            << ")" << std::endl;
-
-  std::cout << "Using approximate solution cost: " << nearest->gScore
-            << std::endl;
-
-  std::vector<const AStarNode *> result;
-
-  const AStarNode *n = nearest;
-  while (n != nullptr) {
-    result.push_back(n);
-    // std::cout << n->used_motion << std::endl;
-    // si->printState(n->state);
-    n = n->came_from;
-  }
-  std::reverse(result.begin(), result.end());
-
-  // TODO: We are copying the write output twice. Fix
   std::cout << "writing output to " << outputFile << std::endl;
   std::ofstream out(outputFile);
   out << "delta: " << delta << std::endl;
   out << "epsilon: " << epsilon << std::endl;
-  out << "cost: " << nearest->gScore << std::endl;
   out << "time: " << total_time << std::endl;
   out << "time_collisions: " << time_collisions << std::endl;
+  out << "time_prepare: " << prepare_time << std::endl;
   out << "time_nearestMotion: " << time_nearestMotion << std::endl;
   out << "time_nearestNode: " << time_nearestNode << std::endl;
+  out << "num_nn: " << counter_nn << std::endl;
   out << "time_nearestNode_add: " << time_nearestNode_add << std::endl;
   out << "time_nearestNode_search: " << time_nearestNode_search << std::endl;
+  out << "average_min_d: " << average_min_d << std::endl;
   out << "expands: " << expands << std::endl;
-  out << "result:" << std::endl;
-  out << "  - states:" << std::endl;
-  for (size_t i = 0; i < result.size() - 1; ++i) {
-    // Compute intermediate states
-    const auto node_state = result[i]->state;
-    const fcl::Vector3f current_pos =
-        robot->getTransform(node_state).translation();
-    const auto &motion = motions.at(result[i + 1]->used_motion);
-    out << "      # ";
-    printState(out, si, node_state);
-    out << std::endl;
-    out << "      # motion " << motion.idx << " with cost " << motion.cost
-        << std::endl;
-    // skip last state each
-    for (size_t k = 0; k < motion.states.size(); ++k) {
-      const auto state = motion.states[k];
-      si->copyState(tmpState, state);
-      const fcl::Vector3f relative_pos =
-          robot->getTransform(state).translation();
-      robot->setPosition(tmpState, current_pos + result[i + 1]->used_offset +
-                                       relative_pos);
-
-      if (k < motion.states.size() - 1) {
-        out << "      - ";
-      } else {
-        out << "      # ";
-      }
-      printState(out, si, tmpState);
-      out << std::endl;
-    }
-    out << std::endl;
-  }
-  out << "      - ";
-  printState(out, si, result.back()->state);
+  out << "start: ";
+  printState(out, si, startState);
   out << std::endl;
-  out << "    actions:" << std::endl;
-  for (size_t i = 0; i < result.size() - 1; ++i) {
-    const auto &motion = motions[result[i + 1]->used_motion];
-    out << "      # motion " << motion.idx << " with cost " << motion.cost
-        << std::endl;
-    for (size_t k = 0; k < motion.actions.size(); ++k) {
-      const auto &action = motion.actions[k];
-      out << "      - ";
-      printAction(out, si, action);
-      out << std::endl;
-    }
+  out << "goal: ";
+  printState(out, si, goalState);
+  out << std::endl;
+  out << "solved: " << !(!solution) << std::endl;
+
+  out << "batch:" << std::endl;
+  for (auto &x : batch_samples) {
+    out << "      - ";
+    printState(out, x);
     out << std::endl;
   }
-  // statistics for the motions used
-  std::map<size_t, size_t> motionsCount; // motionId -> usage count
-  for (size_t i = 0; i < result.size() - 1; ++i) {
-    auto motionId = result[i + 1]->used_motion;
-    auto iter = motionsCount.find(motionId);
-    if (iter == motionsCount.end()) {
-      motionsCount[motionId] = 1;
-    } else {
-      iter->second += 1;
+
+  out << "expanded_landmarks:" << std::endl;
+  for (auto &x : expanded_landmarks) {
+    out << "      - ";
+    printState(out, x);
+    out << std::endl;
+  }
+
+  out << "found_nn:" << std::endl;
+  size_t max_nn = 1000;
+  size_t it_nn = 0;
+  for (auto &x : found_nn) {
+    if (it_nn++ > max_nn)
+      break;
+    out << "      - ";
+    printState(out, x);
+    out << std::endl;
+  }
+
+  out << "expansions:" << std::endl;
+  size_t max_expansion = 1000;
+  size_t it_expansion = 0;
+  for (auto &e : expansions) {
+    if (it_expansion++ > max_expansion)
+      break;
+    out << "      - " << std::endl;
+    for (auto &x : e) {
+      out << "        - ";
+      printState(out, x);
+      out << std::endl;
     }
   }
-  out << "    motion_stats:" << std::endl;
-  for (const auto &kv : motionsCount) {
-    out << "      " << motions[kv.first].idx << ": " << kv.second << std::endl;
+
+  if (solution) {
+
+    out << "cost: " << solution->gScore << std::endl;
+    std::cout << "solution found " << std::endl;
+
+    double extra_time_weighted =
+        cost_delta_factor * time_fun_si(si, solution->state, goalState);
+    std::cout << "extra time " << extra_time_weighted << std::endl;
+
+    std::cout << "solution with extra time with cost-to-goal: "
+              << solution->gScore + extra_time_weighted << std::endl;
+
+    std::vector<const AStarNode *> result;
+
+    const AStarNode *n = solution;
+    while (n != nullptr) {
+      result.push_back(n);
+      // std::cout << n->used_motion << std::endl;
+      // si->printState(n->state);
+      n = n->came_from;
+    }
+    std::reverse(result.begin(), result.end());
+
+    std::cout << "result size " << result.size() << std::endl;
+    std::ofstream out_states("state_out.txt");
+    print_matrix(out_states, _states_debug);
+
+    out << "result:" << std::endl;
+    out << "  - states:" << std::endl;
+
+    si->copyState(tmpStateq, startState);
+
+    double time_jumps = 0;
+
+    for (size_t i = 0; i < result.size() - 1; ++i) {
+      // Compute intermediate states
+      const auto node_state = result[i]->state;
+      const fcl::Vector3f current_pos =
+          robot->getTransform(node_state).translation();
+      const auto &motion = motions.at(result[i + 1]->used_motion);
+      out << "      # ";
+      printState(out, si, node_state);
+      out << std::endl;
+      out << "      # motion " << motion.idx << " with cost " << motion.cost
+          << std::endl;
+      // skip last state each
+
+      for (size_t k = 0; k < motion.states.size(); ++k) {
+        const auto state = motion.states[k];
+        si->copyState(tmpState, state);
+        const fcl::Vector3f relative_pos =
+            robot->getTransform(state).translation();
+        robot->setPosition(tmpState, current_pos + result[i + 1]->used_offset +
+                                         relative_pos);
+
+        if (k < motion.states.size() - 1) {
+          if (k == 0) {
+            out << "      # jump from ";
+            printState(out, si, tmpStateq);
+            out << " to ";
+            printState(out, si, tmpState);
+            out << " delta " << si->distance(tmpStateq, tmpState);
+            double min_time = time_fun_si(si, tmpStateq, tmpState);
+            time_jumps += min_time;
+            out << " min time " << min_time;
+            out << std::endl;
+          }
+
+          out << "      - ";
+
+        } else {
+          out << "      # ";
+          si->copyState(tmpStateq, tmpState);
+        }
+        printState(out, si, tmpState);
+        out << std::endl;
+      }
+      out << std::endl;
+    }
+    out << "      - ";
+
+    std::cout << " time jumps " << time_jumps << std::endl;
+
+    // printing the last state
+    printState(out, si, result.back()->state);
+    out << std::endl;
+    out << "    actions:" << std::endl;
+
+    int action_counter = 0;
+    for (size_t i = 0; i < result.size() - 1; ++i) {
+      const auto &motion = motions[result[i + 1]->used_motion];
+      out << "      # motion " << motion.idx << " with cost " << motion.cost
+          << std::endl;
+      for (size_t k = 0; k < motion.actions.size(); ++k) {
+        const auto &action = motion.actions[k];
+        out << "      - ";
+        action_counter += 1;
+        printAction(out, si, action);
+        out << std::endl;
+      }
+      out << std::endl;
+    }
+    std::cout << "action counter " << action_counter << std::endl;
+    // statistics for the motions used
+    std::map<size_t, size_t> motionsCount; // motionId -> usage count
+    for (size_t i = 0; i < result.size() - 1; ++i) {
+      auto motionId = result[i + 1]->used_motion;
+      auto iter = motionsCount.find(motionId);
+      if (iter == motionsCount.end()) {
+        motionsCount[motionId] = 1;
+      } else {
+        iter->second += 1;
+      }
+    }
+    out << "    motion_stats:" << std::endl;
+    for (const auto &kv : motionsCount) {
+      out << "      " << motions[kv.first].idx << ": " << kv.second
+          << std::endl;
+    }
+
+    // statistics on where the motion splits are
+    out << "    splits:" << std::endl;
+    for (size_t i = 0; i < result.size() - 1; ++i) {
+      const auto &motion = motions.at(result[i + 1]->used_motion);
+      out << "      - " << motion.states.size() - 1 << std::endl;
+    }
+
+    out << "    landmarks:" << std::endl;
+    for (auto &r : result) {
+      out << "      - ";
+      printState(out, si, r->state);
+      out << std::endl;
+    }
   }
 
   return 0;
