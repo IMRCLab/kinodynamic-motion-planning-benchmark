@@ -1,4 +1,4 @@
-
+#include <algorithm>
 #include <cmath>
 #include <fstream>
 #include <iostream>
@@ -24,6 +24,7 @@
 #include "collision_checker.hpp"
 
 using namespace crocoddyl;
+namespace po = boost::program_options;
 
 // Eigen::Vector3d goal(1.9, .3, 0);
 static double collision_weight = 100.;
@@ -54,6 +55,69 @@ static double collision_weight = 100.;
     throw std::runtime_error(msg);                                             \
   }
 
+inline void PrintVariableMap(const boost::program_options::variables_map &vm,
+                             std::ostream &out) {
+  for (po::variables_map::const_iterator it = vm.cbegin(); it != vm.cend();
+       it++) {
+    out << "> " << it->first;
+    if (((boost::any)it->second.value()).empty()) {
+      out << "(empty)";
+    }
+    if (vm[it->first].defaulted() || it->second.defaulted()) {
+      out << "(default)";
+    }
+    out << "=";
+
+    bool is_char;
+    try {
+      boost::any_cast<const char *>(it->second.value());
+      is_char = true;
+    } catch (const boost::bad_any_cast &) {
+      is_char = false;
+    }
+    bool is_str;
+    try {
+      boost::any_cast<std::string>(it->second.value());
+      is_str = true;
+    } catch (const boost::bad_any_cast &) {
+      is_str = false;
+    }
+
+    auto &type = ((boost::any)it->second.value()).type();
+
+    if (type == typeid(int)) {
+      out << vm[it->first].as<int>() << std::endl;
+    } else if (type == typeid(bool)) {
+      out << vm[it->first].as<bool>() << std::endl;
+    } else if (type == typeid(double)) {
+      out << vm[it->first].as<double>() << std::endl;
+    } else if (is_char) {
+      out << vm[it->first].as<const char *>() << std::endl;
+    } else if (is_str) {
+      std::string temp = vm[it->first].as<std::string>();
+      if (temp.size()) {
+        out << temp << std::endl;
+      } else {
+        out << "true" << std::endl;
+      }
+    } else { // Assumes that the only remainder is vector<string>
+      try {
+        std::vector<std::string> vect =
+            vm[it->first].as<std::vector<std::string>>();
+        uint i = 0;
+        for (std::vector<std::string>::iterator oit = vect.begin();
+             oit != vect.end(); oit++, ++i) {
+          out << "\r> " << it->first << "[" << i << "]=" << (*oit) << std::endl;
+        }
+      } catch (const boost::bad_any_cast &) {
+        out << "UnknownType(" << ((boost::any)it->second.value()).type().name()
+            << ")" << std::endl;
+        assert(false);
+      }
+    }
+  }
+};
+
 template <class T> using ptr = boost::shared_ptr<T>;
 
 template <typename T, typename... Args> auto mk(Args &&...args) {
@@ -62,41 +126,67 @@ template <typename T, typename... Args> auto mk(Args &&...args) {
 
 void linearInterpolation(const Eigen::VectorXd &times,
                          const std::vector<Eigen::VectorXd> &x, double t_query,
-                         Eigen::Ref<Eigen::VectorXd> out) {
+                         Eigen::Ref<Eigen::VectorXd> out,
+                         Eigen::Ref<Eigen::VectorXd> Jx) {
 
   double num_tolerance = 1e-8;
   CHECK_GEQ(t_query + num_tolerance, times.head(1)(0), AT);
-  CHECK_SEQ(t_query, times.tail(1)(0) + num_tolerance, AT);
 
-  if (std::fabs(t_query - times.tail(1)(0)) < num_tolerance) {
-    out = x.at(x.size() - 1);
-    return;
-  }
-
-  if (std::fabs(t_query - times.head(1)(0)) < num_tolerance) {
-    out = x.at(0);
-    return;
+  if (t_query < times(0)) {
+    std::cout << "WARNING EXTRAPOLATION" << AT << std::endl;
+    // TODO: add extrapolation with the other side.
+    throw -1;
   }
 
   size_t index = 0;
 
-  for (size_t i = 0; i < times.size(); i++) {
-    if (t_query < times(i)) {
-      index = i;
-      break;
+  // CHECK_SEQ(t_query, times.tail(1)(0) + num_tolerance, AT);
+  if (t_query >= times(times.size() - 1)) {
+    std::cout << "WARNING: " << AT << std::endl;
+    std::cout << "EXTRAPOLATION:" << t_query << " " << times(times.size() - 1)
+              << t_query - times(times.size() - 1) << std::endl;
+    index = times.size() - 1;
+
+  } else {
+
+    auto it = std::lower_bound(
+        times.data(), times.data() + times.size(), t_query,
+        [](const auto &it, const auto &value) { return it <= value; });
+
+    index = std::distance(times.data(), it);
+
+    const bool debug_bs = false;
+    if (debug_bs) {
+      size_t index2 = 0;
+      for (size_t i = 0; i < times.size(); i++) {
+        if (t_query < times(i)) {
+          index2 = i;
+          break;
+        }
+      }
+      CHECK_EQ(index, index2, AT);
     }
   }
+
+  // std::cout << "index is " << index << std::endl;
+  // std::cout << "size " << times.size() << std::endl;
 
   double factor =
       (t_query - times(index - 1)) / (times(index) - times(index - 1));
 
   out = x.at(index - 1) + factor * (x.at(index) - x.at(index - 1));
+  Jx = (x.at(index) - x.at(index - 1)) / (times(index) - times(index - 1));
 }
 
 struct Interpolator {
 
   Eigen::VectorXd times;
   std::vector<Eigen::VectorXd> x;
+
+  // TODO
+  Eigen::VectorXd last_query;
+  Eigen::VectorXd last_f;
+  Eigen::MatrixXd last_J;
 
   Interpolator(const Eigen::VectorXd &times,
                const std::vector<Eigen::VectorXd> &x)
@@ -105,8 +195,9 @@ struct Interpolator {
     CHECK_EQ(times.size(), x.size(), AT);
   }
 
-  void interpolate(double t_query, Eigen::Ref<Eigen::VectorXd> out) {
-    linearInterpolation(times, x, t_query, out);
+  void interpolate(double t_query, Eigen::Ref<Eigen::VectorXd> out,
+                   Eigen::Ref<Eigen::VectorXd> J) {
+    linearInterpolation(times, x, t_query, out, J);
   }
 };
 
@@ -198,9 +289,10 @@ struct Dummy_dynamics : Dynamics {
 
 struct Dynamics_countour : Dynamics {
 
-  bool free_time;
   ptr<Dynamics> dyn;
-  Dynamics_countour(ptr<Dynamics> dyn) : dyn(dyn) {
+  bool accumulate = false;
+  Dynamics_countour(ptr<Dynamics> dyn, bool accumulate)
+      : dyn(dyn), accumulate(accumulate) {
     nx = dyn->nx + 1;
     nu = dyn->nu + 1;
   }
@@ -224,7 +316,11 @@ struct Dynamics_countour : Dynamics {
     }
 
     dyn->calc(xnext.head(dyn->nx), x.head(dyn->nx), u.head(dyn->nu));
-    xnext(nx - 1) = u(nu - 1); // linear model
+
+    if (accumulate)
+      xnext(nx - 1) = x(nx - 1) + u(nu - 1); // linear model
+    else
+      xnext(nx - 1) = u(nu - 1); // linear model
   };
 
   virtual void calcDiff(Eigen::Ref<Eigen::MatrixXd> Fx,
@@ -247,7 +343,12 @@ struct Dynamics_countour : Dynamics {
                   Fu.block(0, 0, dyn->nx, dyn->nu), x.head(dyn->nx),
                   u.head(dyn->nu));
 
-    Fu(nx - 1, nu - 1) = 1.0;
+    if (accumulate) {
+      Fx(nx - 1, nx - 1) = 1.0;
+      Fu(nx - 1, nu - 1) = 1.0;
+    } else {
+      Fu(nx - 1, nu - 1) = 1.0;
+    }
   }
 };
 
@@ -474,13 +575,17 @@ struct Cost {
 
 struct Countour_cost : Cost {
 
-  double ref_alpha = 1.;
-  double weight_alpha = 10.;
-  double weight_diff = 200.;
   ptr<Interpolator> path;
+  double ref_alpha = 1.;
+  // double weight_alpha = 10.;
+  // double weight_diff = 200.;
+  double weight_alpha = 1.;
+  double weight_diff = 10.;
+  double weight_virtual_control = 2.;
+  bool use_finite_diff = false;
 
   Countour_cost(size_t nx, size_t nu, ptr<Interpolator> path)
-      : Cost(nx, nu, nx), path(path) {
+      : Cost(nx, nu, nx + 1), path(path) {
     name = "countour";
   }
   virtual void calc(Eigen::Ref<Eigen::VectorXd> r,
@@ -494,12 +599,14 @@ struct Countour_cost : Cost {
 
     // x in contour
     Eigen::VectorXd tmp(nx - 1);
-    path->interpolate(alpha, tmp);
+    Eigen::VectorXd J(nx - 1);
+    path->interpolate(alpha, tmp, J);
 
     r.head(nx - 1) = weight_diff * (tmp - x.head(nx - 1));
     r(nx - 1) = weight_alpha * (alpha - ref_alpha);
+    r(nx) = weight_virtual_control * u(nu - 1);
 
-    std::cout << "calc in contour " << r.transpose() << std::endl;
+    // std::cout << "calc in contour " << r.transpose() << std::endl;
   }
 
   virtual void calc(Eigen::Ref<Eigen::VectorXd> r,
@@ -515,30 +622,54 @@ struct Countour_cost : Cost {
     assert(static_cast<std::size_t>(x.size()) == nx);
 
     // lets use finite diff
+    if (use_finite_diff) {
+      Eigen::VectorXd r_ref(nr);
+      calc(r_ref, x, u);
 
-    Eigen::VectorXd r_ref(nr);
-    Ju.setZero();
-    calc(r_ref, x, u);
+      Ju.setZero();
 
-    Jx.setZero();
-    double eps = 1e-5;
-    for (size_t i = 0; i < nx; i++) {
-      Eigen::MatrixXd xe;
-      xe = x;
-      xe(i) += eps;
-      Eigen::VectorXd r_e(nr);
-      r_e.setZero();
-      calc(r_e, xe, u);
-      auto df = (r_e - r_ref) / eps;
-      Jx.col(i) = df;
+      double eps = 1e-5;
+      for (size_t i = 0; i < nu; i++) {
+        Eigen::MatrixXd ue;
+        ue = u;
+        ue(i) += eps;
+        Eigen::VectorXd r_e(nr);
+        r_e.setZero();
+        calc(r_e, x, ue);
+        auto df = (r_e - r_ref) / eps;
+        Ju.col(i) = df;
+      }
+
+      Jx.setZero();
+      for (size_t i = 0; i < nx; i++) {
+        Eigen::MatrixXd xe;
+        xe = x;
+        xe(i) += eps;
+        Eigen::VectorXd r_e(nr);
+        r_e.setZero();
+        calc(r_e, xe, u);
+        auto df = (r_e - r_ref) / eps;
+        Jx.col(i) = df;
+      }
+    }
+
+    else {
+      Eigen::VectorXd tmp(nx - 1);
+      Eigen::VectorXd J(nx - 1);
+      path->interpolate(x(nx - 1), tmp, J);
+      Jx.block(0, 0, nx - 1, nx - 1).diagonal() =
+          -weight_diff * Eigen::VectorXd::Ones(nx - 1);
+      Jx.block(0, nx - 1, nx - 1, 1) = weight_diff * J;
+      Jx(nx - 1, nx - 1) = weight_alpha;
+      Ju(nx, nu - 1) = weight_virtual_control;
     }
   };
 
   virtual void calcDiff(Eigen::Ref<Eigen::MatrixXd> Jx,
                         const Eigen::Ref<const Eigen::VectorXd> &x) {
 
-    auto Ju = Eigen::MatrixXd(1, 1);
-    auto u = Eigen::VectorXd(1);
+    auto Ju = Eigen::MatrixXd(nr, nu);
+    auto u = Eigen::VectorXd(nu);
     calcDiff(Jx, Ju, x, u);
   }
 };
@@ -1452,6 +1583,33 @@ struct Opts {
   ptr<Interpolator> interpolator = nullptr;
   double ref_alpha = 1.;
   double max_alpha = 100;
+  double cost_alpha_multi = 1.;
+  bool only_contour_last = true;
+  // Eigen::VectorXd u_lb;
+  // Eigen::VectorXd u_ub;
+
+  void print(std::ostream &out) {
+    auto pre = "";
+    auto after = ": ";
+    out << pre << "free_time" << after << free_time << std::endl;
+    out << pre << "control_bounds" << after << control_bounds << std::endl;
+    out << pre << "name" << after << name << std::endl;
+    out << pre << "N" << after << N << std::endl;
+    out << pre << "regularize_wrt_init_guess" << after
+        << regularize_wrt_init_guess << std::endl;
+    out << pre << "use_finite_diff" << after << use_finite_diff << std::endl;
+    out << pre << "goal" << after << goal << std::endl;
+    out << pre << "start" << after << start << std::endl;
+    out << pre << "cl" << after << cl << std::endl;
+    // out << pre << "states"<< after << states << std::endl;
+    // out << pre << "actions"<< after << actions << std::endl;
+    out << pre << "countour_control" << after << countour_control << std::endl;
+    out << pre << "ref_alpha" << after << ref_alpha << std::endl;
+    out << pre << "max_alpha" << after << max_alpha << std::endl;
+    out << pre << "cost_alpha_multi" << after << cost_alpha_multi << std::endl;
+    out << pre << "only_contour_last" << after << only_contour_last
+        << std::endl;
+  }
 };
 
 bool check_feas(ptr<Cost> feat_col, const std::vector<Eigen::VectorXd> &xs,
@@ -1497,7 +1655,8 @@ auto generate_problem(const Opts &opts, size_t &nx, size_t &nu) {
     dyn = mk<Dynamics_unicycle>(opts.free_time);
 
     if (opts.countour_control) {
-      dyn = mk<Dynamics_countour>(dyn);
+      dyn = mk<Dynamics_countour>(dyn, !opts.only_contour_last);
+      // dyn = mk<Dynamics_countour>(dyn, false);
     }
 
     nx = dyn->nx;
@@ -1530,22 +1689,43 @@ auto generate_problem(const Opts &opts, size_t &nx, size_t &nu) {
       if (opts.countour_control)
         boost::static_pointer_cast<Col_cost>(cl_feature)->nx_effective = nx - 1;
 
-      ptr<Cost> state_feature = mk<State_cost>(
-          nx, nu, nx, Eigen::Vector3d(1., 1., 1), opts.states.at(t));
-
-      if (opts.regularize_wrt_init_guess)
+      if (opts.regularize_wrt_init_guess) {
+        ptr<Cost> state_feature = mk<State_cost>(
+            nx, nu, nx, Eigen::Vector3d(1., 1., 1), opts.states.at(t));
         feats_run = mk<All_cost>(
             nx, nu, cl_feature->nr + control_feature->nr + state_feature->nr,
             std::vector<ptr<Cost>>{cl_feature, state_feature, control_feature});
+      }
 
-      else {
-        feats_run =
-            mk<All_cost>(nx, nu, cl_feature->nr + control_feature->nr,
-                         std::vector<ptr<Cost>>{cl_feature, control_feature});
+      else if (opts.countour_control) {
+        if (opts.only_contour_last) {
+          feats_run =
+              mk<All_cost>(nx, nu, cl_feature->nr + control_feature->nr,
+                           std::vector<ptr<Cost>>{cl_feature, control_feature});
+        }
+
+        else {
+          std::cout << "adding countour to all " << std::endl;
+          ptr<Countour_cost> countour =
+              mk<Countour_cost>(nx, nu, opts.interpolator);
+
+          countour->ref_alpha = opts.ref_alpha;
+          countour->weight_alpha *= opts.cost_alpha_multi;
+
+          feats_run = mk<All_cost>(
+              nx, nu, cl_feature->nr + control_feature->nr + countour->nr,
+              std::vector<ptr<Cost>>{cl_feature, control_feature, countour});
+        }
         // std::cout << "WARNING "
         //           << "i have erased the collisions for now" << std::endl;
         // mk<All_cost>(nx, nu, control_feature->nr,
         //              std::vector<ptr<Cost>>{control_feature});
+      }
+
+      else {
+        feats_run =
+            mk<All_cost>(nx, nu, control_feature->nr + cl_feature->nr,
+                         std::vector<ptr<Cost>>{cl_feature, control_feature});
       }
 
       auto am_run = to_am_base(mk<ActionModelQ>(dyn, feats_run));
@@ -1574,6 +1754,7 @@ auto generate_problem(const Opts &opts, size_t &nx, size_t &nu) {
       ptr<Countour_cost> countour =
           mk<Countour_cost>(nx, nu, opts.interpolator);
       countour->ref_alpha = opts.ref_alpha;
+      countour->weight_alpha *= opts.cost_alpha_multi;
 
       feats_terminal =
           mk<All_cost>(nx, nu, countour->nr, std::vector<ptr<Cost>>{countour});
@@ -1631,6 +1812,7 @@ auto generate_problem(const Opts &opts, size_t &nx, size_t &nu) {
 
   if (opts.use_finite_diff) {
 
+    throw -1;
     am_run = mk<crocoddyl::ActionModelNumDiff>(am_run, true);
     boost::static_pointer_cast<crocoddyl::ActionModelNumDiff>(am_run)
         ->set_disturbance(1e-4);
@@ -1667,8 +1849,9 @@ enum class SOLVER {
   traj_opt_smooth_then_free_time = 2,
   mpc = 3,
   mpcc = 4,
-  traj_opt_mpcc = 5,
-  none = 6,
+  mpcc2 = 5,
+  traj_opt_mpcc = 6,
+  none = 7,
 };
 
 const char *SOLVER_txt[] = {"traj_opt",
@@ -1676,6 +1859,7 @@ const char *SOLVER_txt[] = {"traj_opt",
                             "traj_opt_smooth_then_free_time",
                             "mpc",
                             "mpcc",
+                            "mpcc2",
                             "traj_opt_mpcc",
                             "none"};
 
@@ -1725,10 +1909,11 @@ int quim_test(int argc, char *argv[]) {
   bool check_time = false;
   int solver_int = 0;
   bool control_bounds;
-
-  namespace po = boost::program_options;
+  int num_steps_to_optimize = 20;
+  int num_steps_to_move = 10;
 
   po::options_description desc("Allowed options");
+
   std::string env_file;
   std::string init_guess;
   std::string out;
@@ -1740,11 +1925,13 @@ int quim_test(int argc, char *argv[]) {
       "out", po::value<std::string>(&out)->required())(
       "free_time", po::value<bool>(&free_time)->default_value(false))(
       "control_bounds", po::value<bool>(&control_bounds)->default_value(true))(
-      "solver", po::value<int>(&solver_int)->default_value(0))
-
-      ("new_format", po::value<bool>(&new_format)->default_value(false))(
-          "reg",
-          po::value<bool>(&regularize_wrt_init_guess)->default_value(false));
+      "max_iter", po::value<int>(&max_iter)->default_value(50))(
+      "step_opt", po::value<int>(&num_steps_to_optimize)->default_value(20))(
+      "step_move", po::value<int>(&num_steps_to_move)->default_value(10))(
+      "solver", po::value<int>(&solver_int)->default_value(0))(
+      "new_format", po::value<bool>(&new_format)->default_value(false))(
+      "use_warmstart", po::value<bool>(&use_warmstart)->default_value(true))(
+      "reg", po::value<bool>(&regularize_wrt_init_guess)->default_value(false));
 
   try {
     po::variables_map vm;
@@ -1755,6 +1942,16 @@ int quim_test(int argc, char *argv[]) {
       std::cout << desc << "\n";
       return 1;
     }
+
+    std::ifstream ifs{"../croco.cfg"};
+    if (ifs)
+      store(parse_config_file(ifs, desc), vm);
+    notify(vm);
+
+    std::cout << "variable map is " << std::endl;
+    // TODO: print also in the result yaml file
+    PrintVariableMap(vm, std::cout);
+
   } catch (po::error &e) {
     std::cerr << e.what() << std::endl << std::endl;
     std::cerr << desc << std::endl;
@@ -1874,13 +2071,14 @@ int quim_test(int argc, char *argv[]) {
 
     for (size_t ti = 0; ti < num_time_steps + 1; ti++) {
       Eigen::VectorXd xout(nx);
+      Eigen::VectorXd Jout(nx);
       std::cout << "ti " << ti << std::endl;
       std::cout << "ts " << ts(ti) << std::endl;
 
       if (ts(ti) > times.tail(1)(0))
         xout = _xs_init.back();
       else
-        linearInterpolation(times, _xs_init, ts(ti), xout);
+        linearInterpolation(times, _xs_init, ts(ti), xout, Jout);
       xs_init_new.push_back(xout);
     }
 
@@ -1889,10 +2087,11 @@ int quim_test(int argc, char *argv[]) {
       std::cout << "ti " << ti << std::endl;
       std::cout << "ts " << ts(ti) << std::endl;
       Eigen::VectorXd uout(nu);
+      Eigen::VectorXd Jout(nu);
       if (ts(ti) > times_u.tail(1)(0))
         uout = _us_init.back();
       else
-        linearInterpolation(times_u, _us_init, ts(ti), uout);
+        linearInterpolation(times_u, _us_init, ts(ti), uout, Jout);
       us_init_new.push_back(uout);
     }
 
@@ -2015,22 +2214,23 @@ int quim_test(int argc, char *argv[]) {
 
   if (solver == SOLVER::mpc || solver == SOLVER::mpcc) {
 
-    int num_steps_to_optimize = 20;
-    int num_steps_to_move = 10;
+    const Eigen::IOFormat fmt(6, Eigen::DontAlignCols, ",", ",", "", "", "[",
+                              "]");
 
     CHECK_GEQ(num_steps_to_optimize, num_steps_to_move, AT);
-
     bool finished = false;
-
-    // add the goal to xs_init;
 
     xs_init.push_back(goal);
     us_init.push_back(Eigen::VectorXd::Zero(2));
     std::vector<Eigen::VectorXd> Xs = xs_init;
     std::vector<Eigen::VectorXd> Us = us_init;
 
+    std::vector<Eigen::VectorXd> xs_opt;
+    std::vector<Eigen::VectorXd> us_opt;
+
+    xs_opt.push_back(start);
+
     N = us_init.size();
-    // std::cout << "N is " << xs_init.size() << std::endl;
 
     CHECK_EQ(Xs.size(), Us.size() + 1, AT);
 
@@ -2038,25 +2238,16 @@ int quim_test(int argc, char *argv[]) {
     std::ofstream debug_file_yaml("debug_file.yaml");
     debug_file_yaml << "N: " << N << std::endl;
     debug_file_yaml << "name: " << name << std::endl;
-    debug_file_yaml << "start: ";
-    debug_file_yaml << " [" << start(0) << ", " << start(1) << ", " << start(2)
-                    << "]" << std::endl;
-    debug_file_yaml << "goal: ";
-    debug_file_yaml << " [" << goal(0) << ", " << goal(1) << ", " << goal(2)
-                    << "]" << std::endl;
+    debug_file_yaml << "start: " << start.format(fmt) << std::endl;
+    debug_file_yaml << "goal: " << goal.format(fmt) << std::endl;
 
     debug_file_yaml << "xs0: " << std::endl;
-    for (auto &x : xs_init) {
-      // results_yaml << "      - " << x.format(fmt) << std::endl;
-      debug_file_yaml << "  - [" << x(0) << "," << x(1) << "," << x(2) << "]"
-                      << std::endl;
-    }
+    for (auto &x : xs_init)
+      debug_file_yaml << "  - " << x.format(fmt) << std::endl;
 
     debug_file_yaml << "us0: " << std::endl;
-
-    for (auto &x : us_init) {
-      debug_file_yaml << "  - [" << x(0) << "," << x(1) << "]" << std::endl;
-    }
+    for (auto &x : us_init)
+      debug_file_yaml << "  - " << x.format(fmt) << std::endl;
 
     // total steps are N.
     // I move 5 steps.
@@ -2069,52 +2260,71 @@ int quim_test(int argc, char *argv[]) {
                                             (xs_init.size() - 1) * dt);
     ptr<Interpolator> path = mk<Interpolator>(times, xs_init);
 
+    std::cout << times(times.size() - 1) << std::endl;
+    std::cout << xs_init.back() << std::endl;
+
     std::vector<Eigen::VectorXd> xs;
     std::vector<Eigen::VectorXd> us;
 
-    size_t max_mpc_iterations = 1000;
+    size_t max_mpc_iterations = 50;
+    const bool use_finite_diff = false;
+
+    double previous_alpha;
+
+    Eigen::VectorXd previous_state = start;
+    ptr<crocoddyl::ShootingProblem> problem;
+
+    Eigen::VectorXd goal_mpc(3);
+
+    bool is_last = false;
+
+    double total_time = 0;
+    size_t total_iterations = 0;
 
     while (!finished) {
 
-      int first_index = counter * num_steps_to_move;
-      int remaining_steps = N - counter * num_steps_to_move;
+      size_t num_steps_to_optimize_i = 0;
 
-      int num_steps_to_optimize_i =
-          std::min(num_steps_to_optimize, remaining_steps);
-
-      bool is_last = num_steps_to_optimize > remaining_steps;
-      std::cout << "is_last " << std::endl;
-
-      auto xs_i = std::vector<Eigen::VectorXd>(Xs.begin() + first_index,
-                                               Xs.begin() + first_index +
-                                                   num_steps_to_optimize_i + 1);
-
-      auto us_i = std::vector<Eigen::VectorXd>(Us.begin() + first_index,
-                                               Us.begin() + first_index +
-                                                   num_steps_to_optimize_i);
-
-      CHECK_EQ(us_i.size() + 1, xs_i.size(), AT);
-      CHECK_GEQ(xs_i.size(), 1, AT);
-
-      ptr<crocoddyl::ShootingProblem> problem;
-
-      const size_t N = us_i.size();
-      Eigen::VectorXd start_i = xs_i.front();
-      const bool use_finite_diff = false;
-
-      if (counter == 0)
-        start_i = Eigen::VectorXd::Map(start.data(), start.size());
-
-      Eigen::VectorXd goal_mpc(3);
-      goal_mpc.setZero();
-      double alpha_mpcc = -1;
-
-      // if (solver == SOLVER::mpc) {
-      if (solver == SOLVER::mpc || is_last) {
+      if (solver == SOLVER::mpc) {
         const bool regularize_wrt_init_guess = false;
-        goal_mpc = xs_i.back();
+        const bool adaptative_goal_mpc = false;
+
+        int first_index = counter * num_steps_to_move;
+        int remaining_steps = N - counter * num_steps_to_move;
+
+        num_steps_to_optimize_i =
+            std::min(num_steps_to_optimize, remaining_steps);
+
+        int subgoal_index;
+
+        if (adaptative_goal_mpc) {
+          CHECK_EQ(true, false, AT);
+
+          auto it =
+              std::min_element(path->x.begin(), path->x.end(),
+                               [&](const auto &a, const auto &b) {
+                                 return (a - previous_state).squaredNorm() <=
+                                        (b - previous_state).squaredNorm();
+                               });
+
+          size_t index = std::distance(path->x.begin(), it);
+          std::cout << "starting with approx index " << index << std::endl;
+          std::cout << "Non adaptative index would be: "
+                    << counter * num_steps_to_move << std::endl;
+
+        } else {
+          subgoal_index = counter * num_steps_to_move + num_steps_to_optimize_i;
+        }
+
+        is_last = num_steps_to_optimize > remaining_steps;
+        std::cout << "is_last: " << is_last << std::endl;
+
+        auto start_i = previous_state;
+
         if (is_last)
-          goal_mpc = Eigen::VectorXd::Map(goal.data(), goal.size());
+          goal_mpc = goal;
+        else
+          goal_mpc = xs_init.at(subgoal_index);
 
         std::cout << "is_last:" << is_last << std::endl;
         std::cout << "counter:" << counter << std::endl;
@@ -2125,99 +2335,289 @@ int quim_test(int argc, char *argv[]) {
             .free_time = false,
             .control_bounds = control_bounds,
             .name = name,
-            .N = N,
+            .N = num_steps_to_optimize_i,
             .regularize_wrt_init_guess = regularize_wrt_init_guess,
             .use_finite_diff = use_finite_diff,
             .goal = goal_mpc,
             .start = start_i,
             .cl = cl,
-            .states = xs_i,
-            .actions = us_i,
+            .states = {},
+            .actions = {},
         };
 
         size_t nx, nu;
 
         problem = generate_problem(opts, nx, nu);
 
-        // std::vector<Eigen::VectorXd> xs(N + 1, opts.start);
-        // std::vector<Eigen::VectorXd> us(N, Eigen::VectorXd::Zero(nu));
-        xs = xs_i;
-        us = us_i;
+        if (use_warmstart) {
+          // I have to take some from xopt
+
+          // how many?
+          //
+          // I optimize OPTIM
+          // I move
+          // MOVE
+          //
+
+          if (counter == 0) {
+            xs = std::vector<Eigen::VectorXd>(
+                xs_init.begin(), xs_init.begin() + num_steps_to_optimize_i + 1);
+            us = std::vector<Eigen::VectorXd>(
+                us_init.begin(), us_init.begin() + num_steps_to_optimize_i);
+          }
+
+          else {
+
+            CHECK_EQ(xs_opt.size(), us_opt.size() + 1, AT);
+
+            auto xs_1 = std::vector<Eigen::VectorXd>(
+                xs_opt.begin() + num_steps_to_move * counter, xs_opt.end());
+
+            auto xs_2 = std::vector<Eigen::VectorXd>(
+                xs_init.begin() + counter * num_steps_to_move + 1,
+                xs_init.begin() + counter * num_steps_to_move + 1 +
+                    num_steps_to_optimize_i);
+
+            xs_1.insert(xs_1.end(), xs_2.begin(), xs_2.end());
+
+            auto us_1 = std::vector<Eigen::VectorXd>(
+                us_opt.begin() + num_steps_to_move * counter, us_opt.end());
+
+            CHECK_SEQ(counter * num_steps_to_move + num_steps_to_optimize_i,
+                      us_init.size(), AT);
+
+            auto us_2 = std::vector<Eigen::VectorXd>(
+                us_init.begin() + counter * num_steps_to_move,
+                us_init.begin() + counter * num_steps_to_move +
+                    num_steps_to_optimize_i);
+
+            us_1.insert(us_1.end(), us_2.begin(), us_2.end());
+
+            xs = xs_1;
+            us = us_1;
+
+            std::cout << "x" << std::endl;
+            for (auto &x : xs)
+              std::cout << x.transpose() << std::endl;
+
+            std::cout << "u" << std::endl;
+            for (auto &u : us)
+              std::cout << u.transpose() << std::endl;
+            std::cout << "done" << std::endl;
+          }
+
+          CHECK_EQ(xs.size(), us.size() + 1, AT);
+          CHECK_EQ(us.size(), num_steps_to_optimize_i, AT);
+
+        } else {
+          xs = std::vector<Eigen::VectorXd>(num_steps_to_optimize_i + 1,
+                                            opts.start);
+          us = std::vector<Eigen::VectorXd>(num_steps_to_optimize_i,
+                                            Eigen::VectorXd::Zero(nu));
+        }
 
       } else if (solver == SOLVER::mpcc) {
 
+        bool only_contour_last = true;
+        const double threshold_alpha_close = 2.; //
+        bool add_contour_to_all_when_close_to_gaol = true;
         double alpha_rate = 1.5; // I try to go X times faster
+        const bool regularize_wrt_init_guess = false;
 
-        double alpha_ref =
-            alpha_rate * dt *
-            (counter * num_steps_to_move + num_steps_to_optimize_i);
+        num_steps_to_optimize_i = num_steps_to_optimize;
+        // approx alpha of first state
+        auto it = std::min_element(
+            path->x.begin(), path->x.end(), [&](const auto &a, const auto &b) {
+              return (a - previous_state).squaredNorm() <=
+                     (b - previous_state).squaredNorm();
+            });
+
+        size_t index = std::distance(path->x.begin(), it);
+        std::cout << "starting with approx index " << index << std::endl;
+        double alpha_of_first = path->times(index);
+        std::cout << "alpha of first " << alpha_of_first << std::endl;
 
         double max_alpha = times(times.size() - 1);
-        std::cout << "max alpha " << max_alpha << std::endl;
 
-        const double cx_init =
-            std::min(alpha_ref / alpha_rate * 1.1,
-                     max_alpha - 1e-3); // I initialize a with a slighlty bigger alpha
-                                 // than init guess
-        const double cu_init = cx_init;
+        double alpha_ref =
+            std::min(alpha_of_first + alpha_rate * num_steps_to_optimize_i * dt,
+                     max_alpha);
+
+        double cost_alpha_multi = 1.;
+        int missing_indexes = times.size() - index;
+
+        bool use_goal_reaching_formulation =
+            std::fabs(alpha_of_first - max_alpha) < threshold_alpha_close;
+
+        std::cout << "hardcoding " << std::endl;
+        use_goal_reaching_formulation = true;
+        add_contour_to_all_when_close_to_gaol = true;
+
+        if (use_goal_reaching_formulation) {
+          std::cout << "we are close to the goal" << std::endl;
+#if 0
+#endif
+          if (add_contour_to_all_when_close_to_gaol) {
+            only_contour_last = false;
+            cost_alpha_multi = 1.;
+          } else {
+            std::cout << "alpha is close to the reference alpha " << std::endl;
+            std::cout << std::fabs(alpha_of_first - max_alpha) << std::endl;
+            std::cout << "adding very high cost to alpha" << std::endl;
+            cost_alpha_multi = 100.;
+          }
+        }
+
+        double cx_init;
+        double cu_init;
+
+        // if (!only_contour_last) {
+        //   // the alpha_ref
+        // }
+        //
+        // else {
+
+        cx_init = std::min(alpha_of_first + 1.01 * num_steps_to_optimize_i * dt,
+                           max_alpha - 1e-3);
+        cu_init = cx_init;
+        // }
+
+        if (use_goal_reaching_formulation &&
+            add_contour_to_all_when_close_to_gaol) {
+          cx_init = alpha_of_first;
+          cu_init = 0.;
+        }
 
         std::cout << "cx_init:" << cx_init << std::endl;
         std::cout << "alpha_rate:" << alpha_rate << std::endl;
         std::cout << "alpha_ref:" << alpha_ref << std::endl;
+        std::cout << "max alpha " << max_alpha << std::endl;
 
         size_t nx, nu;
         const size_t _nx = 3;
         const size_t _nu = 2;
 
-        bool regularize_wrt_init_guess = false;
-
         Eigen::VectorXd start_ic(_nx + 1);
-        start_ic.head(_nx) = start_i;
+        start_ic.head(_nx) = previous_state.head(_nx);
         start_ic(_nx) = cx_init;
 
-        Eigen::VectorXd goal_ic(_nx + 1);
-        // goal_ic.head(_nx) = goal_i;
-        // goal_ic(_nx) = cx_init;
+        Opts opts{
+            .free_time = false,
+            .control_bounds = control_bounds,
+            .name = name,
+            .N = num_steps_to_optimize_i,
+            .regularize_wrt_init_guess = regularize_wrt_init_guess,
+            .use_finite_diff = false,
+            .goal = {},
+            .start = start_ic,
+            .cl = cl,
+            .states = {},
+            .actions = {},
+            .countour_control = true,
+            .interpolator = path,
+            .ref_alpha = alpha_ref,
+            .max_alpha = max_alpha,
+            .cost_alpha_multi = cost_alpha_multi,
+            .only_contour_last = only_contour_last,
 
-        // auto times = Eigen::VectorXd::LinSpaced(N + 1, 0, N * dt);
-        Opts opts{.free_time = false,
-                  .control_bounds = control_bounds,
-                  .name = name,
-                  .N = us_i.size(),
-                  .regularize_wrt_init_guess = regularize_wrt_init_guess,
-                  .use_finite_diff = use_finite_diff,
-                  .goal = goal_ic,
-                  .start = start_ic,
-                  .cl = cl,
-                  .states = xs_i,
-                  .actions = {},
-                  .countour_control = true,
-                  .interpolator = path,
-                  .ref_alpha = alpha_ref,
-                  .max_alpha = max_alpha};
+        };
 
         problem = generate_problem(opts, nx, nu);
 
-        std::vector<Eigen::VectorXd> xcs_i(xs_i.size());
-        std::vector<Eigen::VectorXd> ucs_i(us_i.size());
+        if (use_warmstart) {
 
-        std::transform(xs_i.begin(), xs_i.end(), xcs_i.begin(),
-                       [&_nx, &cx_init](auto &x) {
-                         Eigen::VectorXd new_last(_nx + 1);
-                         new_last.head(_nx) = x;
-                         new_last(_nx) = cx_init;
-                         return new_last;
-                       });
+          std::cout << "warmstarting " << std::endl;
+          size_t first_index = index;
+          size_t last_index = index + num_steps_to_optimize_i;
 
-        std::transform(us_i.begin(), us_i.end(), ucs_i.begin(),
-                       [&_nu, &cu_init](auto &u) {
-                         Eigen::VectorXd new_last(_nu + 1);
-                         new_last.head(_nu) = u;
-                         new_last(_nu) = cu_init;
-                         return new_last;
-                       });
-        xs = xcs_i;
-        us = ucs_i;
+          std::vector<Eigen::VectorXd> xs_i;
+          std::vector<Eigen::VectorXd> us_i;
+
+          if (last_index < xs_init.size() - 1) {
+            std::cout << "last index is " << last_index << std::endl;
+            // TODO: I should reuse the ones in OPT
+            xs_i = std::vector<Eigen::VectorXd>(&xs_init.at(first_index),
+                                                &xs_init.at(last_index) + 1);
+            us_i = std::vector<Eigen::VectorXd>(&us_init.at(first_index),
+                                                &us_init.at(last_index));
+          } else if (first_index < xs_init.size() - 1) {
+
+            // copy some indexes, and fill the others
+
+            // 0 1 2 3 4
+
+            // starting from index 3, i need five states: 3 4 4
+            // size_t num_extra = (xs_init.size() - 1) - first_index;
+            auto xs_1 = std::vector<Eigen::VectorXd>(
+                xs_init.begin() + first_index, xs_init.end());
+
+            // Eigen::VectorXd xref(4);
+            // xref.head(3) = goal;
+            // xref(3) = max_alpha;
+
+            auto xs_2 = std::vector<Eigen::VectorXd>(
+                num_steps_to_optimize_i + 1 - xs_1.size(), goal);
+
+            xs_1.insert(xs_1.end(), xs_2.begin(), xs_2.end());
+
+            auto us_1 = std::vector<Eigen::VectorXd>(
+                us_init.begin() + first_index, us_init.end());
+
+            // Eigen::VectorXd uref(3);
+            // uref << 0., 0., 0.;
+
+            auto us_2 = std::vector<Eigen::VectorXd>(num_steps_to_optimize_i -
+                                                         us_1.size(),
+                                                     Eigen::VectorXd::Zero(2));
+
+            us_1.insert(us_1.end(), us_2.begin(), us_2.end());
+
+            xs_i = xs_1;
+            us_i = us_1;
+
+          }
+
+          else {
+            xs_i = std::vector<Eigen::VectorXd>(num_steps_to_optimize_i + 1,
+                                                xs_init.at(first_index));
+            us_i = std::vector<Eigen::VectorXd>(num_steps_to_optimize_i,
+                                                Eigen::VectorXd::Zero(2));
+          }
+
+          CHECK_EQ(xs_i.size(), num_steps_to_optimize_i + 1, AT);
+          CHECK_EQ(us_i.size(), num_steps_to_optimize_i, AT);
+
+          std::vector<Eigen::VectorXd> xcs_i(xs_i.size());
+          std::vector<Eigen::VectorXd> ucs_i(us_i.size());
+
+          std::transform(xs_i.begin(), xs_i.end(), xcs_i.begin(),
+                         [&_nx, &cx_init](auto &x) {
+                           Eigen::VectorXd new_last(_nx + 1);
+                           new_last.head(_nx) = x;
+                           new_last(_nx) = cx_init;
+                           return new_last;
+                         });
+
+          std::transform(us_i.begin(), us_i.end(), ucs_i.begin(),
+                         [&_nu, &cu_init](auto &u) {
+                           Eigen::VectorXd new_last(_nu + 1);
+                           new_last.head(_nu) = u;
+                           new_last(_nu) = cu_init;
+                           return new_last;
+                         });
+
+          xs = xcs_i;
+          us = ucs_i;
+
+        } else {
+
+          Eigen::VectorXd u0c(3);
+          u0c.head(2).setZero();
+          u0c(2) = cu_init;
+          xs = std::vector<Eigen::VectorXd>(num_steps_to_optimize_i + 1,
+                                            opts.start);
+          us = std::vector<Eigen::VectorXd>(num_steps_to_optimize_i, u0c);
+        }
       }
 
       crocoddyl::SolverBoxFDDP ddp(problem);
@@ -2230,107 +2630,128 @@ int quim_test(int argc, char *argv[]) {
         ddp.setCallbacks(cbs);
       }
 
+      crocoddyl::Timer timer;
+      ddp.solve(xs, us, max_iter, false, init_reg);
+      size_t iterations_i = ddp.get_iter();
+      double time_i = timer.get_duration();
+      std::cout << "time: " << time_i << std::endl;
+      std::cout << "iterations: " << iterations_i << std::endl;
+      total_time += time_i;
+      total_iterations += iterations_i;
+      std::vector<Eigen::VectorXd> xs_i_sol = ddp.get_xs();
+      std::vector<Eigen::VectorXd> us_i_sol = ddp.get_us();
+
+      previous_state = xs_i_sol.at(num_steps_to_move).head(3);
+
+      size_t copy_steps = 0;
+
+      if (solver == SOLVER::mpcc) {
+        double alpha_mpcc = ddp.get_xs().back()(3);
+        std::cout << "alpha_mpcc:" << alpha_mpcc << std::endl;
+        previous_alpha = alpha_mpcc;
+
+        auto fun_is_goal = [&](const auto &x) {
+          return (x.head(3) - goal).norm() < 1e-2;
+        };
+
+        if (std::fabs(alpha_mpcc - times(times.size() - 1)) < 1e-2 &&
+            fun_is_goal(ddp.get_xs().back())) {
+          is_last = true;
+
+          // check which is the first state that is close to goal
+
+          std::cout << "checking first state that reaches the goal "
+                    << std::endl;
+
+          auto it = std::find_if(ddp.get_xs().begin(), ddp.get_xs().end(),
+                                 [&](const auto &x) { return fun_is_goal(x); });
+
+          assert(it != ddp.get_xs().end());
+
+          num_steps_to_optimize_i = std::distance(ddp.get_xs().begin(), it);
+          std::cout << "changing the number of steps to optimize(copy) to "
+                    << num_steps_to_optimize_i << std::endl;
+        }
+      }
+
+      if (is_last)
+        copy_steps = num_steps_to_optimize_i;
+      else
+        copy_steps = num_steps_to_move;
+
+      for (size_t i = 0; i < copy_steps; i++)
+        xs_opt.push_back(xs_i_sol.at(i + 1).head(3));
+
+      for (size_t i = 0; i < copy_steps; i++)
+        us_opt.push_back(us_i_sol.at(i).head(2));
+
       const Eigen::IOFormat fmt(6, Eigen::DontAlignCols, ",", ",", "", "", "[",
                                 "]");
 
       debug_file_yaml << "  - xs0:" << std::endl;
-      for (auto &x : xs) {
+      for (auto &x : xs)
         debug_file_yaml << "    - " << x.format(fmt) << std::endl;
-      }
 
       debug_file_yaml << "    us0:" << std::endl;
-      for (auto &u : us) {
+      for (auto &u : us)
         debug_file_yaml << "    - " << u.format(fmt) << std::endl;
-      }
-
-      crocoddyl::Timer timer;
-      ddp.solve(xs, us, max_iter, false, init_reg);
-      std::cout << "time: " << timer.get_duration() << std::endl;
-
-      std::vector<Eigen::VectorXd> xs_i_sol = ddp.get_xs();
-      std::vector<Eigen::VectorXd> us_i_sol = ddp.get_us();
-
-
-
-
-      debug_file_yaml << "    start: " << start_i.format(fmt) << std::endl;
-      if (solver == SOLVER::mpc || is_last )
-        debug_file_yaml << "    goal: " << goal_mpc.format(fmt) << std::endl;
-      else if (solver == SOLVER::mpcc && !is_last ) {
-        alpha_mpcc = ddp.get_xs().back()(3);
-        debug_file_yaml << "    alpha: " << alpha_mpcc << std::endl;
-        Eigen::VectorXd out(3);
-        path->interpolate(alpha_mpcc, out);
-        debug_file_yaml << "    state_alpha: " << out.format(fmt) << std::endl;
-      }
 
       debug_file_yaml << "    xsOPT:" << std::endl;
-      for (auto &x : xs_i_sol) {
+      for (auto &x : xs_i_sol)
         debug_file_yaml << "    - " << x.format(fmt) << std::endl;
-      }
 
       debug_file_yaml << "    usOPT:" << std::endl;
-      for (auto &u : us_i_sol) {
+      for (auto &u : us_i_sol)
         debug_file_yaml << "    - " << u.format(fmt) << std::endl;
+
+      debug_file_yaml << "    start: " << xs.front().format(fmt) << std::endl;
+
+      if (solver == SOLVER::mpc) {
+        debug_file_yaml << "    goal: " << goal_mpc.format(fmt) << std::endl;
+      } else if (solver == SOLVER::mpcc) {
+        double alpha_mpcc = ddp.get_xs().back()(3);
+        Eigen::VectorXd out(3);
+        Eigen::VectorXd Jout(3);
+        path->interpolate(alpha_mpcc, out, Jout);
+        debug_file_yaml << "    alpha: " << alpha_mpcc << std::endl;
+        debug_file_yaml << "    state_alpha: " << out.format(fmt) << std::endl;
       }
 
       CHECK_EQ(us_i_sol.size() + 1, xs_i_sol.size(), AT);
 
-      if (is_last) {
-
-        for (size_t i = 0; i < num_steps_to_optimize_i + 1; i++) {
-          Xs.at(first_index + i).head(3) = xs_i_sol.at(i).head(3);
-        }
-
-        for (size_t i = 0; i < num_steps_to_optimize_i; i++) {
-          Us.at(first_index + i).head(2) = us_i_sol.at(i).head(2);
-        }
-
-      }
-
-      else {
-        for (size_t i = 0; i < num_steps_to_move + 1; i++) {
-          Xs.at(first_index + i).head(3) = xs_i_sol.at(i).head(3);
-        }
-
-        for (size_t i = 0; i < num_steps_to_move; i++) {
-          Us.at(first_index + i).head(2) = us_i_sol.at(i).head(2);
-        }
-      }
+      // copy results
 
       if (is_last) {
         finished = true;
-        std::cout << "finished" << std::endl;
+        std::cout << "finished: "
+                  << "is_last" << std::endl;
       }
 
       counter++;
 
       if (counter > max_mpc_iterations) {
         finished = true;
-        std::cout << "finished max mpc iterations " << std::endl;
+        std::cout << "finished: "
+                  << "max mpc iterations" << std::endl;
       }
     }
+    std::cout << "Total TIME: " << total_time << std::endl;
+    std::cout << "Total Iterations: " << total_iterations << std::endl;
 
-    xs_out = Xs;
-    us_out = Us;
+    xs_out = xs_opt;
+    us_out = us_opt;
 
-    debug_file_yaml << "XsOPT: " << std::endl;
+    debug_file_yaml << "xsOPT: " << std::endl;
+    for (auto &x : xs_out)
+      debug_file_yaml << "  - " << x.format(fmt) << std::endl;
 
-    for (auto &x : xs_out) {
-      // results_yaml << "      - " << x.format(fmt) << std::endl;
-      debug_file_yaml << "  - [" << x(0) << "," << x(1) << "," << x(2) << "]"
-                      << std::endl;
-      // << remainder(x(2), 2 * M_PI) << "]" << std::endl;
-    }
-
-    debug_file_yaml << "UsOPT: " << std::endl;
-
-    for (auto &x : us_out) {
-      debug_file_yaml << "  - [" << x(0) << "," << x(1) << "]" << std::endl;
-    }
+    debug_file_yaml << "usOPT: " << std::endl;
+    for (auto &u : us_out)
+      debug_file_yaml << "  - " << u.format(fmt) << std::endl;
 
     // checking feasibility
 
+    std::cout << "checking feasibility" << std::endl;
     size_t nx = 3;
     size_t nu = 2;
     ptr<Cost> feat_col = mk<Col_cost>(nx, nu, 1, cl);
@@ -2349,7 +2770,6 @@ int quim_test(int argc, char *argv[]) {
 
     std::cout << "feasible_ is " << feasible_ << std::endl;
     std::cout << "feasible is " << feasible << std::endl;
-
   } else if (solver == SOLVER::traj_opt ||
              solver == SOLVER::traj_opt_free_time ||
              solver == SOLVER::traj_opt_smooth_then_free_time) {
@@ -2527,9 +2947,10 @@ int quim_test(int argc, char *argv[]) {
       for (size_t i = 0; i < num_time_steps + 1; i++) {
         double t = i * dt / scaling_factor;
         Eigen::VectorXd out(nx);
+        Eigen::VectorXd Jout(nx);
         std::cout << " i and time and num_time_steps is " << i << " " << t
                   << " " << num_time_steps << std::endl;
-        linearInterpolation(times, ddp.get_xs(), t, out);
+        linearInterpolation(times, ddp.get_xs(), t, out, Jout);
         x_out.push_back(out);
       }
 
@@ -2546,7 +2967,8 @@ int quim_test(int argc, char *argv[]) {
         Eigen::VectorXd out(nu - 1);
         std::cout << " i and time and num_time_steps is " << i << " " << t
                   << " " << num_time_steps << std::endl;
-        linearInterpolation(times, u_nx_orig, t, out);
+        Eigen::VectorXd J(nu - 1);
+        linearInterpolation(times, u_nx_orig, t, out, J);
         u_out.push_back(out);
       }
 
@@ -2560,146 +2982,151 @@ int quim_test(int argc, char *argv[]) {
 
   if (solver == SOLVER::mpcc) {
 
-    std::cout << "now this is integrated " << std::endl;
-    throw -1;
+    // use its own implementation.
 
-    double dt = .1;
-
-    int first_index = 0;
-    size_t num_steps_to_optimize_i = 10;
-
-    auto Xs = xs_init;
-    auto Us = us_init;
-
-    auto xs_i = std::vector<Eigen::VectorXd>(Xs.begin() + first_index,
-                                             Xs.begin() + first_index +
-                                                 num_steps_to_optimize_i + 1);
-
-    auto us_i = std::vector<Eigen::VectorXd>(Us.begin() + first_index,
-                                             Us.begin() + first_index +
-                                                 num_steps_to_optimize_i);
-
-    auto start_i = Eigen::VectorXd::Map(start.data(), start.size());
-    auto goal_i = Eigen::VectorXd::Map(goal.data(), goal.size());
-
-    double cx_init = 1.;
-    double cu_init = 1.;
-    size_t nx, nu;
-    size_t _nx = 3;
-    size_t _nu = 2;
-
-    Eigen::VectorXd start_ic(_nx + 1);
-    start_ic.head(_nx) = start_i;
-    start_ic(_nx) = cx_init;
-
-    Eigen::VectorXd goal_ic(_nx + 1);
-    goal_ic.head(_nx) = goal_i;
-    goal_ic(_nx) = cx_init;
-
-    // auto times = Eigen::VectorXd::LinSpaced(N + 1, 0, N * dt);
-    auto times = Eigen::VectorXd::LinSpaced(xs_init.size(), 0,
-                                            (xs_init.size() - 1) * dt);
-    ptr<Interpolator> path = mk<Interpolator>(times, xs_init);
-    double ref_alpha = 2.;
-
-    Opts opts{.free_time = false,
-              .control_bounds = control_bounds,
-              .name = name,
-              .N = us_i.size(),
-              .regularize_wrt_init_guess = regularize_wrt_init_guess,
-              .use_finite_diff = use_finite_diff,
-              .goal = goal_ic,
-              .start = start_ic,
-              .cl = cl,
-              .states = xs_i,
-              .actions = us_i,
-              .countour_control = true,
-              .interpolator = path,
-              .ref_alpha = ref_alpha};
-
-    ptr<crocoddyl::ShootingProblem> problem = generate_problem(opts, nx, nu);
-
-    crocoddyl::SolverBoxFDDP ddp(problem);
-    ddp.set_th_stop(th_stop);
-    ddp.set_th_acceptnegstep(th_acceptnegstep);
-
-    if (CALLBACKS) {
-      std::vector<ptr<crocoddyl::CallbackAbstract>> cbs;
-      cbs.push_back(mk<crocoddyl::CallbackVerbose>());
-      ddp.setCallbacks(cbs);
-    }
+    // std::cout << "now this is integrated " << std::endl;
+    // throw -1;
     //
+    // double dt = .1;
     //
+    // int first_index = 0;
+    // size_t num_steps_to_optimize_i = 10;
     //
-
-    std::vector<Eigen::VectorXd> xcs_i(xs_i.size());
-    std::vector<Eigen::VectorXd> ucs_i(us_i.size());
-
-    std::transform(xs_i.begin(), xs_i.end(), xcs_i.begin(),
-                   [&_nx, &cx_init](auto &x) {
-                     Eigen::VectorXd new_last(_nx + 1);
-                     new_last.head(_nx) = x;
-                     new_last(_nx) = cx_init;
-                     return new_last;
-                   });
-
-    std::transform(us_i.begin(), us_i.end(), ucs_i.begin(),
-                   [&_nu, &cu_init](auto &u) {
-                     Eigen::VectorXd new_last(_nu + 1);
-                     new_last.head(_nu) = u;
-                     new_last(_nu) = cu_init;
-                     return new_last;
-                   });
-
-    // auto us = us_i;
-    // auto xs = xs_i;
+    // auto Xs = xs_init;
+    // auto Us = us_init;
     //
-    // Eigen::VectorXd new_last(4);
-    // new_last.head(3) = xs.back();
-    // new_last(3) = ref_alpha;
-    // xs.back() = new_last;
-
-    crocoddyl::Timer timer;
-    ddp.solve(xcs_i, ucs_i, max_iter, false, init_reg);
-    std::cout << "time: " << timer.get_duration() << std::endl;
-
-    std::ofstream debug_contour("debug_contour.yaml");
-
-    const Eigen::IOFormat fmt(6, Eigen::DontAlignCols, ",", ",", "", "", "[",
-                              "]");
-
-    debug_contour << "start: " << start.format(fmt) << std::endl;
-    debug_contour << "goal: " << goal.format(fmt) << std::endl;
-
-    debug_contour << "xs0:" << std::endl;
-
-    for (auto &x : xcs_i) {
-      debug_contour << "  - " << x.format(fmt) << std::endl;
-    }
-
-    debug_contour << "us0:" << std::endl;
-    for (auto &u : ucs_i) {
-      debug_contour << "  - " << u.format(fmt) << std::endl;
-    }
-
-    debug_contour << "xsOPT:" << std::endl;
-
-    for (auto &x : ddp.get_xs()) {
-      debug_contour << "  - " << x.format(fmt) << std::endl;
-    }
-
-    debug_contour << "usOPT:" << std::endl;
-    for (auto &u : ddp.get_us()) {
-      debug_contour << "  - " << u.format(fmt) << std::endl;
-    }
-
-    double alpha_opt = ddp.get_xs().back()(3);
-    debug_contour << "alphaOPT: " << alpha_opt << std::endl;
-
-    Eigen::VectorXd x_alpha(3);
-    path->interpolate(alpha_opt, x_alpha);
-
-    debug_contour << "xalphaOPT: " << x_alpha.format(fmt) << std::endl;
+    // auto xs_i = std::vector<Eigen::VectorXd>(Xs.begin() + first_index,
+    //                                          Xs.begin() + first_index +
+    //                                              num_steps_to_optimize_i +
+    //                                              1);
+    //
+    // auto us_i = std::vector<Eigen::VectorXd>(Us.begin() + first_index,
+    //                                          Us.begin() + first_index +
+    //                                              num_steps_to_optimize_i);
+    //
+    // auto start_i = Eigen::VectorXd::Map(start.data(), start.size());
+    // auto goal_i = Eigen::VectorXd::Map(goal.data(), goal.size());
+    //
+    // double cx_init = 1.;
+    // double cu_init = 1.;
+    // size_t nx, nu;
+    // size_t _nx = 3;
+    // size_t _nu = 2;
+    //
+    // Eigen::VectorXd start_ic(_nx + 1);
+    // start_ic.head(_nx) = start_i;
+    // start_ic(_nx) = cx_init;
+    //
+    // Eigen::VectorXd goal_ic(_nx + 1);
+    // goal_ic.head(_nx) = goal_i;
+    // goal_ic(_nx) = cx_init;
+    //
+    // // auto times = Eigen::VectorXd::LinSpaced(N + 1, 0, N * dt);
+    // auto times = Eigen::VectorXd::LinSpaced(xs_init.size(), 0,
+    //                                         (xs_init.size() - 1) * dt);
+    // ptr<Interpolator> path = mk<Interpolator>(times, xs_init);
+    // double ref_alpha = 2.;
+    //
+    // Opts opts{.free_time = false,
+    //           .control_bounds = control_bounds,
+    //           .name = name,
+    //           .N = us_i.size(),
+    //           .regularize_wrt_init_guess = regularize_wrt_init_guess,
+    //           .use_finite_diff = use_finite_diff,
+    //           .goal = goal_ic,
+    //           .start = start_ic,
+    //           .cl = cl,
+    //           .states = xs_i,
+    //           .actions = us_i,
+    //           .countour_control = true,
+    //           .interpolator = path,
+    //           .ref_alpha = ref_alpha};
+    //
+    // ptr<crocoddyl::ShootingProblem> problem = generate_problem(opts, nx,
+    // nu);
+    //
+    // crocoddyl::SolverBoxFDDP ddp(problem);
+    // ddp.set_th_stop(th_stop);
+    // ddp.set_th_acceptnegstep(th_acceptnegstep);
+    //
+    // if (CALLBACKS) {
+    //   std::vector<ptr<crocoddyl::CallbackAbstract>> cbs;
+    //   cbs.push_back(mk<crocoddyl::CallbackVerbose>());
+    //   ddp.setCallbacks(cbs);
+    // }
+    // //
+    // //
+    // //
+    //
+    // std::vector<Eigen::VectorXd> xcs_i(xs_i.size());
+    // std::vector<Eigen::VectorXd> ucs_i(us_i.size());
+    //
+    // std::transform(xs_i.begin(), xs_i.end(), xcs_i.begin(),
+    //                [&_nx, &cx_init](auto &x) {
+    //                  Eigen::VectorXd new_last(_nx + 1);
+    //                  new_last.head(_nx) = x;
+    //                  new_last(_nx) = cx_init;
+    //                  return new_last;
+    //                });
+    //
+    // std::transform(us_i.begin(), us_i.end(), ucs_i.begin(),
+    //                [&_nu, &cu_init](auto &u) {
+    //                  Eigen::VectorXd new_last(_nu + 1);
+    //                  new_last.head(_nu) = u;
+    //                  new_last(_nu) = cu_init;
+    //                  return new_last;
+    //                });
+    //
+    // // auto us = us_i;
+    // // auto xs = xs_i;
+    // //
+    // // Eigen::VectorXd new_last(4);
+    // // new_last.head(3) = xs.back();
+    // // new_last(3) = ref_alpha;
+    // // xs.back() = new_last;
+    //
+    // crocoddyl::Timer timer;
+    // ddp.solve(xcs_i, ucs_i, max_iter, false, init_reg);
+    // std::cout << "time: " << timer.get_duration() << std::endl;
+    //
+    // std::ofstream debug_contour("debug_contour.yaml");
+    //
+    // const Eigen::IOFormat fmt(6, Eigen::DontAlignCols, ",", ",", "", "",
+    // "[",
+    //                           "]");
+    //
+    // debug_contour << "start: " << start.format(fmt) << std::endl;
+    // debug_contour << "goal: " << goal.format(fmt) << std::endl;
+    //
+    // debug_contour << "xs0:" << std::endl;
+    //
+    // for (auto &x : xcs_i) {
+    //   debug_contour << "  - " << x.format(fmt) << std::endl;
+    // }
+    //
+    // debug_contour << "us0:" << std::endl;
+    // for (auto &u : ucs_i) {
+    //   debug_contour << "  - " << u.format(fmt) << std::endl;
+    // }
+    //
+    // debug_contour << "xsOPT:" << std::endl;
+    //
+    // for (auto &x : ddp.get_xs()) {
+    //   debug_contour << "  - " << x.format(fmt) << std::endl;
+    // }
+    //
+    // debug_contour << "usOPT:" << std::endl;
+    // for (auto &u : ddp.get_us()) {
+    //   debug_contour << "  - " << u.format(fmt) << std::endl;
+    // }
+    //
+    // double alpha_opt = ddp.get_xs().back()(3);
+    // debug_contour << "alphaOPT: " << alpha_opt << std::endl;
+    //
+    // Eigen::VectorXd x_alpha(3);
+    // path->interpolate(alpha_opt, x_alpha);
+    //
+    // debug_contour << "xalphaOPT: " << x_alpha.format(fmt) << std::endl;
   }
 
   std::ofstream results_txt("out.txt");
@@ -2768,13 +3195,153 @@ void test_unifree() {
 // check with the integration.
 //
 
-int main(int argc, char *argv[]) {
+#include <unsupported/Eigen/Splines>
 
+using namespace Eigen;
+
+Spline<double, 3, Dynamic> spline3d() {
+  RowVectorXd knots(11);
+  knots << 0, 0, 0, 0.118997681558377, 0.162611735194631, 0.498364051982143,
+      0.655098003973841, 0.679702676853675, 1.000000000000000,
+      1.000000000000000, 1.000000000000000;
+
+  MatrixXd ctrls(8, 3);
+  ctrls << 0.959743958516081, 0.340385726666133, 0.585267750979777,
+      0.223811939491137, 0.751267059305653, 0.255095115459269,
+      0.505957051665142, 0.699076722656686, 0.890903252535799,
+      0.959291425205444, 0.547215529963803, 0.138624442828679,
+      0.149294005559057, 0.257508254123736, 0.840717255983663,
+      0.254282178971531, 0.814284826068816, 0.243524968724989,
+      0.929263623187228, 0.349983765984809, 0.196595250431208,
+      0.251083857976031, 0.616044676146639, 0.473288848902729;
+  ctrls.transposeInPlace();
+
+  return Spline<double, 3, Dynamic>(knots, ctrls);
+}
+
+void eval_spline3d() {
+  Spline3d spline = spline3d();
+
+  RowVectorXd u(10);
+  u << 0.351659507062997, 0.830828627896291, 0.585264091152724,
+      0.549723608291140, 0.917193663829810, 0.285839018820374,
+      0.757200229110721, 0.753729094278495, 0.380445846975357,
+      0.567821640725221;
+
+  MatrixXd pts(10, 3);
+  pts << 0.707620811535916, 0.510258911240815, 0.417485437023409,
+      0.603422256426978, 0.529498282727551, 0.270351549348981,
+      0.228364197569334, 0.423745615677815, 0.637687289287490,
+      0.275556796335168, 0.350856706427970, 0.684295784598905,
+      0.514519311047655, 0.525077224890754, 0.351628308305896,
+      0.724152914315666, 0.574461155457304, 0.469860285484058,
+      0.529365063753288, 0.613328702656816, 0.237837040141739,
+      0.522469395136878, 0.619099658652895, 0.237139665242069,
+      0.677357023849552, 0.480655768435853, 0.422227610314397,
+      0.247046593173758, 0.380604672404750, 0.670065791405019;
+  pts.transposeInPlace();
+
+  for (int i = 0; i < u.size(); ++i) {
+    Vector3d pt = spline(u(i));
+    CHECK_EQ(((pt - pts.col(i)).norm() < 1e-14), true, AT);
+  }
+  std::cout << "done " << std::endl;
+}
+
+void test_contour() {
+
+  size_t num_time_steps = 9;
+  double dt = .1;
+  VectorXd ts =
+      Eigen::VectorXd::LinSpaced(num_time_steps + 1, 0, num_time_steps * dt);
+
+  MatrixXd xs(10, 3);
+  xs << 0.707620811535916, 0.510258911240815, 0.417485437023409,
+      0.603422256426978, 0.529498282727551, 0.270351549348981,
+      0.228364197569334, 0.423745615677815, 0.637687289287490,
+      0.275556796335168, 0.350856706427970, 0.684295784598905,
+      0.514519311047655, 0.525077224890754, 0.351628308305896,
+      0.724152914315666, 0.574461155457304, 0.469860285484058,
+      0.529365063753288, 0.613328702656816, 0.237837040141739,
+      0.522469395136878, 0.619099658652895, 0.237139665242069,
+      0.677357023849552, 0.480655768435853, 0.422227610314397,
+      0.247046593173758, 0.380604672404750, 0.670065791405019;
+
+  std::vector<Eigen::VectorXd> xs_vec(10, VectorXd(3));
+
+  size_t i = 0;
+  for (size_t i = 0; i < 10; i++)
+    xs_vec.at(i) = xs.row(i);
+
+  ptr<Interpolator> path = mk<Interpolator>(ts, xs_vec);
+
+  size_t nx = 4;
+  size_t nu = 3;
+
+  Eigen::VectorXd out(3);
+  Eigen::VectorXd J(3);
+
+  path->interpolate(0.001, out, J);
+
+  path->interpolate(dt + 1e-3, out, J);
+
+  path->interpolate(num_time_steps * dt + .1, out, J);
+
+  path->interpolate(0., out, J);
+
+  path->interpolate(dt, out, J);
+
+  path->interpolate(2 * dt + .1, out, J);
+
+  ptr<Countour_cost> cost = mk<Countour_cost>(nx, nu, path);
+
+  Eigen::VectorXd x(4);
+  x << 2., -1., .3, 0.34;
+
+  Eigen::VectorXd u(3);
+  u << 2., -1, .3;
+
+  Eigen::VectorXd r(cost->nr);
+
+  std::cout << "x " << x << std::endl;
+  cost->calc(r, x);
+
+  std::cout << "r" << r.transpose() << std::endl;
+
+  Eigen::MatrixXd Jxdif(cost->nr, cost->nx);
+  Eigen::MatrixXd Judif(cost->nr, cost->nu);
+
+  cost->use_finite_diff = true;
+  cost->calcDiff(Jxdif, Judif, x, u);
+
+  std::cout << "Ju" << Judif << std::endl;
+  std::cout << "Jx" << Jxdif << std::endl;
+
+  Eigen::MatrixXd Jx(cost->nr, cost->nx);
+  Eigen::MatrixXd Ju(cost->nr, cost->nu);
+
+  cost->use_finite_diff = false;
+  cost->calcDiff(Jx, Ju, x, u);
+
+  std::cout << "Ju" << Ju << std::endl;
+  std::cout << "Jx" << Jx << std::endl;
+  std::cout << "Judif" << Judif << std::endl;
+
+  CHECK_SEQ((Jx - Jxdif).norm(), 1e-5, AT);
+  CHECK_SEQ((Ju - Judif).norm(), 1e-5, AT);
+}
+
+int main(int argc, char *argv[]) {
   // test(argc, argv);
 
   // double_integ(argc, argv);
   // test_unifree();
+
+  // test_contour();
+
   return quim_test(argc, argv);
+
+  // eval_spline3d();
 }
 
 // TODO: convert into tests
