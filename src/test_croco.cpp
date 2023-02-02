@@ -3,13 +3,17 @@
 #include <fstream>
 #include <iostream>
 
-///////////////////////////////////////////////////////////////////////////////
-// BSD 3-Clause License
-//
-// Copyright (C) 2019, LAAS-CNRS
-// Copyright note valid unless otherwise stated in individual files.
-// All rights reserved.
-///////////////////////////////////////////////////////////////////////////////
+// #include <boost/test/unit_test_suite.hpp>
+// #define BOOST_TEST_DYN_LINK
+// #include <boost/test/unit_test.hpp>
+
+
+// see https://www.boost.org/doc/libs/1_81_0/libs/test/doc/html/boost_test/usage_variants.html
+// #define BOOST_TEST_MODULE test module name
+
+#define BOOST_TEST_MODULE test module name
+#define BOOST_TEST_DYN_LINK
+#include <boost/test/unit_test.hpp>
 
 #include "Eigen/Core"
 #include "crocoddyl/core/actions/unicycle.hpp"
@@ -22,6 +26,18 @@
 #include <boost/program_options.hpp>
 
 #include "collision_checker.hpp"
+
+#define NAMEOF(variable) #variable
+
+// save data without the cluster stuff
+
+#include <filesystem>
+#include <random>
+#include <regex>
+#include <type_traits>
+
+#include <filesystem>
+#include <regex>
 
 using namespace crocoddyl;
 namespace po = boost::program_options;
@@ -1892,7 +1908,10 @@ bool check_dynamics(const std::vector<Eigen::VectorXd> &xs_out,
   return feasible;
 }
 
-int quim_test(int argc, char *argv[]) {
+BOOST_AUTO_TEST_CASE(quim) {
+
+  auto argv = boost::unit_test::framework::master_test_suite().argv;
+  auto argc = boost::unit_test::framework::master_test_suite().argc;
 
   int verbose = 0;
   double th_stop = 1e-2;
@@ -1940,7 +1959,7 @@ int quim_test(int argc, char *argv[]) {
 
     if (vm.count("help") != 0u) {
       std::cout << desc << "\n";
-      return 1;
+      return ;
     }
 
     std::ifstream ifs{"../croco.cfg"};
@@ -1955,7 +1974,7 @@ int quim_test(int argc, char *argv[]) {
   } catch (po::error &e) {
     std::cerr << e.what() << std::endl << std::endl;
     std::cerr << desc << std::endl;
-    return 1;
+    return ;
   }
 
   SOLVER solver = static_cast<SOLVER>(solver_int);
@@ -3161,16 +3180,16 @@ int quim_test(int argc, char *argv[]) {
   }
 
   if (feasible) {
-    return 0;
+    return ;
   } else {
-    return 1;
+    return ;
   }
 
   // fix this.
   // TODO: check if the trick works :)
 }
 
-void double_integ(int argc, char *argv[]) {
+BOOST_AUTO_TEST_CASE(unicycle2) {
   // check the dynamics
   ptr<Dynamics> dyn = mk<Dynamics_unicycle2>();
   check_dyn(dyn, 1e-5);
@@ -3181,7 +3200,7 @@ void double_integ(int argc, char *argv[]) {
   // generate the problem... to continue
 }
 
-void test_unifree() {
+BOOST_AUTO_TEST_CASE(test_unifree) {
 
   ptr<Dynamics> dyn = mk<Dynamics_unicycle>();
   check_dyn(dyn, 1e-5);
@@ -3195,67 +3214,14 @@ void test_unifree() {
 // check with the integration.
 //
 
-#include <unsupported/Eigen/Splines>
-
-using namespace Eigen;
-
-Spline<double, 3, Dynamic> spline3d() {
-  RowVectorXd knots(11);
-  knots << 0, 0, 0, 0.118997681558377, 0.162611735194631, 0.498364051982143,
-      0.655098003973841, 0.679702676853675, 1.000000000000000,
-      1.000000000000000, 1.000000000000000;
-
-  MatrixXd ctrls(8, 3);
-  ctrls << 0.959743958516081, 0.340385726666133, 0.585267750979777,
-      0.223811939491137, 0.751267059305653, 0.255095115459269,
-      0.505957051665142, 0.699076722656686, 0.890903252535799,
-      0.959291425205444, 0.547215529963803, 0.138624442828679,
-      0.149294005559057, 0.257508254123736, 0.840717255983663,
-      0.254282178971531, 0.814284826068816, 0.243524968724989,
-      0.929263623187228, 0.349983765984809, 0.196595250431208,
-      0.251083857976031, 0.616044676146639, 0.473288848902729;
-  ctrls.transposeInPlace();
-
-  return Spline<double, 3, Dynamic>(knots, ctrls);
-}
-
-void eval_spline3d() {
-  Spline3d spline = spline3d();
-
-  RowVectorXd u(10);
-  u << 0.351659507062997, 0.830828627896291, 0.585264091152724,
-      0.549723608291140, 0.917193663829810, 0.285839018820374,
-      0.757200229110721, 0.753729094278495, 0.380445846975357,
-      0.567821640725221;
-
-  MatrixXd pts(10, 3);
-  pts << 0.707620811535916, 0.510258911240815, 0.417485437023409,
-      0.603422256426978, 0.529498282727551, 0.270351549348981,
-      0.228364197569334, 0.423745615677815, 0.637687289287490,
-      0.275556796335168, 0.350856706427970, 0.684295784598905,
-      0.514519311047655, 0.525077224890754, 0.351628308305896,
-      0.724152914315666, 0.574461155457304, 0.469860285484058,
-      0.529365063753288, 0.613328702656816, 0.237837040141739,
-      0.522469395136878, 0.619099658652895, 0.237139665242069,
-      0.677357023849552, 0.480655768435853, 0.422227610314397,
-      0.247046593173758, 0.380604672404750, 0.670065791405019;
-  pts.transposeInPlace();
-
-  for (int i = 0; i < u.size(); ++i) {
-    Vector3d pt = spline(u(i));
-    CHECK_EQ(((pt - pts.col(i)).norm() < 1e-14), true, AT);
-  }
-  std::cout << "done " << std::endl;
-}
-
-void test_contour() {
+BOOST_AUTO_TEST_CASE(contour) {
 
   size_t num_time_steps = 9;
   double dt = .1;
-  VectorXd ts =
+  Eigen::VectorXd ts =
       Eigen::VectorXd::LinSpaced(num_time_steps + 1, 0, num_time_steps * dt);
 
-  MatrixXd xs(10, 3);
+  Eigen::MatrixXd xs(10, 3);
   xs << 0.707620811535916, 0.510258911240815, 0.417485437023409,
       0.603422256426978, 0.529498282727551, 0.270351549348981,
       0.228364197569334, 0.423745615677815, 0.637687289287490,
@@ -3267,7 +3233,7 @@ void test_contour() {
       0.677357023849552, 0.480655768435853, 0.422227610314397,
       0.247046593173758, 0.380604672404750, 0.670065791405019;
 
-  std::vector<Eigen::VectorXd> xs_vec(10, VectorXd(3));
+  std::vector<Eigen::VectorXd> xs_vec(10, Eigen::VectorXd(3));
 
   size_t i = 0;
   for (size_t i = 0; i < 10; i++)
@@ -3282,15 +3248,10 @@ void test_contour() {
   Eigen::VectorXd J(3);
 
   path->interpolate(0.001, out, J);
-
   path->interpolate(dt + 1e-3, out, J);
-
   path->interpolate(num_time_steps * dt + .1, out, J);
-
   path->interpolate(0., out, J);
-
   path->interpolate(dt, out, J);
-
   path->interpolate(2 * dt + .1, out, J);
 
   ptr<Countour_cost> cost = mk<Countour_cost>(nx, nu, path);
@@ -3327,22 +3288,25 @@ void test_contour() {
   std::cout << "Jx" << Jx << std::endl;
   std::cout << "Judif" << Judif << std::endl;
 
+
   CHECK_SEQ((Jx - Jxdif).norm(), 1e-5, AT);
   CHECK_SEQ((Ju - Judif).norm(), 1e-5, AT);
 }
 
-int main(int argc, char *argv[]) {
-  // test(argc, argv);
+// int main(int argc, char *argv[]) {
+//   // test(argc, argv);
+//
+//   // double_integ(argc, argv);
+//   // test_unifree();
+//
+//   // test_contour();
+//
+//   return quim_test(argc, argv);
+//
+//   // eval_spline3d();
+// }
 
-  // double_integ(argc, argv);
-  // test_unifree();
-
-  // test_contour();
-
-  return quim_test(argc, argv);
-
-  // eval_spline3d();
-}
+// use boost test
 
 // TODO: convert into tests
 //
