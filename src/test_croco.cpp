@@ -73,6 +73,29 @@ const Eigen::IOFormat FMT(6, Eigen::DontAlignCols, ",", ",", "", "", "[", "]");
     throw std::runtime_error(msg);                                             \
   }
 
+enum class SOLVER {
+
+  traj_opt = 0,
+  traj_opt_free_time = 1,
+  traj_opt_smooth_then_free_time = 2,
+  mpc = 3,
+  mpcc = 4,
+  mpcc2 = 5,
+  traj_opt_mpcc = 6,
+  mpc_nobound_mpcc = 7,
+  none = 8,
+};
+
+const char *SOLVER_txt[] = {"traj_opt",
+                            "traj_opt_free_time",
+                            "traj_opt_smooth_then_free_time",
+                            "mpc",
+                            "mpcc",
+                            "mpcc2",
+                            "traj_opt_mpcc",
+                            "mpc_nobound_mpcc",
+                            "none"};
+
 inline void PrintVariableMap(const boost::program_options::variables_map &vm,
                              std::ostream &out) {
   for (po::variables_map::const_iterator it = vm.cbegin(); it != vm.cend();
@@ -186,11 +209,11 @@ void linearInterpolation(const Eigen::VectorXd &times,
     }
   }
 
-  // std::cout << "index is " << index << std::endl;
-  // std::cout << "size " << times.size() << std::endl;
-
   double factor =
       (t_query - times(index - 1)) / (times(index) - times(index - 1));
+
+  // std::cout << "index is " << index << std::endl;
+  // std::cout << "size " << times.size() << std::endl;
   // std::cout << "factor " << factor << std::endl;
 
   out = x.at(index - 1) + factor * (x.at(index) - x.at(index - 1));
@@ -203,9 +226,9 @@ struct Interpolator {
   std::vector<Eigen::VectorXd> x;
 
   // TODO
-  Eigen::VectorXd last_query;
-  Eigen::VectorXd last_f;
-  Eigen::MatrixXd last_J;
+  // Eigen::VectorXd last_query;
+  // Eigen::VectorXd last_f;
+  // Eigen::MatrixXd last_J;
 
   Interpolator(const Eigen::VectorXd &times,
                const std::vector<Eigen::VectorXd> &x)
@@ -568,13 +591,28 @@ struct Dynamics_unicycle : Dynamics {
   }
 };
 
+enum class CostTYPE {
+  linear,
+  least_squares,
+};
+
 struct Cost {
   size_t nx;
   size_t nu;
   size_t nr;
   std::string name;
+  CostTYPE cost_type = CostTYPE::linear;
 
-  Cost(size_t nx, size_t nu, size_t nr) : nx(nx), nu(nu), nr(nr) {}
+  Eigen::VectorXd zero_u;
+  Eigen::VectorXd zero_Ju;
+
+  Cost(size_t nx, size_t nu, size_t nr) : nx(nx), nu(nu), nr(nr) {
+    zero_u = Eigen::VectorXd(nu);
+    zero_u.setZero();
+    zero_Ju = Eigen::MatrixXd(nr, nu);
+    zero_Ju.setZero();
+
+  }
   virtual void calc(Eigen::Ref<Eigen::VectorXd> r,
                     const Eigen::Ref<const Eigen::VectorXd> &x,
                     const Eigen::Ref<const Eigen::VectorXd> &u) = 0;
@@ -592,7 +630,40 @@ struct Cost {
   virtual std::string get_name() const { return name; }
 };
 
-struct Contour_cost : Cost {
+struct Contour_cost_alpha : Cost {
+
+  double k = -1.;
+  Contour_cost_alpha(size_t nx, size_t nu) : Cost(nx, nu, 1) {
+    name = "contour-linear";
+    cost_type = CostTYPE::linear;
+  }
+
+  virtual void calc(Eigen::Ref<Eigen::VectorXd> r,
+                    const Eigen::Ref<const Eigen::VectorXd> &x,
+                    const Eigen::Ref<const Eigen::VectorXd> &u) {
+
+    assert(static_cast<std::size_t>(r.size()) == nr);
+    assert(static_cast<std::size_t>(x.size()) == nx);
+    assert(static_cast<std::size_t>(u.size()) == nu);
+
+    r(0) = -1 * k * u(nu - 1);
+  }
+
+  virtual void calcDiff(Eigen::Ref<Eigen::MatrixXd> Jx,
+                        Eigen::Ref<Eigen::MatrixXd> Ju,
+                        const Eigen::Ref<const Eigen::VectorXd> &x,
+                        const Eigen::Ref<const Eigen::VectorXd> &u) {
+
+    assert(static_cast<std::size_t>(Jx.rows()) == nr);
+    assert(static_cast<std::size_t>(Ju.rows()) == nr);
+    assert(static_cast<std::size_t>(Jx.cols()) == nx);
+    assert(static_cast<std::size_t>(Ju.cols()) == nu);
+
+    Ju(0, nu - 1) = 1.;
+  }
+};
+
+struct Contour_cost_x : Cost {
 
   ptr<Interpolator> path;
   double ref_alpha = 1.;
@@ -602,8 +673,13 @@ struct Contour_cost : Cost {
   double weight_virtual_control = 2.;
   bool use_finite_diff = false;
 
-  Contour_cost(size_t nx, size_t nu, ptr<Interpolator> path)
-      : Cost(nx, nu, nx + 1), path(path) {
+  double last_query;
+  Eigen::VectorXd last_out;
+  Eigen::VectorXd last_J;
+
+  Contour_cost_x(size_t nx, size_t nu, ptr<Interpolator> path)
+      : Cost(nx, nu, nx - 1), path(path), last_query(-1.), last_out(nx - 1),
+        last_J(nx - 1) {
     name = "Contour";
   }
   virtual void calc(Eigen::Ref<Eigen::VectorXd> r,
@@ -615,12 +691,111 @@ struct Contour_cost : Cost {
 
     double alpha = x(nx - 1);
 
-    // x in contour
-    Eigen::VectorXd tmp(nx - 1);
-    Eigen::VectorXd J(nx - 1);
-    path->interpolate(alpha, tmp, J);
+    last_query = alpha;
+    path->interpolate(alpha, last_out, last_J);
 
-    r.head(nx - 1) = weight_contour * weight_diff * (tmp - x.head(nx - 1));
+    r = weight_contour * weight_diff * (last_out - x.head(nx - 1));
+  }
+
+  virtual void calc(Eigen::Ref<Eigen::VectorXd> r,
+                    const Eigen::Ref<const Eigen::VectorXd> &x) {
+    calc(r, x, zero_u);
+  }
+
+  virtual void calcDiff(Eigen::Ref<Eigen::MatrixXd> Jx,
+                        Eigen::Ref<Eigen::MatrixXd> Ju,
+                        const Eigen::Ref<const Eigen::VectorXd> &x,
+                        const Eigen::Ref<const Eigen::VectorXd> &u) {
+
+    assert(static_cast<std::size_t>(Jx.rows()) == nr);
+    assert(static_cast<std::size_t>(Ju.rows()) == nr);
+    assert(static_cast<std::size_t>(Jx.cols()) == nx);
+    assert(static_cast<std::size_t>(Ju.cols()) == nu);
+
+    // lets use finite diff
+    if (use_finite_diff) {
+      Eigen::VectorXd r_ref(nr);
+      calc(r_ref, x, u);
+
+      Ju.setZero();
+
+      double eps = 1e-5;
+      for (size_t i = 0; i < nu; i++) {
+        Eigen::MatrixXd ue;
+        ue = u;
+        ue(i) += eps;
+        Eigen::VectorXd r_e(nr);
+        r_e.setZero();
+        calc(r_e, x, ue);
+        auto df = (r_e - r_ref) / eps;
+        Ju.col(i) = df;
+      }
+
+      Jx.setZero();
+      for (size_t i = 0; i < nx; i++) {
+        Eigen::MatrixXd xe;
+        xe = x;
+        xe(i) += eps;
+        Eigen::VectorXd r_e(nr);
+        r_e.setZero();
+        calc(r_e, xe, u);
+        auto df = (r_e - r_ref) / eps;
+        Jx.col(i) = df;
+      }
+    }
+
+    else {
+      double alpha = x(nx - 1);
+      if (std::fabs(alpha - last_query) > 1e-8) {
+        last_query = alpha;
+        path->interpolate(alpha, last_out, last_J);
+      }
+
+      Jx.block(0, 0, nx - 1, nx - 1).diagonal() =
+          -weight_contour * weight_diff * Eigen::VectorXd::Ones(nx - 1);
+      Jx.block(0, nx - 1, nx - 1, 1) = weight_contour * weight_diff * last_J;
+    }
+  };
+
+  virtual void calcDiff(Eigen::Ref<Eigen::MatrixXd> Jx,
+                        const Eigen::Ref<const Eigen::VectorXd> &x) {
+
+    calcDiff(Jx, zero_Ju, x, zero_u);
+  }
+};
+
+struct Contour_cost : Cost {
+
+  ptr<Interpolator> path;
+  double ref_alpha = 1.;
+  double weight_alpha = 2.;
+  double weight_diff = 20.;
+  double weight_contour = 1.;
+  double weight_virtual_control = 2.;
+  bool use_finite_diff = false;
+
+  double last_query;
+  Eigen::VectorXd last_out;
+  Eigen::VectorXd last_J;
+
+  Contour_cost(size_t nx, size_t nu, ptr<Interpolator> path)
+      : Cost(nx, nu, nx + 1), path(path), last_query(-1.), last_out(nx - 1),
+        last_J(nx - 1) {
+    name = "Contour";
+  }
+  virtual void calc(Eigen::Ref<Eigen::VectorXd> r,
+                    const Eigen::Ref<const Eigen::VectorXd> &x,
+                    const Eigen::Ref<const Eigen::VectorXd> &u) {
+    // check that r
+    assert(static_cast<std::size_t>(r.size()) == nr);
+    assert(static_cast<std::size_t>(x.size()) == nx);
+
+    double alpha = x(nx - 1);
+
+    last_query = alpha;
+    path->interpolate(alpha, last_out, last_J);
+
+    r.head(nx - 1) = weight_contour * weight_diff * (last_out - x.head(nx - 1));
     r(nx - 1) = weight_contour * weight_alpha * (alpha - ref_alpha);
     r(nx) = weight_virtual_control * u(nu - 1);
 
@@ -672,12 +847,15 @@ struct Contour_cost : Cost {
     }
 
     else {
-      Eigen::VectorXd tmp(nx - 1);
-      Eigen::VectorXd J(nx - 1);
-      path->interpolate(x(nx - 1), tmp, J);
+      double alpha = x(nx - 1);
+      if (std::fabs(alpha - last_query) > 1e-8) {
+        last_query = alpha;
+        path->interpolate(alpha, last_out, last_J);
+      }
+
       Jx.block(0, 0, nx - 1, nx - 1).diagonal() =
           -weight_contour * weight_diff * Eigen::VectorXd::Ones(nx - 1);
-      Jx.block(0, nx - 1, nx - 1, 1) = weight_contour * weight_diff * J;
+      Jx.block(0, nx - 1, nx - 1, 1) = weight_contour * weight_diff * last_J;
       Jx(nx - 1, nx - 1) = weight_contour * weight_alpha;
       Ju(nx, nu - 1) = weight_virtual_control;
     }
@@ -700,7 +878,7 @@ struct Col_cost : Cost {
   Eigen::VectorXd last_x;
   Eigen::VectorXd last_grad;
 
-  // TODO: check that the sec_factor is save
+  // TODO: check that the sec_factor is actually save in a test
   double sec_factor = .1;
 
   // what about a log barrier function? -- maybe I get better gradients
@@ -739,7 +917,7 @@ struct Col_cost : Cost {
     bool check_two = (last_raw_d - margin) > 0 &&
                      (x - last_x).norm() < sec_factor * (last_raw_d - margin);
 
-    std::cout << "checking collisions " << std::endl;
+    // std::cout << "checking collisions " << std::endl;
 
     if (check_one || check_two) {
       raw_d = last_raw_d;
@@ -766,12 +944,9 @@ struct Col_cost : Cost {
     assert(static_cast<std::size_t>(x.size()) == nx);
     assert(static_cast<std::size_t>(u.size()) == nu);
 
-    // std::vector<double> query{x.data(), x.data() + x.size()};
     std::vector<double> query{x.data(), x.data() + nx_effective};
-    double raw_d;
-    double d;
+    double raw_d, d;
     Eigen::VectorXd v(nx);
-    // CONSERVATIVE
     bool check_one =
         (x - last_x).squaredNorm() < 1e-8 && (last_raw_d - margin) > 0;
     bool check_two = (last_raw_d - margin) > 0 &&
@@ -1882,27 +2057,6 @@ auto generate_problem(const Opts &opts, size_t &nx, size_t &nu) {
   return problem;
 };
 
-enum class SOLVER {
-
-  traj_opt = 0,
-  traj_opt_free_time = 1,
-  traj_opt_smooth_then_free_time = 2,
-  mpc = 3,
-  mpcc = 4,
-  mpcc2 = 5,
-  traj_opt_mpcc = 6,
-  none = 7,
-};
-
-const char *SOLVER_txt[] = {"traj_opt",
-                            "traj_opt_free_time",
-                            "traj_opt_smooth_then_free_time",
-                            "mpc",
-                            "mpcc",
-                            "mpcc2",
-                            "traj_opt_mpcc",
-                            "none"};
-
 bool check_dynamics(const std::vector<Eigen::VectorXd> &xs_out,
                     const std::vector<Eigen::VectorXd> &us_out,
                     ptr<Dynamics> dyn) {
@@ -1958,10 +2112,9 @@ struct Opti_params {
   bool free_time = false;
   bool repair_init_guess = true;
   bool regularize_wrt_init_guess = false;
-  bool check_time = false;
   bool control_bounds = true;
   bool adaptative_goal_mpc = false;
-  int solver_int = 0;
+  int solver_id = 0;
 
   double th_stop = 1e-2;
   double init_reg = 1e2;
@@ -1973,6 +2126,7 @@ struct Opti_params {
   int num_steps_to_optimize = 20;
   int num_steps_to_move = 10;
   size_t max_mpc_iterations = 50;
+  std::string debug_file_name = "debug_file.yaml";
 
   void add_options(po::options_description &desc) {
 
@@ -1985,7 +2139,7 @@ struct Opti_params {
                         ->default_value(num_steps_to_optimize))(
         "step_move",
         po::value<int>(&num_steps_to_move)->default_value(num_steps_to_move))(
-        "solver", po::value<int>(&solver_int)->default_value(solver_int))(
+        "solver", po::value<int>(&solver_id)->default_value(solver_id))(
         "use_warmstart",
         po::value<bool>(&use_warmstart)->default_value(use_warmstart))(
         "use_fdiff",
@@ -1994,6 +2148,33 @@ struct Opti_params {
         po::value<double>(&alpha_rate)->default_value(alpha_rate))(
         "reg", po::value<bool>(&regularize_wrt_init_guess)
                    ->default_value(regularize_wrt_init_guess));
+  }
+
+  void print(std::ostream &out) {
+
+    std::string be = "";
+    std::string af = ": ";
+    out << be << "CALLBACKS" << af << CALLBACKS << std::endl;
+    out << be << "use_finite_diff" << af << use_finite_diff << std::endl;
+    out << be << "use_warmstart" << af << use_warmstart << std::endl;
+    out << be << "free_time" << af << free_time << std::endl;
+    out << be << "repair_init_guess" << af << repair_init_guess << std::endl;
+    out << be << "regularize_wrt_init_guess" << af << regularize_wrt_init_guess
+        << std::endl;
+    out << be << "control_bounds" << af << control_bounds << std::endl;
+    out << be << "adaptative_goal_mpc" << af << adaptative_goal_mpc
+        << std::endl;
+    out << be << "th_stop" << af << th_stop << std::endl;
+    out << be << "init_reg" << af << init_reg << std::endl;
+    out << be << "th_acceptnegstep" << af << th_acceptnegstep << std::endl;
+    out << be << "noise_level" << af << noise_level << std::endl;
+    out << be << "alpha_rate" << af << alpha_rate << std::endl;
+    out << be << "max_iter" << af << max_iter << std::endl;
+    out << be << "num_steps_to_optimize" << af << num_steps_to_optimize
+        << std::endl;
+    out << be << "num_steps_to_move" << af << num_steps_to_move << std::endl;
+    out << be << "max_mpc_iterations" << af << max_mpc_iterations << std::endl;
+    out << be << "debug_file_name" << af << debug_file_name << std::endl;
   }
 };
 
@@ -2193,6 +2374,37 @@ struct Result_opti {
   double cost = -1;
   std::vector<Eigen::VectorXd> xs_out;
   std::vector<Eigen::VectorXd> us_out;
+
+  void write_yaml(std::ostream &out) {
+
+    out << "feasible: " << feasible << std::endl;
+    out << "cost: " << cost << std::endl;
+
+    out << "xs_out: " << std::endl;
+    for (auto &x : xs_out)
+      out << "  - " << x.format(FMT) << std::endl;
+
+    out << "us_out: " << std::endl;
+    for (auto &u : us_out)
+      out << "  - " << u.format(FMT) << std::endl;
+  }
+
+  void write_yaml_db(std::ostream &out) {
+
+    out << "feasible: " << feasible << std::endl;
+    out << "cost: " << cost << std::endl;
+    out << "result:" << std::endl;
+    out << "  - states:" << std::endl;
+    for (auto &x : xs_out) {
+      x(2) = std::remainder(x(2), 2 * M_PI);
+      out << "      - " << x.format(FMT) << std::endl;
+    }
+
+    out << "    actions:" << std::endl;
+    for (auto &u : us_out) {
+      out << "      - " << u.format(FMT) << std::endl;
+    }
+  };
 };
 
 void solve_with_custom_solver(const Opti_params &opti_params,
@@ -2202,7 +2414,6 @@ void solve_with_custom_solver(const Opti_params &opti_params,
   double dt = .1;
   std::cout << "Warning: "
             << "dt is hardcoded to " << dt << std::endl;
-  SOLVER solver = static_cast<SOLVER>(opti_params.solver_int);
 
   bool verbose = false;
   auto cl = file_inout.cl;
@@ -2212,6 +2423,8 @@ void solve_with_custom_solver(const Opti_params &opti_params,
   auto goal = file_inout.goal;
   auto start = file_inout.start;
   auto name = file_inout.name;
+
+  SOLVER solver = static_cast<SOLVER>(opti_params.solver_id);
 
   if (opti_params.repair_init_guess) {
     std::cout << "WARNING: reparing init guess, annoying SO2" << std::endl;
@@ -2247,7 +2460,7 @@ void solve_with_custom_solver(const Opti_params &opti_params,
             << "i modify last state to match goal" << std::endl;
   xs_init.back() = goal;
 
-  std::ofstream debug_file_yaml("debug_file.yaml");
+  std::ofstream debug_file_yaml(opti_params.debug_file_name);
   debug_file_yaml << "name: " << name << std::endl;
   debug_file_yaml << "N: " << N << std::endl;
   debug_file_yaml << "start: " << start.format(FMT) << std::endl;
@@ -2388,7 +2601,8 @@ void solve_with_custom_solver(const Opti_params &opti_params,
           //   CHECK_EQ(xs_opt.size(), us_opt.size() + 1, AT);
           //
           //   auto xs_1 = std::vector<Eigen::VectorXd>(
-          //       xs_opt.begin() + num_steps_to_move * counter, xs_opt.end());
+          //       xs_opt.begin() + num_steps_to_move * counter,
+          //       xs_opt.end());
           //
           //   CHECK_EQ(num_steps_to_move * counter, xs_opt.size(), AT);
           //
@@ -2400,9 +2614,11 @@ void solve_with_custom_solver(const Opti_params &opti_params,
           //   xs_1.insert(xs_1.end(), xs_2.begin(), xs_2.end());
           //
           //   auto us_1 = std::vector<Eigen::VectorXd>(
-          //       us_opt.begin() + num_steps_to_move * counter, us_opt.end());
+          //       us_opt.begin() + num_steps_to_move * counter,
+          //       us_opt.end());
           //
-          //   CHECK_SEQ(counter * num_steps_to_move + num_steps_to_optimize_i,
+          //   CHECK_SEQ(counter * num_steps_to_move +
+          //   num_steps_to_optimize_i,
           //             us_init.size(), AT);
           //
           //   auto us_2 = std::vector<Eigen::VectorXd>(
@@ -2960,34 +3176,6 @@ void solve_with_custom_solver(const Opti_params &opti_params,
       ddp.setCallbacks(cbs);
     }
 
-    if (opti_params.check_time) {
-      {
-        crocoddyl::Timer timer;
-        problem->calc(xs, us);
-        std::cout << "calc time: " << timer.get_duration() << std::endl;
-      }
-
-      {
-        crocoddyl::Timer timer;
-        problem->calcDiff(xs, us);
-        std::cout << "calcDiff time: " << timer.get_duration() << std::endl;
-      }
-
-      std::cout << "second time" << std::endl;
-      {
-        std::cout << problem->calc(xs, us) << std::endl;
-        crocoddyl::Timer timer;
-        problem->calc(xs, us);
-        std::cout << "calc time: " << timer.get_duration() << std::endl;
-      }
-
-      {
-        crocoddyl::Timer timer;
-        problem->calcDiff(xs, us);
-        std::cout << "calcDiff time: " << timer.get_duration() << std::endl;
-      }
-    }
-
     crocoddyl::Timer timer;
     ddp.solve(xs, us, opti_params.max_iter, false, opti_params.init_reg);
     std::cout << "time: " << timer.get_duration() << std::endl;
@@ -3144,6 +3332,87 @@ void solve_with_custom_solver(const Opti_params &opti_params,
   opti_out.cost = us_out.size() * dt;
 }
 
+void compound_solvers(Opti_params opti_params, File_parser_inout file_inout,
+                      Result_opti &opti_out) {
+  read_from_file(file_inout);
+
+  switch (static_cast<SOLVER>(opti_params.solver_id)) {
+
+  case SOLVER::mpc_nobound_mpcc: {
+
+    size_t num_solve_mpc_no_bounds = 3;
+    size_t num_solve_mpcc_with_bounds = 3;
+
+    bool do_mpcc = true;
+    std::cout << "MPC" << std::endl;
+
+    for (size_t i = 0; i < num_solve_mpc_no_bounds; i++) {
+      std::cout << "iteration " << i << std::endl;
+
+      opti_params.solver_id = static_cast<int>(SOLVER::mpc);
+      opti_params.control_bounds = 0;
+      opti_params.debug_file_name =
+          "debug_file_mpc_" + std::to_string(i) + ".yaml";
+
+      std::cout << "**\nopti params is " << std::endl;
+
+      opti_params.print(std::cout);
+
+      if (i > 0) {
+        file_inout.xs = opti_out.xs_out;
+        file_inout.us = opti_out.us_out;
+      }
+
+      solve_with_custom_solver(opti_params, file_inout, opti_out);
+
+      if (!opti_out.feasible) {
+        std::cout << "warning"
+                  << " "
+                  << "infeasible" << std::endl;
+        do_mpcc = false;
+        break;
+      }
+    }
+
+    std::cout << "MPCC" << std::endl;
+    if (do_mpcc) {
+      for (size_t i = 0; i < num_solve_mpcc_with_bounds; i++) {
+
+        std::cout << "iteration " << i << std::endl;
+        opti_params.solver_id = static_cast<int>(SOLVER::mpcc);
+        opti_params.control_bounds = 1;
+        if (i == 0)
+          opti_params.alpha_rate = 1.;
+        else
+          opti_params.alpha_rate = 1.2;
+
+        opti_params.debug_file_name =
+            "debug_file_mpcc_" + std::to_string(i) + ".yaml";
+
+        file_inout.xs = opti_out.xs_out;
+        file_inout.us = opti_out.us_out;
+
+        solve_with_custom_solver(opti_params, file_inout, opti_out);
+
+        if (!opti_out.feasible) {
+          std::cout << "warning"
+                    << " "
+                    << "infeasible" << std::endl;
+          break;
+        }
+      }
+    }
+  } break;
+
+  case SOLVER::traj_opt_smooth_then_free_time: {
+
+  } break;
+  default: {
+    solve_with_custom_solver(opti_params, file_inout, opti_out);
+  }
+  }
+}
+
 BOOST_AUTO_TEST_CASE(quim) {
 
   auto argv = boost::unit_test::framework::master_test_suite().argv;
@@ -3187,7 +3456,7 @@ BOOST_AUTO_TEST_CASE(quim) {
     }
 
     std::cout << "***" << std::endl;
-    std::cout << "variable map is: " << std::endl;
+    std::cout << "VARIABLE MAP" << std::endl;
     PrintVariableMap(vm, std::cout);
     std::cout << "***" << std::endl;
 
@@ -3197,27 +3466,8 @@ BOOST_AUTO_TEST_CASE(quim) {
     return;
   }
 
-  read_from_file(file_inout);
-
-  Result_opti opti_out;
-  solve_with_custom_solver(opti_params, file_inout, opti_out);
-
-  // write the results.
-  std::ofstream results_yaml(out);
-  std::cout << "feasible is " << opti_out.feasible << std::endl;
-  results_yaml << "result:" << std::endl;
-  results_yaml << "  - states:" << std::endl;
-  for (auto &x : opti_out.xs_out) {
-    x(2) = std::remainder(x(2), 2 * M_PI);
-    results_yaml << "      - " << x.format(FMT) << std::endl;
-  }
-
-  results_yaml << "    actions:" << std::endl;
-  for (auto &u : opti_out.us_out) {
-    results_yaml << "      - " << u.format(FMT) << std::endl;
-  }
-
-  std::cout << "warning: I need correct exit flag" << std::endl;
+  Result_opti result;
+  compound_solvers(opti_params, file_inout, result);
 }
 
 BOOST_AUTO_TEST_CASE(unicycle2) {
@@ -3370,6 +3620,26 @@ BOOST_AUTO_TEST_CASE(linear_interpolation) {
   std::cout << x << std::endl;
 
   // add some test?
+}
+
+// stuff that works
+
+BOOST_AUTO_TEST_CASE(traj_opt_no_bounds) {
+
+  File_parser_inout file_inout;
+  file_inout.env_file = "../benchmark/unicycle_first_order_0/bugtrap_0.yaml";
+  file_inout.init_guess =
+      "../test/unicycle_first_order_0/guess_bugtrap_0_sol0.yaml";
+
+  Opti_params opti_params;
+  opti_params.control_bounds = 0;
+  opti_params.solver_id = 0;
+  opti_params.use_warmstart = 1;
+  opti_params.max_iter = 50;
+
+  Result_opti result;
+  compound_solvers(opti_params, file_inout, result);
+  BOOST_TEST(result.feasible);
 }
 
 // Strategy:
