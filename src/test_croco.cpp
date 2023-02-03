@@ -7,8 +7,8 @@
 // #define BOOST_TEST_DYN_LINK
 // #include <boost/test/unit_test.hpp>
 
-
-// see https://www.boost.org/doc/libs/1_81_0/libs/test/doc/html/boost_test/usage_variants.html
+// see
+// https://www.boost.org/doc/libs/1_81_0/libs/test/doc/html/boost_test/usage_variants.html
 // #define BOOST_TEST_MODULE test module name
 
 #define BOOST_TEST_MODULE test module name
@@ -45,6 +45,8 @@ namespace po = boost::program_options;
 // Eigen::Vector3d goal(1.9, .3, 0);
 static double collision_weight = 100.;
 // issue with derivatives...
+
+const Eigen::IOFormat FMT(6, Eigen::DontAlignCols, ",", ",", "", "", "[", "]");
 
 #define STRINGIFY(x) #x
 #define TOSTRING(x) STRINGIFY(x)
@@ -159,8 +161,8 @@ void linearInterpolation(const Eigen::VectorXd &times,
   // CHECK_SEQ(t_query, times.tail(1)(0) + num_tolerance, AT);
   if (t_query >= times(times.size() - 1)) {
     std::cout << "WARNING: " << AT << std::endl;
-    std::cout << "EXTRAPOLATION:" << t_query << " " << times(times.size() - 1)
-              << t_query - times(times.size() - 1) << std::endl;
+    std::cout << "EXTRAPOLATION: " << t_query << " " << times(times.size() - 1)
+              << "  " << t_query - times(times.size() - 1) << std::endl;
     index = times.size() - 1;
 
   } else {
@@ -189,6 +191,7 @@ void linearInterpolation(const Eigen::VectorXd &times,
 
   double factor =
       (t_query - times(index - 1)) / (times(index) - times(index - 1));
+  // std::cout << "factor " << factor << std::endl;
 
   out = x.at(index - 1) + factor * (x.at(index) - x.at(index - 1));
   Jx = (x.at(index) - x.at(index - 1)) / (times(index) - times(index - 1));
@@ -303,11 +306,11 @@ struct Dummy_dynamics : Dynamics {
                         const Eigen::Ref<const VectorXs> &u) {}
 };
 
-struct Dynamics_countour : Dynamics {
+struct Dynamics_contour : Dynamics {
 
   ptr<Dynamics> dyn;
   bool accumulate = false;
-  Dynamics_countour(ptr<Dynamics> dyn, bool accumulate)
+  Dynamics_contour(ptr<Dynamics> dyn, bool accumulate)
       : dyn(dyn), accumulate(accumulate) {
     nx = dyn->nx + 1;
     nu = dyn->nu + 1;
@@ -589,20 +592,19 @@ struct Cost {
   virtual std::string get_name() const { return name; }
 };
 
-struct Countour_cost : Cost {
+struct Contour_cost : Cost {
 
   ptr<Interpolator> path;
   double ref_alpha = 1.;
-  // double weight_alpha = 10.;
-  // double weight_diff = 200.;
-  double weight_alpha = 1.;
-  double weight_diff = 10.;
+  double weight_alpha = 2.;
+  double weight_diff = 20.;
+  double weight_contour = 1.;
   double weight_virtual_control = 2.;
   bool use_finite_diff = false;
 
-  Countour_cost(size_t nx, size_t nu, ptr<Interpolator> path)
+  Contour_cost(size_t nx, size_t nu, ptr<Interpolator> path)
       : Cost(nx, nu, nx + 1), path(path) {
-    name = "countour";
+    name = "Contour";
   }
   virtual void calc(Eigen::Ref<Eigen::VectorXd> r,
                     const Eigen::Ref<const Eigen::VectorXd> &x,
@@ -618,8 +620,8 @@ struct Countour_cost : Cost {
     Eigen::VectorXd J(nx - 1);
     path->interpolate(alpha, tmp, J);
 
-    r.head(nx - 1) = weight_diff * (tmp - x.head(nx - 1));
-    r(nx - 1) = weight_alpha * (alpha - ref_alpha);
+    r.head(nx - 1) = weight_contour * weight_diff * (tmp - x.head(nx - 1));
+    r(nx - 1) = weight_contour * weight_alpha * (alpha - ref_alpha);
     r(nx) = weight_virtual_control * u(nu - 1);
 
     // std::cout << "calc in contour " << r.transpose() << std::endl;
@@ -674,9 +676,9 @@ struct Countour_cost : Cost {
       Eigen::VectorXd J(nx - 1);
       path->interpolate(x(nx - 1), tmp, J);
       Jx.block(0, 0, nx - 1, nx - 1).diagonal() =
-          -weight_diff * Eigen::VectorXd::Ones(nx - 1);
-      Jx.block(0, nx - 1, nx - 1, 1) = weight_diff * J;
-      Jx(nx - 1, nx - 1) = weight_alpha;
+          -weight_contour * weight_diff * Eigen::VectorXd::Ones(nx - 1);
+      Jx.block(0, nx - 1, nx - 1, 1) = weight_contour * weight_diff * J;
+      Jx(nx - 1, nx - 1) = weight_contour * weight_alpha;
       Ju(nx, nu - 1) = weight_virtual_control;
     }
   };
@@ -736,6 +738,8 @@ struct Col_cost : Cost {
     bool check_one = (x - last_x).squaredNorm() < 1e-8;
     bool check_two = (last_raw_d - margin) > 0 &&
                      (x - last_x).norm() < sec_factor * (last_raw_d - margin);
+
+    std::cout << "checking collisions " << std::endl;
 
     if (check_one || check_two) {
       raw_d = last_raw_d;
@@ -1571,40 +1575,44 @@ void check_dyn(boost::shared_ptr<Dynamics> dyn, double eps) {
     auto df = (xnexte - xnext) / eps;
     FuD.col(i) = df;
   }
+  bool verbose = false;
+  if (verbose) {
+    std::cout << "Analytical " << std::endl;
+    std::cout << "Fx\n" << Fx << std::endl;
+    std::cout << "Fu\n" << Fu << std::endl;
+    std::cout << "Finite Diff " << std::endl;
+    std::cout << "Fx\n" << FxD << std::endl;
+    std::cout << "Fu\n" << FuD << std::endl;
+  }
 
-  std::cout << "Analytical " << std::endl;
-  std::cout << "Fx\n" << Fx << std::endl;
-  std::cout << "Fu\n" << Fu << std::endl;
-  std::cout << "Finite Diff " << std::endl;
-  std::cout << "Fx\n" << FxD << std::endl;
-  std::cout << "Fu\n" << FuD << std::endl;
-
-  assert((Fx - FxD).cwiseAbs().maxCoeff() < 10 * eps);
-  assert((Fu - FuD).cwiseAbs().maxCoeff() < 10 * eps);
+  BOOST_TEST((Fx - FxD).cwiseAbs().maxCoeff() < 10 * eps);
+  BOOST_TEST((Fu - FuD).cwiseAbs().maxCoeff() < 10 * eps);
 }
 
 struct Opts {
-  bool free_time;
+  bool free_time = false;
   bool control_bounds = false;
   std::string name;
   size_t N;
-  bool regularize_wrt_init_guess;
-  bool use_finite_diff;
+  bool regularize_wrt_init_guess = false;
+  bool use_finite_diff = false;
   Eigen::VectorXd goal;
   Eigen::VectorXd start;
   ptr<CollisionChecker> cl;
   std::vector<Eigen::VectorXd> states;
   std::vector<Eigen::VectorXd> actions;
-  bool countour_control = false;
+  bool contour_control = false;
   ptr<Interpolator> interpolator = nullptr;
   double ref_alpha = 1.;
   double max_alpha = 100;
   double cost_alpha_multi = 1.;
   bool only_contour_last = true;
+  Eigen::VectorXd alpha_refs;
+  Eigen::VectorXd cost_alpha_multis;
   // Eigen::VectorXd u_lb;
   // Eigen::VectorXd u_ub;
 
-  void print(std::ostream &out) {
+  void print(std::ostream &out) const {
     auto pre = "";
     auto after = ": ";
     out << pre << "free_time" << after << free_time << std::endl;
@@ -1614,16 +1622,19 @@ struct Opts {
     out << pre << "regularize_wrt_init_guess" << after
         << regularize_wrt_init_guess << std::endl;
     out << pre << "use_finite_diff" << after << use_finite_diff << std::endl;
-    out << pre << "goal" << after << goal << std::endl;
-    out << pre << "start" << after << start << std::endl;
+    out << pre << "goal" << after << goal.transpose() << std::endl;
+    out << pre << "start" << after << start.transpose() << std::endl;
     out << pre << "cl" << after << cl << std::endl;
     // out << pre << "states"<< after << states << std::endl;
     // out << pre << "actions"<< after << actions << std::endl;
-    out << pre << "countour_control" << after << countour_control << std::endl;
+    out << pre << "contour_control" << after << contour_control << std::endl;
     out << pre << "ref_alpha" << after << ref_alpha << std::endl;
     out << pre << "max_alpha" << after << max_alpha << std::endl;
     out << pre << "cost_alpha_multi" << after << cost_alpha_multi << std::endl;
     out << pre << "only_contour_last" << after << only_contour_last
+        << std::endl;
+    out << pre << "alpha_refs" << after << alpha_refs.transpose() << std::endl;
+    out << pre << "cost_alpha_multis" << after << cost_alpha_multis.transpose()
         << std::endl;
   }
 };
@@ -1654,15 +1665,18 @@ bool check_feas(ptr<Cost> feat_col, const std::vector<Eigen::VectorXd> &xs,
 };
 
 auto generate_problem(const Opts &opts, size_t &nx, size_t &nu) {
+
+  std::cout << "**\nGenerating problem\n**\n" << std::endl;
+  opts.print(std::cout);
+
   ptr<Cost> feats_terminal;
-  ptr<crocoddyl::ActionModelAbstract> am_run;
   ptr<crocoddyl::ActionModelAbstract> am_terminal;
   ptr<Dynamics> dyn;
 
   std::vector<boost::shared_ptr<crocoddyl::ActionModelAbstract>> amq_runs;
   Eigen::VectorXd goal_v = opts.goal;
 
-  if (opts.regularize_wrt_init_guess && opts.countour_control) {
+  if (opts.regularize_wrt_init_guess && opts.contour_control) {
     CHECK_EQ(true, false, AT);
   }
 
@@ -1670,9 +1684,9 @@ auto generate_problem(const Opts &opts, size_t &nx, size_t &nu) {
 
     dyn = mk<Dynamics_unicycle>(opts.free_time);
 
-    if (opts.countour_control) {
-      dyn = mk<Dynamics_countour>(dyn, !opts.only_contour_last);
-      // dyn = mk<Dynamics_countour>(dyn, false);
+    if (opts.contour_control) {
+      dyn = mk<Dynamics_contour>(dyn, !opts.only_contour_last);
+      // dyn = mk<Dynamics_Contour>(dyn, false);
     }
 
     nx = dyn->nx;
@@ -1680,14 +1694,13 @@ auto generate_problem(const Opts &opts, size_t &nx, size_t &nu) {
 
     ptr<Cost> control_feature;
 
-    if (opts.free_time && !opts.countour_control)
+    if (opts.free_time && !opts.contour_control)
       control_feature = mk<Control_cost>(
           nx, nu, nu, Eigen::Vector3d(.2, .2, 1.), Eigen::Vector3d(0., 0., .5));
-    else if (!opts.free_time && !opts.countour_control)
+    else if (!opts.free_time && !opts.contour_control)
       control_feature = mk<Control_cost>(nx, nu, nu, Eigen::Vector2d(.5, .5),
                                          Eigen::Vector2d::Zero());
-
-    else if (!opts.free_time && opts.countour_control) {
+    else if (!opts.free_time && opts.contour_control) {
       control_feature = mk<Control_cost>(
           nx, nu, nu, Eigen::Vector3d(.5, .5, .1), Eigen::Vector3d::Zero());
     } else {
@@ -1702,7 +1715,7 @@ auto generate_problem(const Opts &opts, size_t &nx, size_t &nu) {
       boost::static_pointer_cast<Col_cost>(cl_feature)->non_zero_flags = {
           true, true, true};
 
-      if (opts.countour_control)
+      if (opts.contour_control)
         boost::static_pointer_cast<Col_cost>(cl_feature)->nx_effective = nx - 1;
 
       if (opts.regularize_wrt_init_guess) {
@@ -1711,9 +1724,7 @@ auto generate_problem(const Opts &opts, size_t &nx, size_t &nu) {
         feats_run = mk<All_cost>(
             nx, nu, cl_feature->nr + control_feature->nr + state_feature->nr,
             std::vector<ptr<Cost>>{cl_feature, state_feature, control_feature});
-      }
-
-      else if (opts.countour_control) {
+      } else if (opts.contour_control) {
         if (opts.only_contour_last) {
           feats_run =
               mk<All_cost>(nx, nu, cl_feature->nr + control_feature->nr,
@@ -1721,27 +1732,30 @@ auto generate_problem(const Opts &opts, size_t &nx, size_t &nu) {
         }
 
         else {
-          std::cout << "adding countour to all " << std::endl;
-          ptr<Countour_cost> countour =
-              mk<Countour_cost>(nx, nu, opts.interpolator);
+          std::cout << "adding Contour to all " << std::endl;
+          ptr<Contour_cost> Contour =
+              mk<Contour_cost>(nx, nu, opts.interpolator);
 
-          countour->ref_alpha = opts.ref_alpha;
-          countour->weight_alpha *= opts.cost_alpha_multi;
+          std::cout << "at time t, ref alpha is " << t << " "
+                    << opts.alpha_refs(t) << std::endl;
+          Contour->ref_alpha = opts.alpha_refs(t);
+          // Contour->weight_alpha *= opts.cost_alpha_multis(t);
+          Contour->weight_contour *= opts.cost_alpha_multis(t);
 
           feats_run = mk<All_cost>(
-              nx, nu, cl_feature->nr + control_feature->nr + countour->nr,
-              std::vector<ptr<Cost>>{cl_feature, control_feature, countour});
+              nx, nu, cl_feature->nr + control_feature->nr + Contour->nr,
+              std::vector<ptr<Cost>>{cl_feature, control_feature, Contour});
         }
         // std::cout << "WARNING "
         //           << "i have erased the collisions for now" << std::endl;
         // mk<All_cost>(nx, nu, control_feature->nr,
         //              std::vector<ptr<Cost>>{control_feature});
-      }
-
-      else {
+      } else {
         feats_run =
             mk<All_cost>(nx, nu, control_feature->nr + cl_feature->nr,
                          std::vector<ptr<Cost>>{cl_feature, control_feature});
+        // feats_run = mk<All_cost>(nx, nu, control_feature->nr,
+        //                          std::vector<ptr<Cost>>{control_feature});
       }
 
       auto am_run = to_am_base(mk<ActionModelQ>(dyn, feats_run));
@@ -1751,10 +1765,15 @@ auto generate_problem(const Opts &opts, size_t &nx, size_t &nu) {
         if (opts.free_time) {
           am_run->set_u_lb(Eigen::Vector3d(-.5, -.5, .4));
           am_run->set_u_ub(Eigen::Vector3d(.5, .5, 1.5));
-        } else if (opts.countour_control) {
+        } else if (opts.contour_control) {
           am_run->set_u_lb(Eigen::Vector3d(-.5, -.5, 0.));
           am_run->set_u_ub(Eigen::Vector3d(.5, .5, opts.max_alpha));
         } else {
+          // am_run->set_u_lb(Eigen::Vector2d(-.5, -.5));
+          // am_run->set_u_ub(Eigen::Vector2d(.5, .5));
+          // am_run->set_u_lb(Eigen::Vector2d(-.5, -.5));
+          // am_run->set_u_ub(Eigen::Vector2d(.5, .5));
+
           am_run->set_u_lb(Eigen::Vector2d(-.5, -.5));
           am_run->set_u_ub(Eigen::Vector2d(.5, .5));
         }
@@ -1763,17 +1782,16 @@ auto generate_problem(const Opts &opts, size_t &nx, size_t &nu) {
       amq_runs.push_back(am_run);
     }
 
-    ptr<Cost> state_feature = mk<State_cost>(
-        nx, nu, nx, Eigen::Vector3d(200., 200., 200.), opts.goal);
+    ptr<Cost> state_feature =
+        mk<State_cost>(nx, nu, nx, 200. * Eigen::Vector3d::Ones(), opts.goal);
 
-    if (opts.countour_control) {
-      ptr<Countour_cost> countour =
-          mk<Countour_cost>(nx, nu, opts.interpolator);
-      countour->ref_alpha = opts.ref_alpha;
-      countour->weight_alpha *= opts.cost_alpha_multi;
+    if (opts.contour_control) {
+      ptr<Contour_cost> Contour = mk<Contour_cost>(nx, nu, opts.interpolator);
+      Contour->ref_alpha = opts.alpha_refs(opts.N);
+      Contour->weight_contour *= opts.cost_alpha_multis(opts.N);
 
       feats_terminal =
-          mk<All_cost>(nx, nu, countour->nr, std::vector<ptr<Cost>>{countour});
+          mk<All_cost>(nx, nu, Contour->nr, std::vector<ptr<Cost>>{Contour});
 
       am_terminal = to_am_base(mk<ActionModelQ>(dyn, feats_terminal));
 
@@ -1783,11 +1801,10 @@ auto generate_problem(const Opts &opts, size_t &nx, size_t &nu) {
       am_terminal = to_am_base(mk<ActionModelQ>(dyn, feats_terminal));
     }
 
-    // amq_runs =
-    // std::vector<boost::shared_ptr<crocoddyl::ActionModelAbstract>>(
-    //     N, am_run);
-
   } else if (opts.name == "unicycle_second_order_0") {
+
+#if 0 
+
     dyn = mk<Dynamics_unicycle2>(opts.free_time);
     nx = dyn->nx;
     nu = dyn->nu;
@@ -1822,34 +1839,41 @@ auto generate_problem(const Opts &opts, size_t &nx, size_t &nu) {
         opts.N, am_run);
 
     // TODO: option to regularize w.r.t. intial guess.
+  //
+  //
+  //
+
+#endif
   } else {
     throw -1;
   }
 
   if (opts.use_finite_diff) {
+    std::cout << "using finite diff" << std::endl;
 
-    throw -1;
-    am_run = mk<crocoddyl::ActionModelNumDiff>(am_run, true);
-    boost::static_pointer_cast<crocoddyl::ActionModelNumDiff>(am_run)
+    std::vector<boost::shared_ptr<crocoddyl::ActionModelAbstract>>
+        amq_runs_diff(amq_runs.size());
+
+    std::transform(
+        amq_runs.begin(), amq_runs.end(), amq_runs_diff.begin(),
+        [&](const auto &am_run) {
+          auto am_rundiff = mk<crocoddyl::ActionModelNumDiff>(am_run, true);
+          boost::static_pointer_cast<crocoddyl::ActionModelNumDiff>(am_rundiff)
+              ->set_disturbance(1e-4);
+          if (opts.control_bounds) {
+            am_rundiff->set_u_lb(am_run->get_u_lb());
+            am_rundiff->set_u_ub(am_run->get_u_ub());
+          }
+          return am_rundiff;
+        });
+
+    amq_runs = amq_runs_diff;
+
+    auto am_terminal_diff =
+        mk<crocoddyl::ActionModelNumDiff>(am_terminal, true);
+    boost::static_pointer_cast<crocoddyl::ActionModelNumDiff>(am_terminal_diff)
         ->set_disturbance(1e-4);
-
-    am_terminal = mk<crocoddyl::ActionModelNumDiff>(am_terminal, true);
-    boost::static_pointer_cast<crocoddyl::ActionModelNumDiff>(am_terminal)
-        ->set_disturbance(1e-4);
-
-    if (opts.control_bounds) {
-      auto lb = am_run->get_u_lb();
-      auto ub = am_run->get_u_ub();
-
-      am_run->set_u_lb(lb);
-      am_run->set_u_ub(ub);
-
-      auto lbT = am_terminal->get_u_lb();
-      auto ubT = am_terminal->get_u_ub();
-
-      am_terminal->set_u_lb(lbT);
-      am_terminal->set_u_ub(ubT);
-    }
+    am_terminal = am_terminal_diff;
   }
 
   ptr<crocoddyl::ShootingProblem> problem =
@@ -1908,93 +1932,103 @@ bool check_dynamics(const std::vector<Eigen::VectorXd> &xs_out,
   return feasible;
 }
 
-BOOST_AUTO_TEST_CASE(quim) {
+struct File_parser_inout {
+  std::string init_guess;
+  std::string env_file;
+  bool new_format = false;
+  std::string name;
+  ptr<CollisionChecker> cl;
+  std::vector<Eigen::VectorXd> xs;
+  std::vector<Eigen::VectorXd> us;
+  Eigen::VectorXd start;
+  Eigen::VectorXd goal;
 
-  auto argv = boost::unit_test::framework::master_test_suite().argv;
-  auto argc = boost::unit_test::framework::master_test_suite().argc;
+  void add_options(po::options_description &desc) {
+    desc.add_options()("env", po::value<std::string>(&env_file)->required())(
+        "waypoints", po::value<std::string>(&init_guess)->required())(
+        "new_format", po::value<bool>(&new_format)->default_value(new_format));
+  }
+};
 
-  int verbose = 0;
-  double th_stop = 1e-2;
-  double init_reg = 1e2;
-  double th_acceptnegstep = .3;
+struct Opti_params {
 
-  int max_iter = 50;
   bool CALLBACKS = true;
   bool use_finite_diff = false;
   bool use_warmstart = true;
-  bool free_time;
+  bool free_time = false;
   bool repair_init_guess = true;
-  bool regularize_wrt_init_guess;
+  bool regularize_wrt_init_guess = false;
   bool check_time = false;
+  bool control_bounds = true;
+  bool adaptative_goal_mpc = false;
   int solver_int = 0;
-  bool control_bounds;
+
+  double th_stop = 1e-2;
+  double init_reg = 1e2;
+  double th_acceptnegstep = .3;
+  double noise_level = 1e-3; // factor on top of [-1., 1.]
+  double alpha_rate = 1.5;   // I try to go X times faster
+
+  int max_iter = 50;
   int num_steps_to_optimize = 20;
   int num_steps_to_move = 10;
+  size_t max_mpc_iterations = 50;
 
-  po::options_description desc("Allowed options");
+  void add_options(po::options_description &desc) {
 
-  std::string env_file;
-  std::string init_guess;
-  std::string out;
-  bool new_format;
-
-  desc.add_options()("help", "produce help message")(
-      "env", po::value<std::string>(&env_file)->required())(
-      "waypoints", po::value<std::string>(&init_guess)->required())(
-      "out", po::value<std::string>(&out)->required())(
-      "free_time", po::value<bool>(&free_time)->default_value(false))(
-      "control_bounds", po::value<bool>(&control_bounds)->default_value(true))(
-      "max_iter", po::value<int>(&max_iter)->default_value(50))(
-      "step_opt", po::value<int>(&num_steps_to_optimize)->default_value(20))(
-      "step_move", po::value<int>(&num_steps_to_move)->default_value(10))(
-      "solver", po::value<int>(&solver_int)->default_value(0))(
-      "new_format", po::value<bool>(&new_format)->default_value(false))(
-      "use_warmstart", po::value<bool>(&use_warmstart)->default_value(true))(
-      "reg", po::value<bool>(&regularize_wrt_init_guess)->default_value(false));
-
-  try {
-    po::variables_map vm;
-    po::store(po::parse_command_line(argc, argv, desc), vm);
-    po::notify(vm);
-
-    if (vm.count("help") != 0u) {
-      std::cout << desc << "\n";
-      return ;
-    }
-
-    std::ifstream ifs{"../croco.cfg"};
-    if (ifs)
-      store(parse_config_file(ifs, desc), vm);
-    notify(vm);
-
-    std::cout << "variable map is " << std::endl;
-    // TODO: print also in the result yaml file
-    PrintVariableMap(vm, std::cout);
-
-  } catch (po::error &e) {
-    std::cerr << e.what() << std::endl << std::endl;
-    std::cerr << desc << std::endl;
-    return ;
+    desc.add_options()("free_time",
+                       po::value<bool>(&free_time)->default_value(free_time))(
+        "control_bounds",
+        po::value<bool>(&control_bounds)->default_value(control_bounds))(
+        "max_iter", po::value<int>(&max_iter)->default_value(max_iter))(
+        "step_opt", po::value<int>(&num_steps_to_optimize)
+                        ->default_value(num_steps_to_optimize))(
+        "step_move",
+        po::value<int>(&num_steps_to_move)->default_value(num_steps_to_move))(
+        "solver", po::value<int>(&solver_int)->default_value(solver_int))(
+        "use_warmstart",
+        po::value<bool>(&use_warmstart)->default_value(use_warmstart))(
+        "use_fdiff",
+        po::value<bool>(&use_finite_diff)->default_value(use_finite_diff))(
+        "alpha_rate",
+        po::value<double>(&alpha_rate)->default_value(alpha_rate))(
+        "reg", po::value<bool>(&regularize_wrt_init_guess)
+                   ->default_value(regularize_wrt_init_guess));
   }
+};
 
-  SOLVER solver = static_cast<SOLVER>(solver_int);
-  std::cout << "Solver is " << SOLVER_txt[static_cast<int>(solver)]
-            << std::endl;
+Eigen::VectorXd enforce_bounds(const Eigen::VectorXd &us,
+                               const Eigen::VectorXd &lb,
+                               const Eigen::VectorXd &ub) {
 
-  std::cout << "init guess " << init_guess << std::endl;
-  std::cout << "env_file " << env_file << std::endl;
-  YAML::Node init = YAML::LoadFile(init_guess);
-  YAML::Node env = YAML::LoadFile(env_file);
-  std::string name = env["robots"][0]["type"].as<std::string>();
+  return us.cwiseMax(lb).cwiseMin(ub);
+}
+
+void read_from_file(File_parser_inout &inout) {
+
+  double dt = .1;
+
+  std::cout << "Warning, dt is hardcoded to: " << dt << std::endl;
+
+  YAML::Node init = YAML::LoadFile(inout.init_guess);
+  YAML::Node env = YAML::LoadFile(inout.env_file);
+
+  // load the collision checker
+  std::cout << "loading collision checker... " << std::endl;
+  inout.cl = mk<CollisionChecker>();
+  inout.cl->load(inout.env_file);
+  std::cout << "DONE" << std::endl;
+
+  inout.name = env["robots"][0]["type"].as<std::string>();
 
   std::vector<std::vector<double>> states;
-  std::vector<Eigen::VectorXd> xs_init;
-  std::vector<Eigen::VectorXd> us_init;
+  // std::vector<Eigen::VectorXd> xs_init;
+  // std::vector<Eigen::VectorXd> us_init;
 
   size_t N;
   std::vector<std::vector<double>> actions;
 
-  if (!new_format) {
+  if (!inout.new_format) {
     for (const auto &state : init["result"][0]["states"]) {
       std::vector<double> p;
       for (const auto &elem : state) {
@@ -2013,22 +2047,20 @@ BOOST_AUTO_TEST_CASE(quim) {
       actions.push_back(p);
     }
 
-    xs_init.resize(states.size());
-    us_init.resize(actions.size());
+    inout.xs.resize(states.size());
+    inout.us.resize(actions.size());
 
     std::transform(
-        states.begin(), states.end(), xs_init.begin(),
+        states.begin(), states.end(), inout.xs.begin(),
         [](const auto &s) { return Eigen::VectorXd::Map(s.data(), s.size()); });
 
     std::transform(
-        actions.begin(), actions.end(), us_init.begin(),
+        actions.begin(), actions.end(), inout.us.begin(),
         [](const auto &s) { return Eigen::VectorXd::Map(s.data(), s.size()); });
 
   } else {
 
-    // results are in the new format.
-
-    std::cout << "results are in the new format " << std::endl;
+    std::cout << "Reading results in the new format " << std::endl;
     for (const auto &state : init["result2"][0]["states"]) {
       std::vector<double> p;
       for (const auto &elem : state) {
@@ -2058,7 +2090,7 @@ BOOST_AUTO_TEST_CASE(quim) {
     // 0 1 2 3 4
 
     // we use floor in the time to be more agressive
-    double dt = .1;
+    std::cout << "DT hardcoded to .1 " << std::endl;
 
     double total_time = _times.back();
 
@@ -2091,8 +2123,6 @@ BOOST_AUTO_TEST_CASE(quim) {
     for (size_t ti = 0; ti < num_time_steps + 1; ti++) {
       Eigen::VectorXd xout(nx);
       Eigen::VectorXd Jout(nx);
-      std::cout << "ti " << ti << std::endl;
-      std::cout << "ts " << ts(ti) << std::endl;
 
       if (ts(ti) > times.tail(1)(0))
         xout = _xs_init.back();
@@ -2103,8 +2133,6 @@ BOOST_AUTO_TEST_CASE(quim) {
 
     auto times_u = times.head(times.size() - 1);
     for (size_t ti = 0; ti < num_time_steps; ti++) {
-      std::cout << "ti " << ti << std::endl;
-      std::cout << "ts " << ts(ti) << std::endl;
       Eigen::VectorXd uout(nu);
       Eigen::VectorXd Jout(nu);
       if (ts(ti) > times_u.tail(1)(0))
@@ -2116,46 +2144,23 @@ BOOST_AUTO_TEST_CASE(quim) {
 
     N = num_time_steps;
 
-    std::cout << "N " << N << std::endl;
-    std::cout << "us  " << us_init_new.size() << std::endl;
-    std::cout << "xs " << xs_init_new.size() << std::endl;
+    std::cout << "N: " << N << std::endl;
+    std::cout << "us:  " << us_init_new.size() << std::endl;
+    std::cout << "xs: " << xs_init_new.size() << std::endl;
 
-    xs_init = xs_init_new;
-    us_init = us_init_new;
+    inout.xs = xs_init_new;
+    inout.us = us_init_new;
 
-    std::ofstream results_yaml("debug.txt");
+    std::ofstream debug_file("debug.txt");
 
-    const Eigen::IOFormat fmt(6, Eigen::DontAlignCols, ",", ",", "", "", "[",
-                              "]");
-
-    for (auto &x : xs_init) {
-      results_yaml << x.format(fmt) << std::endl;
+    for (auto &x : inout.xs) {
+      debug_file << x.format(FMT) << std::endl;
     }
-    results_yaml << "---" << std::endl;
+    debug_file << "---" << std::endl;
 
-    for (auto &u : us_init) {
-      results_yaml << u.format(fmt) << std::endl;
+    for (auto &u : inout.us) {
+      debug_file << u.format(FMT) << std::endl;
     }
-
-    // std::ofstream results_yaml("tmp_init_guess.yaml");
-    // out << std::setprecision(std::numeric_limits<double>::digits10 + 1);
-    // results_yaml << "result:" << std::endl;
-    // results_yaml << "  - states:" << std::endl;
-    //
-    // const Eigen::IOFormat fmt(6, Eigen::DontAlignCols, ",", ",", "", "",
-    // "[",
-    //                           "]");
-    //
-    // for (auto &x : xs_init) {
-    //   // results_yaml << "      - " << x.format(fmt) << std::endl;
-    //   results_yaml << "      - [" << x(0) << "," << x(1) << ","
-    //                << std::remainder(x(2), 2 * M_PI) << "]" << std::endl;
-    // }
-    //
-    // results_yaml << "    actions:" << std::endl;
-    // for (auto &u : us_init) {
-    //   results_yaml << "      - " << u.format(fmt) << std::endl;
-    // }
   }
 
   std::vector<double> _start, _goal;
@@ -2167,126 +2172,124 @@ BOOST_AUTO_TEST_CASE(quim) {
     _goal.push_back(e.as<double>());
   }
 
-  Eigen::VectorXd start = Eigen::VectorXd::Map(_start.data(), _start.size());
-  Eigen::VectorXd goal = Eigen::VectorXd::Map(_goal.data(), _goal.size());
+  inout.start = Eigen::VectorXd::Map(_start.data(), _start.size());
+  inout.goal = Eigen::VectorXd::Map(_goal.data(), _goal.size());
 
+  bool verbose = false;
   if (verbose) {
+
     std::cout << "states " << std::endl;
-    for (auto &x : states) {
-      for (auto &e : x) {
-        std::cout << e << " ";
-      }
-      std::cout << std::endl;
-    }
+    for (auto &x : inout.xs)
+      std::cout << x.format(FMT) << std::endl;
 
     std::cout << "actions " << std::endl;
-    for (auto &x : actions) {
-      for (auto &e : x) {
-        std::cout << e << " ";
-      }
-      std::cout << std::endl;
-    }
+    for (auto &u : inout.us)
+      std::cout << u.format(FMT) << std::endl;
   }
+}
 
-  auto cl = mk<CollisionChecker>();
-  cl->load(env_file);
+struct Result_opti {
+  bool feasible = false;
+  double cost = -1;
+  std::vector<Eigen::VectorXd> xs_out;
+  std::vector<Eigen::VectorXd> us_out;
+};
 
-  // std::cout << "Warning: "
-  //           << "modify init guess to go from start to goal" << std::endl;
-  // states.at(N) = goal;
-  // states.at(0) = start;
+void solve_with_custom_solver(const Opti_params &opti_params,
+                              File_parser_inout &file_inout,
+                              Result_opti &opti_out) {
 
-  if (repair_init_guess) {
-    std::cout << "reparing init guess, annoying SO2" << std::endl;
+  double dt = .1;
+  std::cout << "Warning: "
+            << "dt is hardcoded to " << dt << std::endl;
+  SOLVER solver = static_cast<SOLVER>(opti_params.solver_int);
+
+  bool verbose = false;
+  auto cl = file_inout.cl;
+  auto xs_init = file_inout.xs;
+  auto us_init = file_inout.us;
+  size_t N = us_init.size();
+  auto goal = file_inout.goal;
+  auto start = file_inout.start;
+  auto name = file_inout.name;
+
+  if (opti_params.repair_init_guess) {
+    std::cout << "WARNING: reparing init guess, annoying SO2" << std::endl;
     for (size_t i = 1; i < N + 1; i++) {
       xs_init.at(i)(2) = xs_init.at(i - 1)(2) +
                          diff_angle(xs_init.at(i)(2), xs_init.at(i - 1)(2));
     }
-
     goal(2) = xs_init.at(N)(2) + diff_angle(goal(2), xs_init.at(N)(2));
 
     std::cout << "goal is now (maybe updated) " << goal.transpose()
               << std::endl;
   }
 
-  if (free_time) {
-    for (size_t i = 0; i < N; i++) {
-      std::vector<double> new_u = actions.at(i);
-      new_u.push_back(1.);
-      actions.at(i) = new_u;
-    }
-  }
+  // if (free_time) {
+  //   for (size_t i = 0; i < N; i++) {
+  //     std::vector<double> new_u = actions.at(i);
+  //     new_u.push_back(1.);
+  //     actions.at(i) = new_u;
+  //   }
+  // }
 
   if (verbose) {
     std::cout << "states " << std::endl;
-    for (auto &x : states) {
-      for (auto &e : x) {
-        std::cout << e << " ";
-      }
-      std::cout << std::endl;
-    }
+    for (auto &x : xs_init)
+      std::cout << x.format(FMT) << std::endl;
   }
 
   bool feasible;
   std::vector<Eigen::VectorXd> xs_out;
   std::vector<Eigen::VectorXd> us_out;
 
+  std::cout << "WARNING: "
+            << "i modify last state to match goal" << std::endl;
+  xs_init.back() = goal;
+
+  std::ofstream debug_file_yaml("debug_file.yaml");
+  debug_file_yaml << "name: " << name << std::endl;
+  debug_file_yaml << "N: " << N << std::endl;
+  debug_file_yaml << "start: " << start.format(FMT) << std::endl;
+  debug_file_yaml << "goal: " << goal.format(FMT) << std::endl;
+  debug_file_yaml << "xs0: " << std::endl;
+  for (auto &x : xs_init)
+    debug_file_yaml << "  - " << x.format(FMT) << std::endl;
+
+  debug_file_yaml << "us0: " << std::endl;
+  for (auto &x : us_init)
+    debug_file_yaml << "  - " << x.format(FMT) << std::endl;
+
   if (solver == SOLVER::mpc || solver == SOLVER::mpcc) {
+    // i could not stop when I reach the goal, only stop when I reach it with
+    // the step move. Then, I would do the last at full speed? ( I hope :) )
+    // Anyway, now is just fine
 
-    const Eigen::IOFormat fmt(6, Eigen::DontAlignCols, ",", ",", "", "", "[",
-                              "]");
+    CHECK_GEQ(opti_params.num_steps_to_optimize, opti_params.num_steps_to_move,
+              AT);
 
-    CHECK_GEQ(num_steps_to_optimize, num_steps_to_move, AT);
     bool finished = false;
-
-    xs_init.push_back(goal);
-    us_init.push_back(Eigen::VectorXd::Zero(2));
-    std::vector<Eigen::VectorXd> Xs = xs_init;
-    std::vector<Eigen::VectorXd> Us = us_init;
 
     std::vector<Eigen::VectorXd> xs_opt;
     std::vector<Eigen::VectorXd> us_opt;
 
+    std::vector<Eigen::VectorXd> xs_init_rewrite = xs_init;
+    std::vector<Eigen::VectorXd> us_init_rewrite = us_init;
+
     xs_opt.push_back(start);
-
-    N = us_init.size();
-
-    CHECK_EQ(Xs.size(), Us.size() + 1, AT);
-
-    size_t counter = 0;
-    std::ofstream debug_file_yaml("debug_file.yaml");
-    debug_file_yaml << "N: " << N << std::endl;
-    debug_file_yaml << "name: " << name << std::endl;
-    debug_file_yaml << "start: " << start.format(fmt) << std::endl;
-    debug_file_yaml << "goal: " << goal.format(fmt) << std::endl;
-
-    debug_file_yaml << "xs0: " << std::endl;
-    for (auto &x : xs_init)
-      debug_file_yaml << "  - " << x.format(fmt) << std::endl;
-
-    debug_file_yaml << "us0: " << std::endl;
-    for (auto &x : us_init)
-      debug_file_yaml << "  - " << x.format(fmt) << std::endl;
-
-    // total steps are N.
-    // I move 5 steps.
-    // Remaining steps are: N - counter * num_steps_to_move
+    xs_init_rewrite.at(0) = start;
 
     debug_file_yaml << "opti:" << std::endl;
 
-    const double dt = .1;
     auto times = Eigen::VectorXd::LinSpaced(xs_init.size(), 0,
                                             (xs_init.size() - 1) * dt);
-    ptr<Interpolator> path = mk<Interpolator>(times, xs_init);
 
-    std::cout << times(times.size() - 1) << std::endl;
-    std::cout << xs_init.back() << std::endl;
+    double max_alpha = times(times.size() - 1);
+
+    ptr<Interpolator> path = mk<Interpolator>(times, xs_init);
 
     std::vector<Eigen::VectorXd> xs;
     std::vector<Eigen::VectorXd> us;
-
-    size_t max_mpc_iterations = 50;
-    const bool use_finite_diff = false;
 
     double previous_alpha;
 
@@ -2298,25 +2301,22 @@ BOOST_AUTO_TEST_CASE(quim) {
     bool is_last = false;
 
     double total_time = 0;
+    size_t counter = 0;
     size_t total_iterations = 0;
+    size_t num_steps_to_optimize_i = 0;
 
     while (!finished) {
 
-      size_t num_steps_to_optimize_i = 0;
-
       if (solver == SOLVER::mpc) {
-        const bool regularize_wrt_init_guess = false;
-        const bool adaptative_goal_mpc = false;
 
-        int first_index = counter * num_steps_to_move;
-        int remaining_steps = N - counter * num_steps_to_move;
+        int remaining_steps = N - counter * opti_params.num_steps_to_move;
 
         num_steps_to_optimize_i =
-            std::min(num_steps_to_optimize, remaining_steps);
+            std::min(opti_params.num_steps_to_optimize, remaining_steps);
 
-        int subgoal_index;
+        int subgoal_index = 0;
 
-        if (adaptative_goal_mpc) {
+        if (opti_params.adaptative_goal_mpc) {
           CHECK_EQ(true, false, AT);
 
           auto it =
@@ -2329,15 +2329,14 @@ BOOST_AUTO_TEST_CASE(quim) {
           size_t index = std::distance(path->x.begin(), it);
           std::cout << "starting with approx index " << index << std::endl;
           std::cout << "Non adaptative index would be: "
-                    << counter * num_steps_to_move << std::endl;
+                    << counter * opti_params.num_steps_to_move << std::endl;
 
         } else {
-          subgoal_index = counter * num_steps_to_move + num_steps_to_optimize_i;
+          subgoal_index =
+              counter * opti_params.num_steps_to_move + num_steps_to_optimize_i;
         }
 
-        is_last = num_steps_to_optimize > remaining_steps;
-        std::cout << "is_last: " << is_last << std::endl;
-
+        is_last = opti_params.num_steps_to_optimize > remaining_steps;
         auto start_i = previous_state;
 
         if (is_last)
@@ -2352,11 +2351,11 @@ BOOST_AUTO_TEST_CASE(quim) {
 
         Opts opts{
             .free_time = false,
-            .control_bounds = control_bounds,
+            .control_bounds = opti_params.control_bounds,
             .name = name,
             .N = num_steps_to_optimize_i,
-            .regularize_wrt_init_guess = regularize_wrt_init_guess,
-            .use_finite_diff = use_finite_diff,
+            .regularize_wrt_init_guess = opti_params.regularize_wrt_init_guess,
+            .use_finite_diff = opti_params.use_finite_diff,
             .goal = goal_mpc,
             .start = start_i,
             .cl = cl,
@@ -2368,62 +2367,63 @@ BOOST_AUTO_TEST_CASE(quim) {
 
         problem = generate_problem(opts, nx, nu);
 
-        if (use_warmstart) {
-          // I have to take some from xopt
+        if (opti_params.use_warmstart) {
 
-          // how many?
+          // if (counter == 0) {
+          xs = std::vector<Eigen::VectorXd>(
+              xs_init_rewrite.begin() + counter * opti_params.num_steps_to_move,
+              xs_init_rewrite.begin() +
+                  counter * opti_params.num_steps_to_move +
+                  num_steps_to_optimize_i + 1);
+          us = std::vector<Eigen::VectorXd>(
+              us_init_rewrite.begin() + counter * opti_params.num_steps_to_move,
+              us_init_rewrite.begin() +
+                  counter * opti_params.num_steps_to_move +
+                  num_steps_to_optimize_i);
+          // }
+
+          // else {
           //
-          // I optimize OPTIM
-          // I move
-          // MOVE
+          //   // TODO: I have to take some from xopt from previous time.
+          //   CHECK_EQ(xs_opt.size(), us_opt.size() + 1, AT);
           //
-
-          if (counter == 0) {
-            xs = std::vector<Eigen::VectorXd>(
-                xs_init.begin(), xs_init.begin() + num_steps_to_optimize_i + 1);
-            us = std::vector<Eigen::VectorXd>(
-                us_init.begin(), us_init.begin() + num_steps_to_optimize_i);
-          }
-
-          else {
-
-            CHECK_EQ(xs_opt.size(), us_opt.size() + 1, AT);
-
-            auto xs_1 = std::vector<Eigen::VectorXd>(
-                xs_opt.begin() + num_steps_to_move * counter, xs_opt.end());
-
-            auto xs_2 = std::vector<Eigen::VectorXd>(
-                xs_init.begin() + counter * num_steps_to_move + 1,
-                xs_init.begin() + counter * num_steps_to_move + 1 +
-                    num_steps_to_optimize_i);
-
-            xs_1.insert(xs_1.end(), xs_2.begin(), xs_2.end());
-
-            auto us_1 = std::vector<Eigen::VectorXd>(
-                us_opt.begin() + num_steps_to_move * counter, us_opt.end());
-
-            CHECK_SEQ(counter * num_steps_to_move + num_steps_to_optimize_i,
-                      us_init.size(), AT);
-
-            auto us_2 = std::vector<Eigen::VectorXd>(
-                us_init.begin() + counter * num_steps_to_move,
-                us_init.begin() + counter * num_steps_to_move +
-                    num_steps_to_optimize_i);
-
-            us_1.insert(us_1.end(), us_2.begin(), us_2.end());
-
-            xs = xs_1;
-            us = us_1;
-
-            std::cout << "x" << std::endl;
-            for (auto &x : xs)
-              std::cout << x.transpose() << std::endl;
-
-            std::cout << "u" << std::endl;
-            for (auto &u : us)
-              std::cout << u.transpose() << std::endl;
-            std::cout << "done" << std::endl;
-          }
+          //   auto xs_1 = std::vector<Eigen::VectorXd>(
+          //       xs_opt.begin() + num_steps_to_move * counter, xs_opt.end());
+          //
+          //   CHECK_EQ(num_steps_to_move * counter, xs_opt.size(), AT);
+          //
+          //   auto xs_2 = std::vector<Eigen::VectorXd>(
+          //       xs_init.begin() + counter * num_steps_to_move + 1,
+          //       xs_init.begin() + counter * num_steps_to_move + 1 +
+          //           num_steps_to_optimize_i);
+          //
+          //   xs_1.insert(xs_1.end(), xs_2.begin(), xs_2.end());
+          //
+          //   auto us_1 = std::vector<Eigen::VectorXd>(
+          //       us_opt.begin() + num_steps_to_move * counter, us_opt.end());
+          //
+          //   CHECK_SEQ(counter * num_steps_to_move + num_steps_to_optimize_i,
+          //             us_init.size(), AT);
+          //
+          //   auto us_2 = std::vector<Eigen::VectorXd>(
+          //       us_init.begin() + counter * num_steps_to_move,
+          //       us_init.begin() + counter * num_steps_to_move +
+          //           num_steps_to_optimize_i);
+          //
+          //   us_1.insert(us_1.end(), us_2.begin(), us_2.end());
+          //
+          //   xs = xs_1;
+          //   us = us_1;
+          //
+          //   std::cout << "x" << std::endl;
+          //   for (auto &x : xs)
+          //     std::cout << x.transpose() << std::endl;
+          //
+          //   std::cout << "u" << std::endl;
+          //   for (auto &u : us)
+          //     std::cout << u.transpose() << std::endl;
+          //   std::cout << "done" << std::endl;
+          // }
 
           CHECK_EQ(xs.size(), us.size() + 1, AT);
           CHECK_EQ(us.size(), num_steps_to_optimize_i, AT);
@@ -2440,10 +2440,9 @@ BOOST_AUTO_TEST_CASE(quim) {
         bool only_contour_last = true;
         const double threshold_alpha_close = 2.; //
         bool add_contour_to_all_when_close_to_gaol = true;
-        double alpha_rate = 1.5; // I try to go X times faster
         const bool regularize_wrt_init_guess = false;
 
-        num_steps_to_optimize_i = num_steps_to_optimize;
+        num_steps_to_optimize_i = opti_params.num_steps_to_optimize;
         // approx alpha of first state
         auto it = std::min_element(
             path->x.begin(), path->x.end(), [&](const auto &a, const auto &b) {
@@ -2456,11 +2455,41 @@ BOOST_AUTO_TEST_CASE(quim) {
         double alpha_of_first = path->times(index);
         std::cout << "alpha of first " << alpha_of_first << std::endl;
 
-        double max_alpha = times(times.size() - 1);
+        double alpha_ref = alpha_of_first + opti_params.alpha_rate *
+                                                num_steps_to_optimize_i * dt;
 
-        double alpha_ref =
-            std::min(alpha_of_first + alpha_rate * num_steps_to_optimize_i * dt,
-                     max_alpha);
+        // lets create a vector of alpha_refs
+        Eigen::VectorXd alpha_refs = Eigen::VectorXd::LinSpaced(
+            num_steps_to_optimize_i + 1, alpha_of_first,
+            alpha_of_first + num_steps_to_optimize_i * dt);
+
+        Eigen::VectorXd alpha_refs_goal = Eigen::VectorXd::LinSpaced(
+            num_steps_to_optimize_i + 1, alpha_of_first,
+            alpha_of_first +
+                opti_params.alpha_rate * num_steps_to_optimize_i * dt);
+        alpha_refs_goal = alpha_refs_goal.cwiseMin(max_alpha);
+        alpha_refs = alpha_refs.cwiseMin(max_alpha);
+
+        Eigen::VectorXd cost_alpha_multis =
+            Eigen::VectorXd::Ones(num_steps_to_optimize_i + 1);
+        cost_alpha_multis(0) =
+            1.; // almost zero weight on alpha at the beginning
+
+        std::cout << "vector of alpha refs  is " << std::endl;
+        std::cout << alpha_refs.transpose() << std::endl;
+
+        std::cout << "vector of alpha refs goals  is " << std::endl;
+        std::cout << alpha_refs_goal.transpose() << std::endl;
+
+        if (alpha_ref > max_alpha) {
+          for (size_t i = 0; i < cost_alpha_multis.size(); i++) {
+            if (alpha_refs_goal(i) >= max_alpha - 1e-4) {
+              cost_alpha_multis(i) = 10.; //  Add higher alpha at the end
+            }
+          }
+        }
+
+        alpha_ref = std::min(alpha_ref, max_alpha);
 
         double cost_alpha_multi = 1.;
         int missing_indexes = times.size() - index;
@@ -2474,6 +2503,7 @@ BOOST_AUTO_TEST_CASE(quim) {
 
         if (use_goal_reaching_formulation) {
           std::cout << "we are close to the goal" << std::endl;
+
 #if 0
 #endif
           if (add_contour_to_all_when_close_to_gaol) {
@@ -2508,7 +2538,7 @@ BOOST_AUTO_TEST_CASE(quim) {
         }
 
         std::cout << "cx_init:" << cx_init << std::endl;
-        std::cout << "alpha_rate:" << alpha_rate << std::endl;
+        std::cout << "alpha_rate:" << opti_params.alpha_rate << std::endl;
         std::cout << "alpha_ref:" << alpha_ref << std::endl;
         std::cout << "max alpha " << max_alpha << std::endl;
 
@@ -2522,28 +2552,31 @@ BOOST_AUTO_TEST_CASE(quim) {
 
         Opts opts{
             .free_time = false,
-            .control_bounds = control_bounds,
+            .control_bounds = opti_params.control_bounds,
             .name = name,
             .N = num_steps_to_optimize_i,
             .regularize_wrt_init_guess = regularize_wrt_init_guess,
-            .use_finite_diff = false,
+            .use_finite_diff = opti_params.use_finite_diff,
             .goal = {},
             .start = start_ic,
             .cl = cl,
             .states = {},
             .actions = {},
-            .countour_control = true,
+            .contour_control = true,
             .interpolator = path,
             .ref_alpha = alpha_ref,
             .max_alpha = max_alpha,
             .cost_alpha_multi = cost_alpha_multi,
             .only_contour_last = only_contour_last,
-
+            .alpha_refs = alpha_refs_goal,
+            .cost_alpha_multis = cost_alpha_multis,
         };
 
         problem = generate_problem(opts, nx, nu);
 
-        if (use_warmstart) {
+        if (opti_params.use_warmstart) {
+          // TODO: I need a more clever initialization. For example, using the
+          // ones missing from last time, and then the default?
 
           std::cout << "warmstarting " << std::endl;
           size_t first_index = index;
@@ -2609,21 +2642,39 @@ BOOST_AUTO_TEST_CASE(quim) {
           std::vector<Eigen::VectorXd> xcs_i(xs_i.size());
           std::vector<Eigen::VectorXd> ucs_i(us_i.size());
 
-          std::transform(xs_i.begin(), xs_i.end(), xcs_i.begin(),
-                         [&_nx, &cx_init](auto &x) {
-                           Eigen::VectorXd new_last(_nx + 1);
-                           new_last.head(_nx) = x;
-                           new_last(_nx) = cx_init;
-                           return new_last;
-                         });
+          bool old = false;
+          if (old) {
+            std::transform(xs_i.begin(), xs_i.end(), xcs_i.begin(),
+                           [&_nx, &cx_init](auto &x) {
+                             Eigen::VectorXd new_last(_nx + 1);
+                             new_last.head(_nx) = x;
+                             new_last(_nx) = cx_init;
+                             return new_last;
+                           });
 
-          std::transform(us_i.begin(), us_i.end(), ucs_i.begin(),
-                         [&_nu, &cu_init](auto &u) {
-                           Eigen::VectorXd new_last(_nu + 1);
-                           new_last.head(_nu) = u;
-                           new_last(_nu) = cu_init;
-                           return new_last;
-                         });
+            std::transform(us_i.begin(), us_i.end(), ucs_i.begin(),
+                           [&_nu, &cu_init](auto &u) {
+                             Eigen::VectorXd new_last(_nu + 1);
+                             new_last.head(_nu) = u;
+                             new_last(_nu) = cu_init;
+                             return new_last;
+                           });
+          } else {
+
+            for (size_t i = 0; i < xcs_i.size(); i++) {
+              Eigen::VectorXd new_last(_nx + 1);
+              new_last.head(_nx) = xs_i.at(i);
+              new_last(_nx) = alpha_refs(i);
+              xcs_i.at(i) = new_last;
+            }
+
+            for (size_t i = 0; i < ucs_i.size(); i++) {
+              Eigen::VectorXd new_last(_nu + 1);
+              new_last.head(_nu) = us_i.at(i);
+              new_last(_nu) = alpha_refs(i + 1) - alpha_refs(i);
+              ucs_i.at(i) = new_last;
+            }
+          }
 
           xs = xcs_i;
           us = ucs_i;
@@ -2636,21 +2687,75 @@ BOOST_AUTO_TEST_CASE(quim) {
           xs = std::vector<Eigen::VectorXd>(num_steps_to_optimize_i + 1,
                                             opts.start);
           us = std::vector<Eigen::VectorXd>(num_steps_to_optimize_i, u0c);
+          //
+          // std::cout << "warmstarting the alpha's" << std::endl;
+          //
+          // for (size_t i = 0; i < xs.size(); i++) {
+          //   xs.at(i)(3) = alpha_refs(i);
+          // }
+          //
+          // for (size_t i = 0; i < us.size(); i++) {
+          //   Eigen::VectorXd new_last(_nu + 1);
+          //   us.at(i)(2) = alpha_refs(i + 1) - alpha_refs(i);
+          // }
         }
       }
 
       crocoddyl::SolverBoxFDDP ddp(problem);
-      ddp.set_th_stop(th_stop);
-      ddp.set_th_acceptnegstep(th_acceptnegstep);
+      ddp.set_th_stop(opti_params.th_stop);
+      ddp.set_th_acceptnegstep(opti_params.th_acceptnegstep);
 
-      if (CALLBACKS) {
+      if (opti_params.CALLBACKS) {
         std::vector<ptr<crocoddyl::CallbackAbstract>> cbs;
         cbs.push_back(mk<crocoddyl::CallbackVerbose>());
         ddp.setCallbacks(cbs);
       }
 
+      // ENFORCING BOUNDS
+
+      Eigen::VectorXd x_lb, x_ub, u_lb, u_ub;
+
+      if (solver == SOLVER::mpcc) {
+        double inf = 1e6;
+        x_lb.resize(4);
+        x_ub.resize(4);
+        u_lb.resize(3);
+        u_ub.resize(3);
+
+        x_lb << -inf, -inf, -inf, 0.;
+        x_ub << inf, inf, inf, max_alpha;
+        u_lb << -inf, -inf, 0.;
+        u_ub << inf, inf, inf;
+
+      } else {
+        double inf = 1e6;
+        x_lb.resize(3);
+        x_ub.resize(3);
+        u_lb.resize(2);
+        u_ub.resize(2);
+
+        x_lb << -inf, -inf, -inf;
+        x_ub << inf, inf, inf;
+        u_lb << -inf, -inf;
+        u_ub << inf, inf;
+      }
+
+      if (opti_params.noise_level > 0.) {
+        for (size_t i = 0; i < xs.size(); i++) {
+          xs.at(i) += opti_params.noise_level *
+                      Eigen::VectorXd::Random(xs.front().size());
+          xs.at(i) = enforce_bounds(xs.at(i), x_lb, x_ub);
+        }
+
+        for (size_t i = 0; i < us.size(); i++) {
+          us.at(i) += opti_params.noise_level *
+                      Eigen::VectorXd::Random(us.front().size());
+          us.at(i) = enforce_bounds(us.at(i), u_lb, u_ub);
+        }
+      }
+
       crocoddyl::Timer timer;
-      ddp.solve(xs, us, max_iter, false, init_reg);
+      ddp.solve(xs, us, opti_params.max_iter, false, opti_params.init_reg);
       size_t iterations_i = ddp.get_iter();
       double time_i = timer.get_duration();
       std::cout << "time: " << time_i << std::endl;
@@ -2660,23 +2765,33 @@ BOOST_AUTO_TEST_CASE(quim) {
       std::vector<Eigen::VectorXd> xs_i_sol = ddp.get_xs();
       std::vector<Eigen::VectorXd> us_i_sol = ddp.get_us();
 
-      previous_state = xs_i_sol.at(num_steps_to_move).head(3);
+      previous_state = xs_i_sol.at(opti_params.num_steps_to_move).head(3);
 
       size_t copy_steps = 0;
 
       if (solver == SOLVER::mpcc) {
-        double alpha_mpcc = ddp.get_xs().back()(3);
+        // Eigen::VectorXd x_last = ddp.get_xs().back();
+        // size_t final_index = num_steps_to_optimize_i;
+        size_t final_index = opti_params.num_steps_to_move;
+
+        double alpha_mpcc = ddp.get_xs().at(final_index)(3);
+        Eigen::VectorXd x_last = ddp.get_xs().at(final_index);
+
+        std::cout << "**\n" << std::endl;
+        std::cout << "checking as final index: " << final_index << std::endl;
         std::cout << "alpha_mpcc:" << alpha_mpcc << std::endl;
-        previous_alpha = alpha_mpcc;
+        std::cout << "last state: " << x_last.format(FMT) << std::endl;
+        std::cout << "distance to goal: " << (x_last.head(3) - goal).norm()
+                  << "\n**\n";
 
         auto fun_is_goal = [&](const auto &x) {
           return (x.head(3) - goal).norm() < 1e-2;
         };
 
-        if (std::fabs(alpha_mpcc - times(times.size() - 1)) < 1e-2 &&
-            fun_is_goal(ddp.get_xs().back())) {
-          is_last = true;
+        if (std::fabs(alpha_mpcc - times(times.size() - 1)) < 1. &&
+            fun_is_goal(x_last)) {
 
+          is_last = true;
           // check which is the first state that is close to goal
 
           std::cout << "checking first state that reaches the goal "
@@ -2696,7 +2811,7 @@ BOOST_AUTO_TEST_CASE(quim) {
       if (is_last)
         copy_steps = num_steps_to_optimize_i;
       else
-        copy_steps = num_steps_to_move;
+        copy_steps = opti_params.num_steps_to_move;
 
       for (size_t i = 0; i < copy_steps; i++)
         xs_opt.push_back(xs_i_sol.at(i + 1).head(3));
@@ -2704,36 +2819,43 @@ BOOST_AUTO_TEST_CASE(quim) {
       for (size_t i = 0; i < copy_steps; i++)
         us_opt.push_back(us_i_sol.at(i).head(2));
 
-      const Eigen::IOFormat fmt(6, Eigen::DontAlignCols, ",", ",", "", "", "[",
-                                "]");
+      if (solver == SOLVER::mpc) {
+        for (size_t i = 0; i < num_steps_to_optimize_i; i++)
+          xs_init_rewrite.at(1 + counter * opti_params.num_steps_to_move + i) =
+              xs_i_sol.at(i + 1).head(3);
+
+        for (size_t i = 0; i < num_steps_to_optimize_i; i++)
+          us_init_rewrite.at(counter * opti_params.num_steps_to_move + i) =
+              us_i_sol.at(i).head(2);
+      }
 
       debug_file_yaml << "  - xs0:" << std::endl;
       for (auto &x : xs)
-        debug_file_yaml << "    - " << x.format(fmt) << std::endl;
+        debug_file_yaml << "    - " << x.format(FMT) << std::endl;
 
       debug_file_yaml << "    us0:" << std::endl;
       for (auto &u : us)
-        debug_file_yaml << "    - " << u.format(fmt) << std::endl;
+        debug_file_yaml << "    - " << u.format(FMT) << std::endl;
 
       debug_file_yaml << "    xsOPT:" << std::endl;
       for (auto &x : xs_i_sol)
-        debug_file_yaml << "    - " << x.format(fmt) << std::endl;
+        debug_file_yaml << "    - " << x.format(FMT) << std::endl;
 
       debug_file_yaml << "    usOPT:" << std::endl;
       for (auto &u : us_i_sol)
-        debug_file_yaml << "    - " << u.format(fmt) << std::endl;
+        debug_file_yaml << "    - " << u.format(FMT) << std::endl;
 
-      debug_file_yaml << "    start: " << xs.front().format(fmt) << std::endl;
+      debug_file_yaml << "    start: " << xs.front().format(FMT) << std::endl;
 
       if (solver == SOLVER::mpc) {
-        debug_file_yaml << "    goal: " << goal_mpc.format(fmt) << std::endl;
+        debug_file_yaml << "    goal: " << goal_mpc.format(FMT) << std::endl;
       } else if (solver == SOLVER::mpcc) {
         double alpha_mpcc = ddp.get_xs().back()(3);
         Eigen::VectorXd out(3);
         Eigen::VectorXd Jout(3);
         path->interpolate(alpha_mpcc, out, Jout);
         debug_file_yaml << "    alpha: " << alpha_mpcc << std::endl;
-        debug_file_yaml << "    state_alpha: " << out.format(fmt) << std::endl;
+        debug_file_yaml << "    state_alpha: " << out.format(FMT) << std::endl;
       }
 
       CHECK_EQ(us_i_sol.size() + 1, xs_i_sol.size(), AT);
@@ -2748,7 +2870,7 @@ BOOST_AUTO_TEST_CASE(quim) {
 
       counter++;
 
-      if (counter > max_mpc_iterations) {
+      if (counter > opti_params.max_mpc_iterations) {
         finished = true;
         std::cout << "finished: "
                   << "max mpc iterations" << std::endl;
@@ -2762,11 +2884,11 @@ BOOST_AUTO_TEST_CASE(quim) {
 
     debug_file_yaml << "xsOPT: " << std::endl;
     for (auto &x : xs_out)
-      debug_file_yaml << "  - " << x.format(fmt) << std::endl;
+      debug_file_yaml << "  - " << x.format(FMT) << std::endl;
 
     debug_file_yaml << "usOPT: " << std::endl;
     for (auto &u : us_out)
-      debug_file_yaml << "  - " << u.format(fmt) << std::endl;
+      debug_file_yaml << "  - " << u.format(FMT) << std::endl;
 
     // checking feasibility
 
@@ -2794,13 +2916,14 @@ BOOST_AUTO_TEST_CASE(quim) {
              solver == SOLVER::traj_opt_smooth_then_free_time) {
 
     Opts opts{
-        .free_time = free_time,
+        .free_time = solver == SOLVER::traj_opt_free_time,
+        .control_bounds = opti_params.control_bounds,
         .name = name,
         .N = N,
-        .regularize_wrt_init_guess = regularize_wrt_init_guess,
-        .use_finite_diff = use_finite_diff,
-        .goal = Eigen::VectorXd::Map(goal.data(), goal.size()),
-        .start = Eigen::VectorXd::Map(start.data(), start.size()),
+        .regularize_wrt_init_guess = opti_params.regularize_wrt_init_guess,
+        .use_finite_diff = opti_params.use_finite_diff,
+        .goal = goal,
+        .start = start,
         .cl = cl,
         .states = xs_init,
         .actions = us_init,
@@ -2812,22 +2935,32 @@ BOOST_AUTO_TEST_CASE(quim) {
     std::vector<Eigen::VectorXd> xs(N + 1, opts.start);
     std::vector<Eigen::VectorXd> us(N, Eigen::VectorXd::Zero(nu));
 
-    if (use_warmstart) {
+    if (opti_params.use_warmstart) {
       xs = xs_init;
       us = us_init;
     }
 
-    crocoddyl::SolverBoxFDDP ddp(problem);
-    ddp.set_th_stop(th_stop);
-    ddp.set_th_acceptnegstep(.3);
+    if (opti_params.noise_level > 0.) {
+      for (size_t i = 0; i < xs.size(); i++) {
+        xs.at(i) += opti_params.noise_level * Eigen::VectorXd::Random(nx);
+      }
 
-    if (CALLBACKS) {
+      for (size_t i = 0; i < us.size(); i++) {
+        us.at(i) += opti_params.noise_level * Eigen::VectorXd::Random(nu);
+      }
+    }
+
+    crocoddyl::SolverBoxFDDP ddp(problem);
+    ddp.set_th_stop(opti_params.th_stop);
+    ddp.set_th_acceptnegstep(opti_params.th_acceptnegstep);
+
+    if (opti_params.CALLBACKS) {
       std::vector<ptr<crocoddyl::CallbackAbstract>> cbs;
       cbs.push_back(mk<crocoddyl::CallbackVerbose>());
       ddp.setCallbacks(cbs);
     }
 
-    if (check_time) {
+    if (opti_params.check_time) {
       {
         crocoddyl::Timer timer;
         problem->calc(xs, us);
@@ -2856,11 +2989,10 @@ BOOST_AUTO_TEST_CASE(quim) {
     }
 
     crocoddyl::Timer timer;
-    ddp.solve(xs, us, max_iter, false, init_reg);
+    ddp.solve(xs, us, opti_params.max_iter, false, opti_params.init_reg);
     std::cout << "time: " << timer.get_duration() << std::endl;
 
     // check the distance to the goal:
-
     ptr<Cost> feat_col = mk<Col_cost>(nx, nu, 1, cl);
     boost::static_pointer_cast<Col_cost>(feat_col)->margin = 0.;
 
@@ -2871,34 +3003,38 @@ BOOST_AUTO_TEST_CASE(quim) {
     std::cout << problem->calc(xs, us) << std::endl;
 
     // I should have three modes:
-
     xs_out = ddp.get_xs();
     us_out = ddp.get_us();
 
+    debug_file_yaml << "xsOPT: " << std::endl;
+    for (auto &x : xs_out)
+      debug_file_yaml << "  - " << x.format(FMT) << std::endl;
+
+    debug_file_yaml << "usOPT: " << std::endl;
+    for (auto &u : us_out)
+      debug_file_yaml << "  - " << u.format(FMT) << std::endl;
+
     if (solver == SOLVER::traj_opt_smooth_then_free_time) {
 
-      CHECK_EQ(free_time, false, AT);
+      CHECK_EQ(opti_params.free_time, false, AT);
 
       std::cout << "repeating now with free time" << std::endl;
       opts.free_time = true;
       opts.regularize_wrt_init_guess = true;
       opts.states = xs_out;
       opts.actions = us_out;
-      //
 
       problem = generate_problem(opts, nx, nu);
-      std::vector<Eigen::VectorXd> xs(N + 1, opts.start);
+      std::vector<Eigen::VectorXd> xs(N + 1, Eigen::VectorXd::Zero(nx));
       std::vector<Eigen::VectorXd> us(N, Eigen::VectorXd::Zero(nu));
 
       std::cout << " nu " << nu << std::endl;
-      if (true) {
-        for (size_t t = 0; t < N + 1; t++) {
-          xs.at(t) = ddp.get_xs().at(t);
-        }
-        for (size_t t = 0; t < N; t++) {
-          us.at(t) = Eigen::VectorXd::Ones(nu);
-          us.at(t).head(nu - 1) = ddp.get_us().at(t);
-        }
+      for (size_t t = 0; t < N + 1; t++) {
+        xs.at(t) = ddp.get_xs().at(t);
+      }
+      for (size_t t = 0; t < N; t++) {
+        us.at(t) = Eigen::VectorXd::Ones(nu);
+        us.at(t).head(nu - 1) = ddp.get_us().at(t);
       }
 
       for (auto &x : xs) {
@@ -2917,30 +3053,29 @@ BOOST_AUTO_TEST_CASE(quim) {
       std::cout << "feasible is " << feasible << std::endl;
 
       ddp = crocoddyl::SolverBoxFDDP(problem);
-      ddp.set_th_stop(th_stop);
-      ddp.set_th_acceptnegstep(.3);
+      ddp.set_th_stop(opti_params.th_stop);
+      ddp.set_th_acceptnegstep(opti_params.th_acceptnegstep);
 
-      if (CALLBACKS) {
+      if (opti_params.CALLBACKS) {
         std::vector<ptr<crocoddyl::CallbackAbstract>> cbs;
         cbs.push_back(mk<crocoddyl::CallbackVerbose>());
         ddp.setCallbacks(cbs);
       }
 
       crocoddyl::Timer timer;
-      ddp.solve(xs, us, max_iter, false, init_reg);
+      ddp.solve(xs, us, opti_params.max_iter, false, opti_params.init_reg);
       std::cout << "time: " << timer.get_duration() << std::endl;
 
       feasible = check_feas(feat_col, ddp.get_xs(), ddp.get_us(), opts.goal);
       std::cout << "feasible is " << feasible << std::endl;
 
-      double dt = .1;
       double total_time = std::accumulate(
           ddp.get_us().begin(), ddp.get_us().end(), 0.,
           [&dt](auto &a, auto &b) { return a + dt * b.tail(1)(0); });
 
       std::cout << "original total time: " << dt * ddp.get_us().size()
                 << std::endl;
-      std::cout << "total_time: " << total_time << std::endl;
+      std::cout << "new total_time: " << total_time << std::endl;
 
       int num_time_steps = std::ceil(total_time / dt);
       std::cout << "number of time steps " << num_time_steps << std::endl;
@@ -2955,28 +3090,22 @@ BOOST_AUTO_TEST_CASE(quim) {
 
       auto times = Eigen::VectorXd(N + 1);
       times.setZero();
-
       for (size_t i = 1; i < times.size(); i++) {
-        times(i) = times(i - 1) + dt * ddp.get_us().at(i - 1).tail(1)(0);
+        times(i) = times(i - 1) + dt * ddp.get_us().at(i - 1)(nu - 1);
       }
       std::cout << times.transpose() << std::endl;
 
       // TODO: be careful with SO(2)
-      std::vector<Eigen::VectorXd> x_out;
+      std::vector<Eigen::VectorXd> x_out, u_out;
       for (size_t i = 0; i < num_time_steps + 1; i++) {
         double t = i * dt / scaling_factor;
         Eigen::VectorXd out(nx);
         Eigen::VectorXd Jout(nx);
-        std::cout << " i and time and num_time_steps is " << i << " " << t
-                  << " " << num_time_steps << std::endl;
         linearInterpolation(times, ddp.get_xs(), t, out, Jout);
         x_out.push_back(out);
       }
 
-      std::vector<Eigen::VectorXd> u_out;
-
       std::vector<Eigen::VectorXd> u_nx_orig(ddp.get_us().size());
-
       std::transform(ddp.get_us().begin(), ddp.get_us().end(),
                      u_nx_orig.begin(),
                      [&nu](auto &s) { return s.head(nu - 1); });
@@ -2999,194 +3128,96 @@ BOOST_AUTO_TEST_CASE(quim) {
     };
   }
 
-  if (solver == SOLVER::mpcc) {
-
-    // use its own implementation.
-
-    // std::cout << "now this is integrated " << std::endl;
-    // throw -1;
-    //
-    // double dt = .1;
-    //
-    // int first_index = 0;
-    // size_t num_steps_to_optimize_i = 10;
-    //
-    // auto Xs = xs_init;
-    // auto Us = us_init;
-    //
-    // auto xs_i = std::vector<Eigen::VectorXd>(Xs.begin() + first_index,
-    //                                          Xs.begin() + first_index +
-    //                                              num_steps_to_optimize_i +
-    //                                              1);
-    //
-    // auto us_i = std::vector<Eigen::VectorXd>(Us.begin() + first_index,
-    //                                          Us.begin() + first_index +
-    //                                              num_steps_to_optimize_i);
-    //
-    // auto start_i = Eigen::VectorXd::Map(start.data(), start.size());
-    // auto goal_i = Eigen::VectorXd::Map(goal.data(), goal.size());
-    //
-    // double cx_init = 1.;
-    // double cu_init = 1.;
-    // size_t nx, nu;
-    // size_t _nx = 3;
-    // size_t _nu = 2;
-    //
-    // Eigen::VectorXd start_ic(_nx + 1);
-    // start_ic.head(_nx) = start_i;
-    // start_ic(_nx) = cx_init;
-    //
-    // Eigen::VectorXd goal_ic(_nx + 1);
-    // goal_ic.head(_nx) = goal_i;
-    // goal_ic(_nx) = cx_init;
-    //
-    // // auto times = Eigen::VectorXd::LinSpaced(N + 1, 0, N * dt);
-    // auto times = Eigen::VectorXd::LinSpaced(xs_init.size(), 0,
-    //                                         (xs_init.size() - 1) * dt);
-    // ptr<Interpolator> path = mk<Interpolator>(times, xs_init);
-    // double ref_alpha = 2.;
-    //
-    // Opts opts{.free_time = false,
-    //           .control_bounds = control_bounds,
-    //           .name = name,
-    //           .N = us_i.size(),
-    //           .regularize_wrt_init_guess = regularize_wrt_init_guess,
-    //           .use_finite_diff = use_finite_diff,
-    //           .goal = goal_ic,
-    //           .start = start_ic,
-    //           .cl = cl,
-    //           .states = xs_i,
-    //           .actions = us_i,
-    //           .countour_control = true,
-    //           .interpolator = path,
-    //           .ref_alpha = ref_alpha};
-    //
-    // ptr<crocoddyl::ShootingProblem> problem = generate_problem(opts, nx,
-    // nu);
-    //
-    // crocoddyl::SolverBoxFDDP ddp(problem);
-    // ddp.set_th_stop(th_stop);
-    // ddp.set_th_acceptnegstep(th_acceptnegstep);
-    //
-    // if (CALLBACKS) {
-    //   std::vector<ptr<crocoddyl::CallbackAbstract>> cbs;
-    //   cbs.push_back(mk<crocoddyl::CallbackVerbose>());
-    //   ddp.setCallbacks(cbs);
-    // }
-    // //
-    // //
-    // //
-    //
-    // std::vector<Eigen::VectorXd> xcs_i(xs_i.size());
-    // std::vector<Eigen::VectorXd> ucs_i(us_i.size());
-    //
-    // std::transform(xs_i.begin(), xs_i.end(), xcs_i.begin(),
-    //                [&_nx, &cx_init](auto &x) {
-    //                  Eigen::VectorXd new_last(_nx + 1);
-    //                  new_last.head(_nx) = x;
-    //                  new_last(_nx) = cx_init;
-    //                  return new_last;
-    //                });
-    //
-    // std::transform(us_i.begin(), us_i.end(), ucs_i.begin(),
-    //                [&_nu, &cu_init](auto &u) {
-    //                  Eigen::VectorXd new_last(_nu + 1);
-    //                  new_last.head(_nu) = u;
-    //                  new_last(_nu) = cu_init;
-    //                  return new_last;
-    //                });
-    //
-    // // auto us = us_i;
-    // // auto xs = xs_i;
-    // //
-    // // Eigen::VectorXd new_last(4);
-    // // new_last.head(3) = xs.back();
-    // // new_last(3) = ref_alpha;
-    // // xs.back() = new_last;
-    //
-    // crocoddyl::Timer timer;
-    // ddp.solve(xcs_i, ucs_i, max_iter, false, init_reg);
-    // std::cout << "time: " << timer.get_duration() << std::endl;
-    //
-    // std::ofstream debug_contour("debug_contour.yaml");
-    //
-    // const Eigen::IOFormat fmt(6, Eigen::DontAlignCols, ",", ",", "", "",
-    // "[",
-    //                           "]");
-    //
-    // debug_contour << "start: " << start.format(fmt) << std::endl;
-    // debug_contour << "goal: " << goal.format(fmt) << std::endl;
-    //
-    // debug_contour << "xs0:" << std::endl;
-    //
-    // for (auto &x : xcs_i) {
-    //   debug_contour << "  - " << x.format(fmt) << std::endl;
-    // }
-    //
-    // debug_contour << "us0:" << std::endl;
-    // for (auto &u : ucs_i) {
-    //   debug_contour << "  - " << u.format(fmt) << std::endl;
-    // }
-    //
-    // debug_contour << "xsOPT:" << std::endl;
-    //
-    // for (auto &x : ddp.get_xs()) {
-    //   debug_contour << "  - " << x.format(fmt) << std::endl;
-    // }
-    //
-    // debug_contour << "usOPT:" << std::endl;
-    // for (auto &u : ddp.get_us()) {
-    //   debug_contour << "  - " << u.format(fmt) << std::endl;
-    // }
-    //
-    // double alpha_opt = ddp.get_xs().back()(3);
-    // debug_contour << "alphaOPT: " << alpha_opt << std::endl;
-    //
-    // Eigen::VectorXd x_alpha(3);
-    // path->interpolate(alpha_opt, x_alpha);
-    //
-    // debug_contour << "xalphaOPT: " << x_alpha.format(fmt) << std::endl;
-  }
-
   std::ofstream results_txt("out.txt");
 
-  const Eigen::IOFormat fmt(6, Eigen::DontAlignCols, ",", ",", "", "", "[",
-                            "]");
+  for (auto &x : xs_out)
+    results_txt << x.transpose().format(FMT) << std::endl;
 
-  for (auto &x : xs_out) {
-    results_txt << x.transpose().format(fmt) << std::endl;
-  }
   results_txt << "---" << std::endl;
-  for (auto &u : us_out) {
-    results_txt << u.transpose().format(fmt) << std::endl;
-  }
+  for (auto &u : us_out)
+    results_txt << u.transpose().format(FMT) << std::endl;
 
   // store in the good format
+  opti_out.feasible = feasible;
+  opti_out.xs_out = xs_out;
+  opti_out.us_out = us_out;
+  opti_out.cost = us_out.size() * dt;
+}
+
+BOOST_AUTO_TEST_CASE(quim) {
+
+  auto argv = boost::unit_test::framework::master_test_suite().argv;
+  auto argc = boost::unit_test::framework::master_test_suite().argc;
+
+  int verbose = 0;
+
+  Opti_params opti_params;
+  File_parser_inout file_inout;
+  std::string config_file = "";
+  std::string out;
+
+  po::options_description desc("Allowed options");
+
+  desc.add_options()("help", "produce help message");
+  opti_params.add_options(desc);
+  file_inout.add_options(desc);
+
+  desc.add_options()("out", po::value<std::string>(&out)->required())(
+      "config_file",
+      po::value<std::string>(&config_file)->default_value(config_file));
+
+  try {
+    po::variables_map vm;
+    po::store(po::parse_command_line(argc, argv, desc), vm);
+    po::notify(vm);
+
+    if (vm.count("help") != 0u) {
+      std::cout << desc << "\n";
+      return;
+    }
+
+    if (config_file != "") {
+      std::ifstream ifs{config_file};
+      if (ifs)
+        store(parse_config_file(ifs, desc), vm);
+      else {
+        std::cout << "cannont open config file: " << config_file << std::endl;
+      }
+      notify(vm);
+    }
+
+    std::cout << "***" << std::endl;
+    std::cout << "variable map is: " << std::endl;
+    PrintVariableMap(vm, std::cout);
+    std::cout << "***" << std::endl;
+
+  } catch (po::error &e) {
+    std::cerr << e.what() << std::endl << std::endl;
+    std::cerr << desc << std::endl;
+    return;
+  }
+
+  read_from_file(file_inout);
+
+  Result_opti opti_out;
+  solve_with_custom_solver(opti_params, file_inout, opti_out);
 
   // write the results.
   std::ofstream results_yaml(out);
-  // out << std::setprecision(std::numeric_limits<double>::digits10 + 1);
+  std::cout << "feasible is " << opti_out.feasible << std::endl;
   results_yaml << "result:" << std::endl;
   results_yaml << "  - states:" << std::endl;
-  for (auto &x : xs_out) {
-    // results_yaml << "      - " << x.format(fmt) << std::endl;
-    results_yaml << "      - [" << x(0) << "," << x(1) << ","
-                 << std::remainder(x(2), 2 * M_PI) << "]" << std::endl;
+  for (auto &x : opti_out.xs_out) {
+    x(2) = std::remainder(x(2), 2 * M_PI);
+    results_yaml << "      - " << x.format(FMT) << std::endl;
   }
 
   results_yaml << "    actions:" << std::endl;
-  for (auto &u : us_out) {
-    results_yaml << "      - " << u.format(fmt) << std::endl;
+  for (auto &u : opti_out.us_out) {
+    results_yaml << "      - " << u.format(FMT) << std::endl;
   }
 
-  if (feasible) {
-    return ;
-  } else {
-    return ;
-  }
-
-  // fix this.
-  // TODO: check if the trick works :)
+  std::cout << "warning: I need correct exit flag" << std::endl;
 }
 
 BOOST_AUTO_TEST_CASE(unicycle2) {
@@ -3213,6 +3244,10 @@ BOOST_AUTO_TEST_CASE(test_unifree) {
 // use the reminder
 // check with the integration.
 //
+
+BOOST_AUTO_TEST_CASE(test_a_easy_problem_with_numdiff) {}
+
+BOOST_AUTO_TEST_CASE(easy_opti) {}
 
 BOOST_AUTO_TEST_CASE(contour) {
 
@@ -3253,8 +3288,9 @@ BOOST_AUTO_TEST_CASE(contour) {
   path->interpolate(0., out, J);
   path->interpolate(dt, out, J);
   path->interpolate(2 * dt + .1, out, J);
+  // add some test?
 
-  ptr<Countour_cost> cost = mk<Countour_cost>(nx, nu, path);
+  ptr<Contour_cost> cost = mk<Contour_cost>(nx, nu, path);
 
   Eigen::VectorXd x(4);
   x << 2., -1., .3, 0.34;
@@ -3288,32 +3324,69 @@ BOOST_AUTO_TEST_CASE(contour) {
   std::cout << "Jx" << Jx << std::endl;
   std::cout << "Judif" << Judif << std::endl;
 
-
-  CHECK_SEQ((Jx - Jxdif).norm(), 1e-5, AT);
-  CHECK_SEQ((Ju - Judif).norm(), 1e-5, AT);
+  BOOST_TEST((Jx - Jxdif).norm());
+  BOOST_TEST((Ju - Judif).norm());
 }
 
-// int main(int argc, char *argv[]) {
-//   // test(argc, argv);
-//
-//   // double_integ(argc, argv);
-//   // test_unifree();
-//
-//   // test_contour();
-//
-//   return quim_test(argc, argv);
-//
-//   // eval_spline3d();
-// }
+// continue here:
+// bounds,
+// combine solvers,
+// integration (finally!)
 
-// use boost test
+BOOST_AUTO_TEST_CASE(linear_interpolation) {
 
-// TODO: convert into tests
+  Eigen::VectorXd ts = Eigen::VectorXd::LinSpaced(10, 0, 9);
+
+  std::vector<Eigen::VectorXd> xs_vec(10, Eigen::VectorXd(2));
+
+  for (size_t i = 0; i < 10; i++) {
+    Eigen::VectorXd x(2);
+    x << i, 2 * i;
+    xs_vec.at(i) = x;
+  }
+
+  ptr<Interpolator> path = mk<Interpolator>(ts, xs_vec);
+
+  Eigen::VectorXd x(2);
+  Eigen::VectorXd J(2);
+
+  for (size_t i = 0; i < 10; i++) {
+    path->interpolate(ts(i), x, J);
+    std::cout << x << std::endl;
+    BOOST_TEST((x - xs_vec.at(i)).norm() < 1e-12);
+  }
+
+  path->interpolate(10, x, J);
+  std::cout << x << std::endl;
+  path->interpolate(11, x, J);
+  std::cout << x << std::endl;
+
+  path->interpolate(.5, x, J);
+  std::cout << x << std::endl;
+  path->interpolate(.1, x, J);
+  std::cout << x << std::endl;
+
+  path->interpolate(.89, x, J);
+  std::cout << x << std::endl;
+
+  // add some test?
+}
+
+// Strategy:
+// We optimize with the MPC controller without bounds, using the time with the
+// deltas. We optimize with the path tracking formulation with alpha_rate = 1.
+// We optimize with the path tracking formulation with alpha = 1.5.
+
+// Next steps: lets get a solution from db-astar with deltas.
+// and lets check for the full pipeline.
+// Should it be in python?
 //
-// (opti) ⋊> ~/s/w/k/build on feat_croco ⨯ make && ./test_croco --env
-// ../benchmark/unicycle_first_order_0/bugtr ap_0.yaml --init
-// ../test/unicycle_first_order_0/guess_bugtrap_0_sol0.yaml
+//
+//
 
-// (opti) ⋊> ~/s/w/k/build on feat_croco ⨯ make &&   ./test_croco --env
-// ../benchmark/unicycle_first_order_0/par allelpark_0.yaml --init
-// ../test/unicycle_first_order_0/guess_parallelpark_0_sol0.yaml
+// this works.
+// (opti) ⋊> ~/s/w/k/build_debug on dev ⨯ make &&   ./test_croco
+// --run_test=quim
+// --  --env ../benchmark/unicycle_first_order_0/parallelpark_0.yaml --w
+// aypoints ../build_debug/qdbg/result_dbastar_newresult.yaml   --reg 1 --out
+// out.yaml --new_format true --control_bounds 0  --solver 3
