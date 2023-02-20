@@ -1,0 +1,8 @@
+problem_name: "problem1"
+env_file: "../benchmark/unicycle_second_order_0/kink_0.yaml"
+init_guess: "../test/unicycle_second_order_0/guess_kink_0_sol0.yaml"
+new_format: false
+# - problem_name: problem2
+#   env: ../benchmark/unicycle_second_order_0/kink_0.yaml   
+#   waypoints: ../test/unicycle_second_order_0/guess_kink_0_sol0.yaml
+

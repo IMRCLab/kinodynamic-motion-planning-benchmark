@@ -1,0 +1,4 @@
+problem_name: "bug_1_good"
+env_file: "../benchmark/unicycle_first_order_0/bugtrap_0.yaml"
+init_guess: "../test/unicycle_first_order_0/guess_bugtrap_0_sol1.yaml"
+new_format: false

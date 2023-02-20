@@ -1,0 +1,4 @@
+problem_name: "quad2d_empty_1"
+env_file: "../benchmark/quad2d/empty_1.yaml"
+init_guess: "../test/quad2d/empty_0/guess_1.yaml"
+new_format: false

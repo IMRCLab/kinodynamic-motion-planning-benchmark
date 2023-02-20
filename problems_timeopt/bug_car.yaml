@@ -1,0 +1,4 @@
+problem_name: "bug_car"
+env_file: "../benchmark/car_first_order_with_1_trailers_0/bugtrap_0.yaml"
+init_guess: "../test/car_first_order_with_1_trailers_0/guess_bugtrap_0_sol0.yaml"
+new_format: false

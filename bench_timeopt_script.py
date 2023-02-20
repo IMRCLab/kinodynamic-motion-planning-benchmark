@@ -77,7 +77,9 @@ problems = [
     # "park_1_bad.yaml",
     # "kink_1_good.yaml"
     # "bug_2.yaml",
-    "kink_2.yaml",
+    # "kink_2.yaml",
+    # "bug_trailer.yaml"
+    "quad2d_obs.yaml"
 ]
 
 # Continue HERE!!

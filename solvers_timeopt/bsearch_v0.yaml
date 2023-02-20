@@ -1,0 +1,7 @@
+solver_name: "bsearch_v0"
+solver_id: 9
+control_bounds: true
+use_warmstart: true
+weight_goal: 100
+smooth_traj: true
+max_iter: 50

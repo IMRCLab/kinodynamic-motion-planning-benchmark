@@ -1,0 +1,4 @@
+problem_name: "quad2d_obs"
+env_file: "../benchmark/quad2d/quad_obs_0.yaml"
+init_guess: "../test/quad2d/quad_obs_0/quad_obs_0_guess_0.yaml"
+new_format: false

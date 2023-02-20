@@ -1,0 +1,4 @@
+problem_name: "park_1_very_good"
+env_file: "../benchmark/unicycle_first_order_0/parallelpark_0.yaml"
+init_guess: "../test/unicycle_first_order_0/guess_parallelpark_mpcc.yaml"
+new_format: false
