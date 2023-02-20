@@ -1,3 +1,5 @@
+#pragma once
+
 // FCL
 #include <fcl/fcl.h>
 
@@ -15,8 +17,8 @@
 
 #include "fcl/common/types.h"
 
-class CollisionChecker {
-public:
+struct CollisionChecker {
+
   CollisionChecker();
 
   ~CollisionChecker();
@@ -32,7 +34,6 @@ public:
 double faraway_zero_gradient_bound = .1, double epsilon = 1e-4, 
 std::vector<bool>* non_zero_flags = nullptr);
 
-private:
   std::shared_ptr<fcl::CollisionGeometryf> geom_;
   std::shared_ptr<fcl::BroadPhaseCollisionManagerf> env_;
   std::shared_ptr<Robot> robot_;

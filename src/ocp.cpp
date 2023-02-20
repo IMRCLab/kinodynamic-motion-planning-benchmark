@@ -1,66 +1,225 @@
 #include "ocp.hpp"
+#include "croco_macros.hpp"
+#include <Eigen/src/Core/Matrix.h>
 #include <boost/test/tools/interface.hpp>
 
 Opti_params opti_params;
 double accumulated_time;
 
+using vstr = std::vector<std::string>;
+using V2d = Eigen::Vector2d;
+using V3d = Eigen::Vector3d;
+using V4d = Eigen::Vector4d;
+using Vxd = Eigen::VectorXd;
+
+void check_input_calc(Eigen::Ref<Eigen::VectorXd> xnext,
+                      const Eigen::Ref<const Vxd> &x,
+                      const Eigen::Ref<const Vxd> &u, size_t nx, size_t nu) {
+
+  if (static_cast<std::size_t>(x.size()) != nx) {
+    throw_pretty("Invalid argument: "
+                 << "x has wrong dimension (it should be " +
+                        std::to_string(nx) + ")");
+  }
+
+  if (static_cast<std::size_t>(u.size()) != nu) {
+    throw_pretty("Invalid argument: "
+                 << "x has wrong dimension (it should be " +
+                        std::to_string(nu) + ")");
+  }
+
+  if (static_cast<std::size_t>(xnext.size()) != nx) {
+    throw_pretty("Invalid argument: "
+                 << "xnext has wrong dimension (it should be " +
+                        std::to_string(nx) + ")");
+  }
+};
+
+void normalize(const Eigen::Ref<const Eigen::Vector4d> &q,
+               Eigen::Ref<Eigen::Vector4d> y, Eigen::Ref<Eigen::Matrix4d> J) {
+  double norm = q.norm();
+  y = q / norm;
+  Eigen::Matrix4d I4 = Eigen::Matrix4d::Identity();
+  J.noalias() = I4 / norm - q * q.transpose() / (std::pow(norm, 3));
+}
+
+void rotate_with_q(const Eigen::Ref<const Eigen::Vector4d> &x,
+                   const Eigen::Ref<const Eigen::Vector3d> &a,
+                   Eigen::Ref<Eigen::Vector3d> y, Eigen::Ref<Matrix34> Jx,
+                   Eigen::Ref<Eigen::Matrix3d> Ja) {
+
+  Eigen::Vector4d q;
+  Eigen::Matrix4d Jnorm;
+  Matrix34 Jq;
+
+  normalize(x, q, Jnorm);
+
+  double w = q(3);
+  Eigen::Vector3d v = q.block<3, 1>(0, 0);
+  Eigen::Matrix3d I3 = Eigen::Matrix3d::Identity();
+  Eigen::Quaterniond quat = Eigen::Quaterniond(q);
+
+  Eigen::Matrix3d R = quat.toRotationMatrix();
+  // std::cout << "R\n" << R << std::endl;
+  // std::cout << "a\n" << a << std::endl;
+
+  y = R * a;
+  // std::cout << "y\n" << y << std::endl;
+
+  if (Jq.cols() && Ja.cols()) {
+    assert(Jq.cols() == 4);
+    assert(Jq.rows() == 3);
+
+    assert(Ja.cols() == 3);
+    assert(Ja.rows() == 3);
+
+    Eigen::Vector3d Jq_1 = 2 * (w * a + v.cross(a));
+    // std::cout << "Jq_1\n" << Jq_1 << std::endl;
+    Eigen::Matrix3d Jq_2 = 2 * (v.dot(a) * I3 + v * a.transpose() -
+                                a * v.transpose() - w * Skew(a));
+    // std::cout << "Jq_2\n" << Jq_2 << std::endl;
+    Jq.col(3) = Jq_1;
+    Jq.block<3, 3>(0, 0) = Jq_2;
+    // std::cout << "Jq_q\n" << Jq << std::endl;
+
+    Jx.noalias() = Jq * Jnorm;
+
+    // std::cout << "Jx\n" << Jx << std::endl;
+
+    Ja = R;
+  }
+}
+
+void check_input_calcdiff(Eigen::Ref<Eigen::MatrixXd> Fx,
+                          Eigen::Ref<Eigen::MatrixXd> Fu,
+                          const Eigen::Ref<const Vxd> &x,
+                          const Eigen::Ref<const Vxd> &u, size_t nx,
+                          size_t nu) {
+
+  if (static_cast<std::size_t>(x.size()) != nx) {
+    throw_pretty("Invalid argument: "
+                 << "x has wrong dimension (it should be " +
+                        std::to_string(nx) + ")");
+  }
+  if (static_cast<std::size_t>(u.size()) != nu) {
+    throw_pretty("Invalid argument: "
+                 << "u has wrong dimension (it should be " +
+                        std::to_string(nu) + ")");
+  }
+
+  if (static_cast<std::size_t>(Fx.cols()) != nx) {
+    throw_pretty("Invalid argument: "
+                 << "Fx has wrong dimension (it should be " +
+                        std::to_string(nx) + ")");
+  }
+
+  if (static_cast<std::size_t>(Fx.rows()) != nx) {
+    throw_pretty("Invalid argument: "
+                 << "Fx has wrong dimension (it should be " +
+                        std::to_string(nx) + ")");
+  }
+
+  if (static_cast<std::size_t>(Fu.cols()) != nu) {
+    throw_pretty("Invalid argument: "
+                 << "Fu has wrong dimension (it should be " +
+                        std::to_string(nx) + ")");
+  }
+
+  if (static_cast<std::size_t>(Fu.rows()) != nx) {
+    throw_pretty("Invalid argument: "
+                 << "Fu has wrong dimension (it should be " +
+                        std::to_string(nx) + ")");
+  }
+}
+
 void Opti_params::add_options(po::options_description &desc) {
 
-  desc.add_options()("free_time",
-                     po::value<bool>(&free_time)->default_value(free_time))(
-      "control_bounds",
-      po::value<bool>(&control_bounds)->default_value(control_bounds))(
-      "max_iter", po::value<size_t>(&max_iter)->default_value(max_iter))(
-      "step_opt", po::value<size_t>(&num_steps_to_optimize)
-                      ->default_value(num_steps_to_optimize))(
-      "step_move",
-      po::value<size_t>(&num_steps_to_move)->default_value(num_steps_to_move))(
-      "solver", po::value<int>(&solver_id)->default_value(solver_id))(
-      "use_warmstart",
-      po::value<bool>(&use_warmstart)->default_value(use_warmstart))(
-      "use_fdiff",
-      po::value<bool>(&use_finite_diff)->default_value(use_finite_diff))(
-      "alpha_rate", po::value<double>(&alpha_rate)->default_value(alpha_rate))(
-      "k_linear", po::value<double>(&k_linear)->default_value(k_linear))(
-      "noise_level",
-      po::value<double>(&noise_level)->default_value(noise_level))(
-      "smooth", po::value<bool>(&smooth_traj)->default_value(smooth_traj))(
-      "k_contour", po::value<double>(&k_contour)->default_value(k_contour))(
-      "weight_goal",
-      po::value<double>(&weight_goal)->default_value(weight_goal))(
-      "reg", po::value<bool>(&regularize_wrt_init_guess)
-                 ->default_value(regularize_wrt_init_guess));
+  set_from_boostop(desc, VAR_WITH_NAME(collision_weight));
+  set_from_boostop(desc, VAR_WITH_NAME(th_acceptnegstep));
+  set_from_boostop(desc, VAR_WITH_NAME(states_reg));
+  set_from_boostop(desc, VAR_WITH_NAME(init_reg));
+  set_from_boostop(desc, VAR_WITH_NAME(control_bounds));
+  set_from_boostop(desc, VAR_WITH_NAME(max_iter));
+  set_from_boostop(desc, VAR_WITH_NAME(window_optimize));
+  set_from_boostop(desc, VAR_WITH_NAME(window_shift));
+  set_from_boostop(desc, VAR_WITH_NAME(solver_id));
+  set_from_boostop(desc, VAR_WITH_NAME(use_warmstart));
+  set_from_boostop(desc, VAR_WITH_NAME(use_finite_diff));
+  set_from_boostop(desc, VAR_WITH_NAME(k_linear));
+  set_from_boostop(desc, VAR_WITH_NAME(noise_level));
+  set_from_boostop(desc, VAR_WITH_NAME(k_contour));
+  set_from_boostop(desc, VAR_WITH_NAME(smooth_traj));
+  set_from_boostop(desc, VAR_WITH_NAME(weight_goal));
+  set_from_boostop(desc, VAR_WITH_NAME(shift_repeat));
+  set_from_boostop(desc, VAR_WITH_NAME(solver_name));
+  set_from_boostop(desc, VAR_WITH_NAME(tsearch_max_rate));
+  set_from_boostop(desc, VAR_WITH_NAME(tsearch_min_rate));
+  set_from_boostop(desc, VAR_WITH_NAME(tsearch_num_check));
+}
+
+void Opti_params::read_from_yaml(const char *file) {
+  std::cout << "loading file: " << file << std::endl;
+  YAML::Node node = YAML::LoadFile(file);
+  read_from_yaml(node);
+}
+
+void Opti_params::read_from_yaml(YAML::Node &node) {
+  set_from_yaml(node, VAR_WITH_NAME(collision_weight));
+  set_from_yaml(node, VAR_WITH_NAME(th_acceptnegstep));
+  set_from_yaml(node, VAR_WITH_NAME(states_reg));
+  set_from_yaml(node, VAR_WITH_NAME(init_reg));
+  set_from_yaml(node, VAR_WITH_NAME(solver_name));
+  set_from_yaml(node, VAR_WITH_NAME(solver_id));
+  set_from_yaml(node, VAR_WITH_NAME(use_warmstart));
+  set_from_yaml(node, VAR_WITH_NAME(control_bounds));
+  set_from_yaml(node, VAR_WITH_NAME(k_linear));
+  set_from_yaml(node, VAR_WITH_NAME(k_contour));
+  set_from_yaml(node, VAR_WITH_NAME(max_iter));
+  set_from_yaml(node, VAR_WITH_NAME(window_optimize));
+  set_from_yaml(node, VAR_WITH_NAME(window_shift));
+  set_from_yaml(node, VAR_WITH_NAME(max_mpc_iterations));
+  set_from_yaml(node, VAR_WITH_NAME(debug_file_name));
+  set_from_yaml(node, VAR_WITH_NAME(weight_goal));
+  set_from_yaml(node, VAR_WITH_NAME(collision_weight));
+  set_from_yaml(node, VAR_WITH_NAME(smooth_traj));
+  set_from_yaml(node, VAR_WITH_NAME(shift_repeat));
+  set_from_yaml(node, VAR_WITH_NAME(tsearch_max_rate));
+  set_from_yaml(node, VAR_WITH_NAME(tsearch_min_rate));
+  set_from_yaml(node, VAR_WITH_NAME(tsearch_num_check));
 }
 
 void Opti_params::print(std::ostream &out) {
 
   std::string be = "";
   std::string af = ": ";
-  out << be << "CALLBACKS" << af << CALLBACKS << std::endl;
-  out << be << "use_finite_diff" << af << use_finite_diff << std::endl;
-  out << be << "use_warmstart" << af << use_warmstart << std::endl;
-  out << be << "free_time" << af << free_time << std::endl;
-  out << be << "repair_init_guess" << af << repair_init_guess << std::endl;
-  out << be << "regularize_wrt_init_guess" << af << regularize_wrt_init_guess
-      << std::endl;
-  out << be << "control_bounds" << af << control_bounds << std::endl;
-  out << be << "adaptative_goal_mpc" << af << adaptative_goal_mpc << std::endl;
-  out << be << "th_stop" << af << th_stop << std::endl;
-  out << be << "init_reg" << af << init_reg << std::endl;
-  out << be << "th_acceptnegstep" << af << th_acceptnegstep << std::endl;
-  out << be << "noise_level" << af << noise_level << std::endl;
-  out << be << "alpha_rate" << af << alpha_rate << std::endl;
-  out << be << "max_iter" << af << max_iter << std::endl;
-  out << be << "num_steps_to_optimize" << af << num_steps_to_optimize
-      << std::endl;
-  out << be << "num_steps_to_move" << af << num_steps_to_move << std::endl;
-  out << be << "max_mpc_iterations" << af << max_mpc_iterations << std::endl;
-  out << be << "debug_file_name" << af << debug_file_name << std::endl;
+
+  out << be << STR(th_acceptnegstep, af) << std::endl;
+  out << be << STR(states_reg, af) << std::endl;
+  out << be << STR(solver_name, af) << std::endl;
+  out << be << STR(CALLBACKS, af) << std::endl;
+  out << be << STR(solver_id, af) << std::endl;
+  out << be << STR(use_finite_diff, af) << std::endl;
+  out << be << STR(use_warmstart, af) << std::endl;
+  out << be << STR(repair_init_guess, af) << std::endl;
+  out << be << STR(control_bounds, af) << std::endl;
+  out << be << STR(th_stop, af) << std::endl;
+  out << be << STR(init_reg, af) << std::endl;
+  out << be << STR(th_acceptnegstep, af) << std::endl;
+  out << be << STR(noise_level, af) << std::endl;
+  out << be << STR(max_iter, af) << std::endl;
+  out << be << STR(window_optimize, af) << std::endl;
+  out << be << STR(window_shift, af) << std::endl;
+  out << be << STR(max_mpc_iterations, af) << std::endl;
+  out << be << STR(debug_file_name, af) << std::endl;
   out << be << STR(k_linear, af) << std::endl;
   out << be << STR(k_contour, af) << std::endl;
   out << be << STR(weight_goal, af) << std::endl;
   out << be << STR(collision_weight, af) << std::endl;
   out << be << STR(smooth_traj, af) << std::endl;
+
+  out << be << STR(tsearch_max_rate, af) << std::endl;
+  out << be << STR(tsearch_min_rate, af) << std::endl;
+  out << be << STR(tsearch_num_check, af) << std::endl;
 }
 
 const char *SOLVER_txt[] = {"traj_opt",
@@ -74,15 +233,18 @@ const char *SOLVER_txt[] = {"traj_opt",
                             "mpcc_linear",
                             "time_search_traj_opt",
                             "mpc_adaptative",
+                            "traj_opt_free_time_proxi",
                             "none"};
 
-void linearInterpolation(const Eigen::VectorXd &times,
-                         const std::vector<Eigen::VectorXd> &x, double t_query,
-                         Eigen::Ref<Eigen::VectorXd> out,
-                         Eigen::Ref<Eigen::VectorXd> Jx) {
+void linearInterpolation(const Vxd &times, const std::vector<Vxd> &x,
+                         double t_query, Eigen::Ref<Vxd> out,
+                         Eigen::Ref<Vxd> Jx) {
+
+  CHECK(x.size(), AT);
+  CHECK_EQ(x.front().size(), out.size(), AT);
 
   double num_tolerance = 1e-8;
-  CHECK_GEQ(t_query + num_tolerance, times.head(1)(0), AT);
+  // CHECK_GEQ(t_query + num_tolerance, times.head(1)(0), AT);
   assert(times.size() == x.size());
 
   size_t index = 0;
@@ -120,8 +282,8 @@ void linearInterpolation(const Eigen::VectorXd &times,
   double factor =
       (t_query - times(index - 1)) / (times(index) - times(index - 1));
 
-  std::cout << "index is " << index << std::endl;
-  std::cout << "size " << times.size() << std::endl;
+  // std::cout << "index is " << index << std::endl;
+  // std::cout << "size " << times.size() << std::endl;
   // std::cout << "factor " << factor << std::endl;
 
   out = x.at(index - 1) + factor * (x.at(index) - x.at(index - 1));
@@ -130,11 +292,12 @@ void linearInterpolation(const Eigen::VectorXd &times,
 
 Dynamics_contour::Dynamics_contour(ptr<Dynamics> dyn, bool accumulate)
     : dyn(dyn), accumulate(accumulate) {
+  CHECK(accumulate, AT);
   nx = dyn->nx + 1;
   nu = dyn->nu + 1;
 }
 
-void Dynamics_contour::calc(Eigen::Ref<Eigen::VectorXd> xnext,
+void Dynamics_contour::calc(Eigen::Ref<Vxd> xnext,
                             const Eigen::Ref<const VectorXs> &x,
                             const Eigen::Ref<const VectorXs> &u) {
 
@@ -190,9 +353,11 @@ Dynamics_unicycle2::Dynamics_unicycle2(bool free_time) : free_time(free_time) {
   nu = 2;
   if (free_time)
     nu += 1;
+
+  uref = Vxd::Zero(nx);
 }
 
-void Dynamics_unicycle2::calc(Eigen::Ref<Eigen::VectorXd> xnext,
+void Dynamics_unicycle2::calc(Eigen::Ref<Vxd> xnext,
                               const Eigen::Ref<const VectorXs> &x,
                               const Eigen::Ref<const VectorXs> &u) {
 
@@ -295,9 +460,10 @@ Dynamics_unicycle::Dynamics_unicycle(bool free_time) : free_time(free_time) {
     nu = 3;
   else
     nu = 2;
+  uref = Vxd::Zero(2);
 }
 
-void Dynamics_unicycle::calc(Eigen::Ref<Eigen::VectorXd> xnext,
+void Dynamics_unicycle::calc(Eigen::Ref<Vxd> xnext,
                              const Eigen::Ref<const VectorXs> &x,
                              const Eigen::Ref<const VectorXs> &u) {
 
@@ -370,9 +536,9 @@ Contour_cost_alpha_x::Contour_cost_alpha_x(size_t nx, size_t nu)
   cost_type = CostTYPE::linear;
 }
 
-void Contour_cost_alpha_x::calc(Eigen::Ref<Eigen::VectorXd> r,
-                                const Eigen::Ref<const Eigen::VectorXd> &x,
-                                const Eigen::Ref<const Eigen::VectorXd> &u) {
+void Contour_cost_alpha_x::calc(Eigen::Ref<Vxd> r,
+                                const Eigen::Ref<const Vxd> &x,
+                                const Eigen::Ref<const Vxd> &u) {
 
   assert(static_cast<std::size_t>(r.size()) == nr);
   assert(static_cast<std::size_t>(x.size()) == nx);
@@ -382,10 +548,10 @@ void Contour_cost_alpha_x::calc(Eigen::Ref<Eigen::VectorXd> r,
   r(0) = -k * x(nx - 1);
 }
 
-void Contour_cost_alpha_x::calcDiff(
-    Eigen::Ref<Eigen::MatrixXd> Jx, Eigen::Ref<Eigen::MatrixXd> Ju,
-    const Eigen::Ref<const Eigen::VectorXd> &x,
-    const Eigen::Ref<const Eigen::VectorXd> &u) {
+void Contour_cost_alpha_x::calcDiff(Eigen::Ref<Eigen::MatrixXd> Jx,
+                                    Eigen::Ref<Eigen::MatrixXd> Ju,
+                                    const Eigen::Ref<const Vxd> &x,
+                                    const Eigen::Ref<const Vxd> &u) {
 
   assert(static_cast<std::size_t>(Jx.rows()) == nr);
   assert(static_cast<std::size_t>(Ju.rows()) == nr);
@@ -401,9 +567,9 @@ Contour_cost_alpha_u::Contour_cost_alpha_u(size_t nx, size_t nu)
   cost_type = CostTYPE::linear;
 }
 
-void Contour_cost_alpha_u::calc(Eigen::Ref<Eigen::VectorXd> r,
-                                const Eigen::Ref<const Eigen::VectorXd> &x,
-                                const Eigen::Ref<const Eigen::VectorXd> &u) {
+void Contour_cost_alpha_u::calc(Eigen::Ref<Vxd> r,
+                                const Eigen::Ref<const Vxd> &x,
+                                const Eigen::Ref<const Vxd> &u) {
 
   assert(static_cast<std::size_t>(r.size()) == nr);
   assert(static_cast<std::size_t>(x.size()) == nx);
@@ -413,10 +579,10 @@ void Contour_cost_alpha_u::calc(Eigen::Ref<Eigen::VectorXd> r,
   r(0) = -k * u(nu - 1);
 }
 
-void Contour_cost_alpha_u::calcDiff(
-    Eigen::Ref<Eigen::MatrixXd> Jx, Eigen::Ref<Eigen::MatrixXd> Ju,
-    const Eigen::Ref<const Eigen::VectorXd> &x,
-    const Eigen::Ref<const Eigen::VectorXd> &u) {
+void Contour_cost_alpha_u::calcDiff(Eigen::Ref<Eigen::MatrixXd> Jx,
+                                    Eigen::Ref<Eigen::MatrixXd> Ju,
+                                    const Eigen::Ref<const Vxd> &x,
+                                    const Eigen::Ref<const Vxd> &u) {
 
   assert(static_cast<std::size_t>(Jx.rows()) == nr);
   assert(static_cast<std::size_t>(Ju.rows()) == nr);
@@ -427,10 +593,10 @@ void Contour_cost_alpha_u::calcDiff(
 };
 
 void finite_diff_cost(ptr<Cost> cost, Eigen::Ref<Eigen::MatrixXd> Jx,
-                      Eigen::Ref<Eigen::MatrixXd> Ju, const Eigen::VectorXd &x,
-                      const Eigen::VectorXd &u, const int nr) {
+                      Eigen::Ref<Eigen::MatrixXd> Ju, const Vxd &x,
+                      const Vxd &u, const int nr) {
 
-  Eigen::VectorXd r_ref(nr);
+  Vxd r_ref(nr);
   cost->calc(r_ref, x, u);
   int nu = u.size();
   int nx = x.size();
@@ -442,7 +608,7 @@ void finite_diff_cost(ptr<Cost> cost, Eigen::Ref<Eigen::MatrixXd> Jx,
     Eigen::MatrixXd ue;
     ue = u;
     ue(i) += eps;
-    Eigen::VectorXd r_e(nr);
+    Vxd r_e(nr);
     r_e.setZero();
     cost->calc(r_e, x, ue);
     auto df = (r_e - r_ref) / eps;
@@ -454,7 +620,7 @@ void finite_diff_cost(ptr<Cost> cost, Eigen::Ref<Eigen::MatrixXd> Jx,
     Eigen::MatrixXd xe;
     xe = x;
     xe(i) += eps;
-    Eigen::VectorXd r_e(nr);
+    Vxd r_e(nr);
     r_e.setZero();
     cost->calc(r_e, xe, u);
     auto df = (r_e - r_ref) / eps;
@@ -467,9 +633,8 @@ Contour_cost_x::Contour_cost_x(size_t nx, size_t nu, ptr<Interpolator> path)
       last_J(nx - 1) {
   name = "contour-cost-x";
 }
-void Contour_cost_x::calc(Eigen::Ref<Eigen::VectorXd> r,
-                          const Eigen::Ref<const Eigen::VectorXd> &x,
-                          const Eigen::Ref<const Eigen::VectorXd> &u) {
+void Contour_cost_x::calc(Eigen::Ref<Vxd> r, const Eigen::Ref<const Vxd> &x,
+                          const Eigen::Ref<const Vxd> &u) {
   // check that r
   assert(static_cast<std::size_t>(r.size()) == nr);
   assert(static_cast<std::size_t>(x.size()) == nx);
@@ -484,15 +649,14 @@ void Contour_cost_x::calc(Eigen::Ref<Eigen::VectorXd> r,
   r = weight * (last_out - x.head(nx - 1));
 }
 
-void Contour_cost_x::calc(Eigen::Ref<Eigen::VectorXd> r,
-                          const Eigen::Ref<const Eigen::VectorXd> &x) {
+void Contour_cost_x::calc(Eigen::Ref<Vxd> r, const Eigen::Ref<const Vxd> &x) {
   calc(r, x, zero_u);
 }
 
 void Contour_cost_x::calcDiff(Eigen::Ref<Eigen::MatrixXd> Jx,
                               Eigen::Ref<Eigen::MatrixXd> Ju,
-                              const Eigen::Ref<const Eigen::VectorXd> &x,
-                              const Eigen::Ref<const Eigen::VectorXd> &u) {
+                              const Eigen::Ref<const Vxd> &x,
+                              const Eigen::Ref<const Vxd> &u) {
 
   assert(static_cast<std::size_t>(Jx.rows()) == nr);
   assert(static_cast<std::size_t>(Ju.rows()) == nr);
@@ -513,14 +677,13 @@ void Contour_cost_x::calcDiff(Eigen::Ref<Eigen::MatrixXd> Jx,
 
     assert(weight > 0);
 
-    Jx.block(0, 0, nx - 1, nx - 1).diagonal() =
-        -weight * Eigen::VectorXd::Ones(nx - 1);
+    Jx.block(0, 0, nx - 1, nx - 1).diagonal() = -weight * Vxd::Ones(nx - 1);
     Jx.block(0, nx - 1, nx - 1, 1) = weight * last_J;
   }
 };
 
 void Contour_cost_x::calcDiff(Eigen::Ref<Eigen::MatrixXd> Jx,
-                              const Eigen::Ref<const Eigen::VectorXd> &x) {
+                              const Eigen::Ref<const Vxd> &x) {
 
   calcDiff(Jx, zero_Ju, x, zero_u);
 }
@@ -531,9 +694,8 @@ Contour_cost::Contour_cost(size_t nx, size_t nu, ptr<Interpolator> path)
   name = "contour";
 }
 
-void Contour_cost::calc(Eigen::Ref<Eigen::VectorXd> r,
-                        const Eigen::Ref<const Eigen::VectorXd> &x,
-                        const Eigen::Ref<const Eigen::VectorXd> &u) {
+void Contour_cost::calc(Eigen::Ref<Vxd> r, const Eigen::Ref<const Vxd> &x,
+                        const Eigen::Ref<const Vxd> &u) {
   // check that r
   assert(static_cast<std::size_t>(r.size()) == nr);
   assert(static_cast<std::size_t>(x.size()) == nx);
@@ -550,21 +712,20 @@ void Contour_cost::calc(Eigen::Ref<Eigen::VectorXd> r,
   // std::cout << "calc in contour " << r.transpose() << std::endl;
 }
 
-void Contour_cost::calc(Eigen::Ref<Eigen::VectorXd> r,
-                        const Eigen::Ref<const Eigen::VectorXd> &x) {
+void Contour_cost::calc(Eigen::Ref<Vxd> r, const Eigen::Ref<const Vxd> &x) {
   calc(r, x, zero_u);
 }
 
 void Contour_cost::calcDiff(Eigen::Ref<Eigen::MatrixXd> Jx,
                             Eigen::Ref<Eigen::MatrixXd> Ju,
-                            const Eigen::Ref<const Eigen::VectorXd> &x,
-                            const Eigen::Ref<const Eigen::VectorXd> &u) {
+                            const Eigen::Ref<const Vxd> &x,
+                            const Eigen::Ref<const Vxd> &u) {
 
   assert(static_cast<std::size_t>(x.size()) == nx);
 
   // lets use finite diff
   if (use_finite_diff) {
-    Eigen::VectorXd r_ref(nr);
+    Vxd r_ref(nr);
     calc(r_ref, x, u);
 
     Ju.setZero();
@@ -574,7 +735,7 @@ void Contour_cost::calcDiff(Eigen::Ref<Eigen::MatrixXd> Jx,
       Eigen::MatrixXd ue;
       ue = u;
       ue(i) += eps;
-      Eigen::VectorXd r_e(nr);
+      Vxd r_e(nr);
       r_e.setZero();
       calc(r_e, x, ue);
       auto df = (r_e - r_ref) / eps;
@@ -586,7 +747,7 @@ void Contour_cost::calcDiff(Eigen::Ref<Eigen::MatrixXd> Jx,
       Eigen::MatrixXd xe;
       xe = x;
       xe(i) += eps;
-      Eigen::VectorXd r_e(nr);
+      Vxd r_e(nr);
       r_e.setZero();
       calc(r_e, xe, u);
       auto df = (r_e - r_ref) / eps;
@@ -603,7 +764,7 @@ void Contour_cost::calcDiff(Eigen::Ref<Eigen::MatrixXd> Jx,
     }
 
     Jx.block(0, 0, nx - 1, nx - 1).diagonal() =
-        -weight_contour * weight_diff * Eigen::VectorXd::Ones(nx - 1);
+        -weight_contour * weight_diff * Vxd::Ones(nx - 1);
     Jx.block(0, nx - 1, nx - 1, 1) = weight_contour * weight_diff * last_J;
     Jx(nx - 1, nx - 1) = weight_contour * weight_alpha;
     Ju(nx, nu - 1) = weight_virtual_control;
@@ -611,7 +772,7 @@ void Contour_cost::calcDiff(Eigen::Ref<Eigen::MatrixXd> Jx,
 };
 
 void Contour_cost::calcDiff(Eigen::Ref<Eigen::MatrixXd> Jx,
-                            const Eigen::Ref<const Eigen::VectorXd> &x) {
+                            const Eigen::Ref<const Vxd> &x) {
 
   calcDiff(Jx, zero_Ju, x, zero_u);
 }
@@ -619,14 +780,13 @@ void Contour_cost::calcDiff(Eigen::Ref<Eigen::MatrixXd> Jx,
 Col_cost::Col_cost(size_t nx, size_t nu, size_t nr,
                    boost::shared_ptr<CollisionChecker> cl)
     : Cost(nx, nu, nr), cl(cl) {
-  last_x = Eigen::VectorXd::Zero(nx);
+  last_x = Vxd::Zero(nx);
   name = "collision";
   nx_effective = nx;
 }
 
-void Col_cost::calc(Eigen::Ref<Eigen::VectorXd> r,
-                    const Eigen::Ref<const Eigen::VectorXd> &x,
-                    const Eigen::Ref<const Eigen::VectorXd> &u) {
+void Col_cost::calc(Eigen::Ref<Vxd> r, const Eigen::Ref<const Vxd> &x,
+                    const Eigen::Ref<const Vxd> &u) {
   // check that r
   assert(static_cast<std::size_t>(r.size()) == nr);
   assert(static_cast<std::size_t>(x.size()) == nx);
@@ -655,22 +815,21 @@ void Col_cost::calc(Eigen::Ref<Eigen::VectorXd> r,
   r = out;
 }
 
-void Col_cost::calc(Eigen::Ref<Eigen::VectorXd> r,
-                    const Eigen::Ref<const Eigen::VectorXd> &x) {
-  calc(r, x, Eigen::VectorXd(nu));
+void Col_cost::calc(Eigen::Ref<Vxd> r, const Eigen::Ref<const Vxd> &x) {
+  calc(r, x, Vxd(nu));
 }
 
 void Col_cost::calcDiff(Eigen::Ref<Eigen::MatrixXd> Jx,
                         Eigen::Ref<Eigen::MatrixXd> Ju,
-                        const Eigen::Ref<const Eigen::VectorXd> &x,
-                        const Eigen::Ref<const Eigen::VectorXd> &u) {
+                        const Eigen::Ref<const Vxd> &x,
+                        const Eigen::Ref<const Vxd> &u) {
 
   assert(static_cast<std::size_t>(x.size()) == nx);
   assert(static_cast<std::size_t>(u.size()) == nu);
 
   std::vector<double> query{x.data(), x.data() + nx_effective};
   double raw_d, d;
-  Eigen::VectorXd v(nx);
+  Vxd v(nx);
   bool check_one =
       (x - last_x).squaredNorm() < 1e-8 && (last_raw_d - margin) > 0;
   bool check_two = (last_raw_d - margin) > 0 &&
@@ -687,8 +846,7 @@ void Col_cost::calcDiff(Eigen::Ref<Eigen::MatrixXd> Jx,
     last_raw_d = raw_d;
     d = opti_params.collision_weight * (raw_d - margin);
     auto grad = std::get<1>(out);
-    v = opti_params.collision_weight *
-        Eigen::VectorXd::Map(grad.data(), grad.size());
+    v = opti_params.collision_weight * Vxd::Map(grad.data(), grad.size());
     if (d <= 0) {
       Jx.block(0, 0, 1, nx_effective) = v.transpose();
     } else {
@@ -699,16 +857,15 @@ void Col_cost::calcDiff(Eigen::Ref<Eigen::MatrixXd> Jx,
 };
 
 void Col_cost::calcDiff(Eigen::Ref<Eigen::MatrixXd> Jx,
-                        const Eigen::Ref<const Eigen::VectorXd> &x) {
+                        const Eigen::Ref<const Vxd> &x) {
 
   auto Ju = Eigen::MatrixXd(1, 1);
-  auto u = Eigen::VectorXd(1);
+  auto u = Vxd(1);
   calcDiff(Jx, Ju, x, u);
 }
 
-Control_cost::Control_cost(size_t nx, size_t nu, size_t nr,
-                           const Eigen::VectorXd &u_weight,
-                           const Eigen::VectorXd &u_ref)
+Control_cost::Control_cost(size_t nx, size_t nu, size_t nr, const Vxd &u_weight,
+                           const Vxd &u_ref)
     : Cost(nx, nu, nr), u_weight(u_weight), u_ref(u_ref) {
   CHECK_EQ(u_weight.size(), nu, AT);
   CHECK_EQ(u_ref.size(), nu, AT);
@@ -716,9 +873,8 @@ Control_cost::Control_cost(size_t nx, size_t nu, size_t nr,
   name = "control";
 }
 
-void Control_cost::calc(Eigen::Ref<Eigen::VectorXd> r,
-                        const Eigen::Ref<const Eigen::VectorXd> &x,
-                        const Eigen::Ref<const Eigen::VectorXd> &u) {
+void Control_cost::calc(Eigen::Ref<Vxd> r, const Eigen::Ref<const Vxd> &x,
+                        const Eigen::Ref<const Vxd> &u) {
   // check that r
   assert(static_cast<std::size_t>(r.size()) == nr);
   assert(static_cast<std::size_t>(x.size()) == nx);
@@ -726,17 +882,16 @@ void Control_cost::calc(Eigen::Ref<Eigen::VectorXd> r,
   r = (u - u_ref).cwiseProduct(u_weight);
 }
 
-void Control_cost::calc(Eigen::Ref<Eigen::VectorXd> r,
-                        const Eigen::Ref<const Eigen::VectorXd> &x) {
+void Control_cost::calc(Eigen::Ref<Vxd> r, const Eigen::Ref<const Vxd> &x) {
 
-  auto u = Eigen::VectorXd::Zero(nu);
+  auto u = Vxd::Zero(nu);
   calc(r, x, u);
 }
 
 void Control_cost::calcDiff(Eigen::Ref<Eigen::MatrixXd> Jx,
                             Eigen::Ref<Eigen::MatrixXd> Ju,
-                            const Eigen::Ref<const Eigen::VectorXd> &x,
-                            const Eigen::Ref<const Eigen::VectorXd> &u) {
+                            const Eigen::Ref<const Vxd> &x,
+                            const Eigen::Ref<const Vxd> &u) {
 
   assert(static_cast<std::size_t>(x.size()) == nx);
   assert(static_cast<std::size_t>(u.size()) == nu);
@@ -749,9 +904,9 @@ void Control_cost::calcDiff(Eigen::Ref<Eigen::MatrixXd> Jx,
 }
 
 void Control_cost::calcDiff(Eigen::Ref<Eigen::MatrixXd> Jx,
-                            const Eigen::Ref<const Eigen::VectorXd> &x) {
+                            const Eigen::Ref<const Vxd> &x) {
 
-  Eigen::VectorXd u(0);
+  Vxd u(0);
   Eigen::MatrixXd Ju(0, 0);
   calcDiff(Jx, Ju, x, u);
 }
@@ -767,32 +922,32 @@ void Control_cost::calcDiff(Eigen::Ref<Eigen::MatrixXd> Jx,
 // w ( x - lb ) >= 0
 // w x >= w lb
 
-State_bounds::State_bounds(size_t nx, size_t nu, size_t nr,
-                           const Eigen::VectorXd &ub,
-                           const Eigen::VectorXd &weight)
+State_bounds::State_bounds(size_t nx, size_t nu, size_t nr, const Vxd &ub,
+                           const Vxd &weight)
     : Cost(nx, nu, nr), ub(ub), weight(weight) {
-  name = "state";
+  name = "xbound";
+  CHECK_EQ(weight.size(), ub.size(), AT);
+  CHECK_EQ(nx, nr, AT);
+  CHECK_EQ(weight.size(), nx, AT);
 }
 
-void State_bounds::calc(Eigen::Ref<Eigen::VectorXd> r,
-                        const Eigen::Ref<const Eigen::VectorXd> &x,
-                        const Eigen::Ref<const Eigen::VectorXd> &u) {
+void State_bounds::calc(Eigen::Ref<Vxd> r, const Eigen::Ref<const Vxd> &x,
+                        const Eigen::Ref<const Vxd> &u) {
   // check that r
   assert(static_cast<std::size_t>(r.size()) == nr);
   calc(r, x);
 }
 
-void State_bounds::calc(Eigen::Ref<Eigen::VectorXd> r,
-                        const Eigen::Ref<const Eigen::VectorXd> &x) {
+void State_bounds::calc(Eigen::Ref<Vxd> r, const Eigen::Ref<const Vxd> &x) {
 
   assert(static_cast<std::size_t>(r.size()) == nr);
-  r = (x - ub).cwiseProduct(weight).cwiseMax(0.);
+  r = ((x - ub).cwiseProduct(weight)).cwiseMax(0.);
 }
 
 void State_bounds::calcDiff(Eigen::Ref<Eigen::MatrixXd> Jx,
                             Eigen::Ref<Eigen::MatrixXd> Ju,
-                            const Eigen::Ref<const Eigen::VectorXd> &x,
-                            const Eigen::Ref<const Eigen::VectorXd> &u) {
+                            const Eigen::Ref<const Vxd> &x,
+                            const Eigen::Ref<const Vxd> &u) {
 
   assert(static_cast<std::size_t>(Jx.rows()) == nr);
   assert(static_cast<std::size_t>(Ju.rows()) == nr);
@@ -803,34 +958,35 @@ void State_bounds::calcDiff(Eigen::Ref<Eigen::MatrixXd> Jx,
 }
 
 void State_bounds::calcDiff(Eigen::Ref<Eigen::MatrixXd> Jx,
-                            const Eigen::Ref<const Eigen::VectorXd> &x) {
+                            const Eigen::Ref<const Vxd> &x) {
 
   assert(static_cast<std::size_t>(Jx.rows()) == nr);
   assert(static_cast<std::size_t>(Jx.cols()) == nx);
 
-  Eigen::Matrix<bool, Eigen::Dynamic, 1> result = (x - ub).array() >= 0;
+  Eigen::Matrix<bool, Eigen::Dynamic, 1> result =
+      (x - ub).cwiseProduct(weight).array() >= 0;
+  // std::cout << " x " << x.format(FMT) << std::endl;
+  // std::cout << " ub " << ub.format(FMT) << std::endl;
+  // std::cout << " result " << result.cast<double>().format(FMT) << std::endl;
   Jx.diagonal() = (result.cast<double>()).cwiseProduct(weight);
 }
 
-State_cost::State_cost(size_t nx, size_t nu, size_t nr,
-                       const Eigen::VectorXd &x_weight,
-                       const Eigen::VectorXd &ref)
+State_cost::State_cost(size_t nx, size_t nu, size_t nr, const Vxd &x_weight,
+                       const Vxd &ref)
     : Cost(nx, nu, nr), x_weight(x_weight), ref(ref) {
   name = "state";
   assert(static_cast<std::size_t>(x_weight.size()) == nx);
   assert(static_cast<std::size_t>(ref.size()) == nx);
 }
 
-void State_cost::calc(Eigen::Ref<Eigen::VectorXd> r,
-                      const Eigen::Ref<const Eigen::VectorXd> &x,
-                      const Eigen::Ref<const Eigen::VectorXd> &u) {
+void State_cost::calc(Eigen::Ref<Vxd> r, const Eigen::Ref<const Vxd> &x,
+                      const Eigen::Ref<const Vxd> &u) {
   // check that r
   assert(static_cast<std::size_t>(r.size()) == nr);
   r = (x - ref).cwiseProduct(x_weight);
 }
 
-void State_cost::calc(Eigen::Ref<Eigen::VectorXd> r,
-                      const Eigen::Ref<const Eigen::VectorXd> &x) {
+void State_cost::calc(Eigen::Ref<Vxd> r, const Eigen::Ref<const Vxd> &x) {
 
   assert(static_cast<std::size_t>(r.size()) == nr);
   r = (x - ref).cwiseProduct(x_weight);
@@ -838,8 +994,8 @@ void State_cost::calc(Eigen::Ref<Eigen::VectorXd> r,
 
 void State_cost::calcDiff(Eigen::Ref<Eigen::MatrixXd> Jx,
                           Eigen::Ref<Eigen::MatrixXd> Ju,
-                          const Eigen::Ref<const Eigen::VectorXd> &x,
-                          const Eigen::Ref<const Eigen::VectorXd> &u) {
+                          const Eigen::Ref<const Vxd> &x,
+                          const Eigen::Ref<const Vxd> &u) {
 
   assert(static_cast<std::size_t>(Jx.rows()) == nr);
   assert(static_cast<std::size_t>(Ju.rows()) == nr);
@@ -851,7 +1007,7 @@ void State_cost::calcDiff(Eigen::Ref<Eigen::MatrixXd> Jx,
 }
 
 void State_cost::calcDiff(Eigen::Ref<Eigen::MatrixXd> Jx,
-                          const Eigen::Ref<const Eigen::VectorXd> &x) {
+                          const Eigen::Ref<const Vxd> &x) {
 
   assert(static_cast<std::size_t>(Jx.rows()) == nr);
   assert(static_cast<std::size_t>(Jx.cols()) == nx);
@@ -863,9 +1019,8 @@ All_cost::All_cost(size_t nx, size_t nu, size_t nr,
                    const std::vector<boost::shared_ptr<Cost>> &costs)
     : Cost(nx, nu, nr), costs(costs) {}
 
-void All_cost::calc(Eigen::Ref<Eigen::VectorXd> r,
-                    const Eigen::Ref<const Eigen::VectorXd> &x,
-                    const Eigen::Ref<const Eigen::VectorXd> &u) {
+void All_cost::calc(Eigen::Ref<Vxd> r, const Eigen::Ref<const Vxd> &x,
+                    const Eigen::Ref<const Vxd> &u) {
   // check that r
   assert(static_cast<std::size_t>(r.size()) == nr);
   assert(static_cast<std::size_t>(x.size()) == nx);
@@ -881,8 +1036,7 @@ void All_cost::calc(Eigen::Ref<Eigen::VectorXd> r,
   }
 }
 
-void All_cost::calc(Eigen::Ref<Eigen::VectorXd> r,
-                    const Eigen::Ref<const Eigen::VectorXd> &x) {
+void All_cost::calc(Eigen::Ref<Vxd> r, const Eigen::Ref<const Vxd> &x) {
   // check that r
   assert(static_cast<std::size_t>(r.size()) == nr);
 
@@ -897,8 +1051,8 @@ void All_cost::calc(Eigen::Ref<Eigen::VectorXd> r,
 
 void All_cost::calcDiff(Eigen::Ref<Eigen::MatrixXd> Jx,
                         Eigen::Ref<Eigen::MatrixXd> Ju,
-                        const Eigen::Ref<const Eigen::VectorXd> &x,
-                        const Eigen::Ref<const Eigen::VectorXd> &u) {
+                        const Eigen::Ref<const Vxd> &x,
+                        const Eigen::Ref<const Vxd> &u) {
 
   assert(static_cast<std::size_t>(x.size()) == nx);
   assert(static_cast<std::size_t>(u.size()) == nu);
@@ -915,7 +1069,7 @@ void All_cost::calcDiff(Eigen::Ref<Eigen::MatrixXd> Jx,
 }
 
 void All_cost::calcDiff(Eigen::Ref<Eigen::MatrixXd> Jx,
-                        const Eigen::Ref<const Eigen::VectorXd> &x) {
+                        const Eigen::Ref<const Vxd> &x) {
 
   assert(static_cast<std::size_t>(x.size()) == nx);
 
@@ -953,21 +1107,24 @@ void ActionModelQ::calc(const boost::shared_ptr<ActionDataAbstract> &data,
                         const Eigen::Ref<const VectorXs> &x,
                         const Eigen::Ref<const VectorXs> &u) {
   Data *d = static_cast<Data *>(data.get());
+  d->xnext.setZero();
   dynamics->calc(d->xnext, x, u);
 
   int index = 0;
 
   d->cost = 0;
+  d->r.setZero();
+
   for (size_t i = 0; i < features.size(); i++) {
     auto &feat = features.at(i);
     size_t &_nr = feat->nr;
-    feat->calc(data->r.segment(index, _nr), x, u);
+    feat->calc(d->r.segment(index, _nr), x, u);
 
     if (feat->cost_type == CostTYPE::least_squares) {
-      d->cost += Scalar(0.5) *
-                 data->r.segment(index, _nr).dot(data->r.segment(index, _nr));
+      d->cost +=
+          Scalar(0.5) * d->r.segment(index, _nr).dot(d->r.segment(index, _nr));
     } else if (feat->cost_type == CostTYPE::linear) {
-      d->cost += data->r.segment(index, _nr).sum();
+      d->cost += d->r.segment(index, _nr).sum();
     }
     index += _nr;
   }
@@ -978,40 +1135,39 @@ void ActionModelQ::calcDiff(const boost::shared_ptr<ActionDataAbstract> &data,
                             const Eigen::Ref<const VectorXs> &u) {
 
   Data *d = static_cast<Data *>(data.get());
+  d->Fx.setZero();
+  d->Fu.setZero();
   dynamics->calcDiff(d->Fx, d->Fu, x, u);
-  // CHANGE THIS
 
   // create a matrix for the Jacobians
-  data->Lx.setZero();
-  data->Lu.setZero();
-  data->Lxx.setZero();
-  data->Luu.setZero();
-  data->Lxu.setZero();
+  d->Lx.setZero();
+  d->Lu.setZero();
+  d->Lxx.setZero();
+  d->Luu.setZero();
+  d->Lxu.setZero();
 
+  Jx.setZero();
+  Ju.setZero();
   size_t index = 0;
   for (size_t i = 0; i < features.size(); i++) {
     auto &feat = features.at(i);
     size_t &_nr = feat->nr;
+    // std::cout << feat->get_name() << std::endl;
 
-    auto &&r = data->r.segment(index, _nr);
-    auto &&jx = Jx.block(index, 0, _nr, nx);
-    auto &&ju = Ju.block(index, 0, _nr, nu);
+    Eigen::Ref<Eigen::VectorXd> r = d->r.segment(index, _nr);
+    Eigen::Ref<Eigen::MatrixXd> jx = Jx.block(index, 0, _nr, nx);
+    Eigen::Ref<Eigen::MatrixXd> ju = Ju.block(index, 0, _nr, nu);
 
     feat->calcDiff(jx, ju, x, u);
-
     if (feat->cost_type == CostTYPE::least_squares) {
-      // std::cout << index << " " << _nr << std::endl;
-      // std::cout << feat->get_name() << std::endl;
-      // std::cout << r << std::endl;
-      // std::cout << jx << std::endl;
-      data->Lx.noalias() += r.transpose() * jx;
-      data->Lu.noalias() += r.transpose() * ju;
-      data->Lxx.noalias() += jx.transpose() * jx;
-      data->Luu.noalias() += ju.transpose() * ju;
-      data->Lxu.noalias() += jx.transpose() * ju;
+      d->Lx.noalias() += r.transpose() * jx;
+      d->Lu.noalias() += r.transpose() * ju;
+      d->Lxx.noalias() += jx.transpose() * jx;
+      d->Luu.noalias() += ju.transpose() * ju;
+      d->Lxu.noalias() += jx.transpose() * ju;
     } else if (feat->cost_type == CostTYPE::linear) {
-      data->Lx.noalias() += jx.colwise().sum();
-      data->Lu.noalias() += ju.colwise().sum();
+      d->Lx.noalias() += jx.colwise().sum();
+      d->Lu.noalias() += ju.colwise().sum();
     }
     index += _nr;
   }
@@ -1020,6 +1176,7 @@ void ActionModelQ::calcDiff(const boost::shared_ptr<ActionDataAbstract> &data,
 void ActionModelQ::calc(const boost::shared_ptr<ActionDataAbstract> &data,
                         const Eigen::Ref<const VectorXs> &x) {
   Data *d = static_cast<Data *>(data.get());
+  d->r.setZero();
 
   int index = 0;
 
@@ -1027,7 +1184,7 @@ void ActionModelQ::calc(const boost::shared_ptr<ActionDataAbstract> &data,
   for (size_t i = 0; i < features.size(); i++) {
     auto &feat = features.at(i);
     size_t &_nr = feat->nr;
-    auto &&r = data->r.segment(index, _nr);
+    Eigen::Ref<Eigen::VectorXd> r = d->r.segment(index, _nr);
     feat->calc(r, x);
     if (feat->cost_type == CostTYPE::least_squares) {
       d->cost += Scalar(0.5) * r.dot(r);
@@ -1041,23 +1198,19 @@ void ActionModelQ::calc(const boost::shared_ptr<ActionDataAbstract> &data,
 void ActionModelQ::calcDiff(const boost::shared_ptr<ActionDataAbstract> &data,
                             const Eigen::Ref<const VectorXs> &x) {
 
-  // calcDiff(data, x, zero_u);
   Data *d = static_cast<Data *>(data.get());
-  // CHANGE THIS
 
-  data->Lx.setZero();
-  data->Lu.setZero();
-  data->Lxx.setZero();
-  data->Luu.setZero();
-  data->Lxu.setZero();
+  d->Lx.setZero();
+  d->Lxx.setZero();
 
   size_t index = 0;
+  Jx.setZero();
   for (size_t i = 0; i < features.size(); i++) {
     auto &feat = features.at(i);
     size_t &_nr = feat->nr;
 
-    auto &&r = data->r.segment(index, _nr);
-    auto &&jx = Jx.block(index, 0, _nr, nx);
+    Eigen::Ref<Vxd> r = d->r.segment(index, _nr);
+    Eigen::Ref<Eigen::MatrixXd> jx = Jx.block(index, 0, _nr, nx);
 
     feat->calcDiff(jx, x);
 
@@ -1090,7 +1243,7 @@ void ActionModelQ::print(std::ostream &os) const {
 }
 
 void PrintVariableMap(const boost::program_options::variables_map &vm,
-                             std::ostream &out) {
+                      std::ostream &out) {
   for (po::variables_map::const_iterator it = vm.cbegin(); it != vm.cend();
        it++) {
     out << "> " << it->first;
@@ -1179,9 +1332,11 @@ void check_dyn(boost::shared_ptr<Dynamics> dyn, double eps) {
   Fx.setZero();
   Fu.setZero();
 
-  Eigen::VectorXd x(nx);
-  Eigen::VectorXd u(nu);
+  Vxd x(nx);
+  Vxd u(nu);
   x.setRandom();
+  // x.segment(3,4).normalize();
+  // x.segment(3, 4) << 0, 0, 0, 1;
   u.setRandom();
 
   dyn->calcDiff(Fx, Fu, x, u);
@@ -1193,14 +1348,16 @@ void check_dyn(boost::shared_ptr<Dynamics> dyn, double eps) {
   Eigen::MatrixXd FuD(nx, nu);
   FuD.setZero();
 
-  Eigen::VectorXd xnext(nx);
+  Vxd xnext(nx);
   xnext.setZero();
   dyn->calc(xnext, x, u);
+  std::cout << "xnext\n" << std::endl;
+  std::cout << xnext.format(FMT) << std::endl;
   for (size_t i = 0; i < nx; i++) {
     Eigen::MatrixXd xe;
     xe = x;
     xe(i) += eps;
-    Eigen::VectorXd xnexte(nx);
+    Vxd xnexte(nx);
     xnexte.setZero();
     dyn->calc(xnexte, xe, u);
     auto df = (xnexte - xnext) / eps;
@@ -1211,7 +1368,7 @@ void check_dyn(boost::shared_ptr<Dynamics> dyn, double eps) {
     Eigen::MatrixXd ue;
     ue = u;
     ue(i) += eps;
-    Eigen::VectorXd xnexte(nx);
+    Vxd xnexte(nx);
     xnexte.setZero();
     dyn->calc(xnexte, x, ue);
     auto df = (xnexte - xnext) / eps;
@@ -1227,19 +1384,48 @@ void check_dyn(boost::shared_ptr<Dynamics> dyn, double eps) {
     std::cout << "Fu\n" << FuD << std::endl;
   }
 
-  CHECK(((Fx - FxD).cwiseAbs().maxCoeff() < 10 * eps), AT);
-  CHECK(((Fu - FuD).cwiseAbs().maxCoeff() < 10 * eps), AT);
+  bool check1 = (Fx - FxD).cwiseAbs().maxCoeff() < 10 * eps;
+  bool check2 = (Fu - FuD).cwiseAbs().maxCoeff() < 10 * eps;
+
+  std::cout << "Fx\n" << std::endl;
+  std::cout << Fx << std::endl;
+  std::cout << "Fu\n" << std::endl;
+  std::cout << Fu << std::endl;
+  if (!check1) {
+    std::cout << "Fx" << std::endl;
+    std::cout << Fx << std::endl;
+    std::cout << "FxD" << std::endl;
+    std::cout << FxD << std::endl;
+    std::cout << "Fx - FxD" << std::endl;
+    std::cout << Fx - FxD << std::endl;
+    CHECK(((Fx - FxD).cwiseAbs().maxCoeff() < 10 * eps), AT);
+  }
+
+  if (!check2) {
+    std::cout << "Fu" << std::endl;
+    std::cout << Fu << std::endl;
+    std::cout << "FuD" << std::endl;
+    std::cout << FuD << std::endl;
+    std::cout << "Fu - FuD" << std::endl;
+    std::cout << Fu - FuD << std::endl;
+    CHECK(((Fu - FuD).cwiseAbs().maxCoeff() < 10 * eps), AT);
+  }
 }
 
 void Generate_params::print(std::ostream &out) const {
   auto pre = "";
   auto after = ": ";
-  out << pre << "free_time" << after << free_time << std::endl;
-  out << pre << "name" << after << name << std::endl;
-  out << pre << "N" << after << N << std::endl;
+  out << pre << STR(collisions, after) << std::endl;
+  out << pre << STR(free_time, after) << std::endl;
+  out << pre << STR(name, after) << std::endl;
+  out << pre << STR(N, after) << std::endl;
+  out << pre << STR(cl, after) << std::endl;
+  out << pre << STR(contour_control, after) << std::endl;
+  out << pre << STR(max_alpha, after) << std::endl;
+  out << STR(goal_cost, after) << std::endl;
+
   out << pre << "goal" << after << goal.transpose() << std::endl;
   out << pre << "start" << after << start.transpose() << std::endl;
-  out << pre << "cl" << after << cl << std::endl;
   out << pre << "states" << std::endl;
   for (const auto &s : states)
     out << "  - " << s.format(FMT) << std::endl;
@@ -1249,23 +1435,10 @@ void Generate_params::print(std::ostream &out) const {
   out << pre << "actions" << std::endl;
   for (const auto &s : actions)
     out << "  - " << s.format(FMT) << std::endl;
-  out << pre << "alpha_refs" << after << alpha_refs.format(FMT) << std::endl;
-  out << pre << "cost_alpha_multis" << after << cost_alpha_multis.format(FMT)
-      << std::endl;
-  out << pre << "contour_control" << after << contour_control << std::endl;
-  out << pre << "ref_alpha" << after << ref_alpha << std::endl;
-  out << pre << "max_alpha" << after << max_alpha << std::endl;
-  out << pre << "cost_alpha_multi" << after << cost_alpha_multi << std::endl;
-  out << pre << "only_contour_last" << after << only_contour_last << std::endl;
-  out << pre << "alpha_refs" << after << alpha_refs.transpose() << std::endl;
-  out << pre << "cost_alpha_multis" << after << cost_alpha_multis.transpose()
-      << std::endl;
-  out << STR(goal_cost, after) << std::endl;
 }
 
-double max_rollout_error(ptr<Dynamics> dyn,
-                         const std::vector<Eigen::VectorXd> &xs,
-                         const std::vector<Eigen::VectorXd> &us) {
+double max_rollout_error(ptr<Dynamics> dyn, const std::vector<Vxd> &xs,
+                         const std::vector<Vxd> &us) {
 
   assert(xs.size() == us.size() + 1);
 
@@ -1273,7 +1446,7 @@ double max_rollout_error(ptr<Dynamics> dyn,
 
   size_t nx = xs.front().size();
 
-  Eigen::VectorXd xnext(nx);
+  Vxd xnext(nx);
   double max_error = 0;
 
   for (size_t i = 0; i < N; i++) {
@@ -1288,19 +1461,20 @@ double max_rollout_error(ptr<Dynamics> dyn,
   return max_error;
 }
 
-bool check_feas(ptr<Cost> feat_col, const std::vector<Eigen::VectorXd> &xs,
-                const std::vector<Eigen::VectorXd> &us,
-                const Eigen::VectorXd &goal) {
+bool check_feas(ptr<Col_cost> feat_col, const std::vector<Vxd> &xs,
+                const std::vector<Vxd> &us, const Vxd &goal) {
 
   double accumulated_c = 0;
   double max_c = 0;
-  for (auto &x : xs) {
-    Eigen::VectorXd out(1);
-    feat_col->calc(out, x);
-    accumulated_c += std::abs(out(0));
+  if (feat_col->cl) {
+    for (auto &x : xs) {
+      Vxd out(1);
+      feat_col->calc(out, x);
+      accumulated_c += std::abs(out(0));
 
-    if (std::abs(out(0)) > max_c) {
-      max_c = std::abs(out(0));
+      if (std::abs(out(0)) > max_c) {
+        max_c = std::abs(out(0));
+      }
     }
   }
   double dist_to_goal = (xs.back() - goal).norm();
@@ -1320,6 +1494,71 @@ bool check_feas(ptr<Cost> feat_col, const std::vector<Eigen::VectorXd> &xs,
   return feasible;
 };
 
+void modify_x_bound_for_contour(const Vxd &__x_lb, const Vxd &__x_ub,
+                                const Vxd &__xb__weight, Eigen::Ref<Vxd> x_lb,
+                                Eigen::Ref<Vxd> x_ub, Eigen::Ref<Vxd> xb_weight,
+                                double max_alpha) {
+
+  CHECK_EQ(__x_lb.size(), __x_ub.size(), AT);
+  CHECK_EQ(__xb__weight.size(), __x_ub.size(), AT);
+
+  size_t nx = __x_lb.size() + 1;
+
+  xb_weight = Vxd(nx);
+  x_lb = Vxd(nx);
+  x_ub = Vxd(nx);
+
+  x_lb << __x_lb, -10.;
+  x_ub << __x_ub, max_alpha;
+  xb_weight << __xb__weight, 200.;
+}
+
+void modify_u_bound_for_contour(const Vxd &__u_lb, const Vxd &__u_ub,
+                                const Vxd &__u__weight, const Vxd &__u__ref,
+                                Eigen::Ref<Vxd> u_lb, Eigen::Ref<Vxd> u_ub,
+                                Eigen::Ref<Vxd> u_weight,
+                                Eigen::Ref<Vxd> u_ref) {
+
+  CHECK_EQ(__u_lb.size(), __u_ub.size(), AT);
+  CHECK_EQ(__u__weight.size(), __u_ub.size(), AT);
+  CHECK_EQ(__u__ref.size(), __u_ub.size(), AT);
+
+  size_t nu = __u_lb.size() + 1;
+
+  u_weight = Vxd(nu);
+  u_lb = Vxd(nu);
+  u_ub = Vxd(nu);
+  u_ref = Vxd(nu);
+
+  u_lb << __u_lb, -10.;
+  u_ub << __u_ub, 10.;
+  u_ref << __u__ref, 0.;
+  u_weight << __u__weight, .1;
+}
+
+void modify_u_bound_for_free_time(const Vxd &__u_lb, const Vxd &__u_ub,
+                                  const Vxd &__u__weight, const Vxd &__u__ref,
+                                  Eigen::Ref<Vxd> u_lb, Eigen::Ref<Vxd> u_ub,
+                                  Eigen::Ref<Vxd> u_weight,
+                                  Eigen::Ref<Vxd> u_ref) {
+
+  CHECK_EQ(__u_lb.size(), __u_ub.size(), AT);
+  CHECK_EQ(__u__weight.size(), __u_ub.size(), AT);
+  CHECK_EQ(__u__ref.size(), __u_ub.size(), AT);
+
+  size_t nu = __u_lb.size() + 1;
+
+  u_weight = Vxd(nu);
+  u_lb = Vxd(nu);
+  u_ub = Vxd(nu);
+  u_ref = Vxd(nu);
+
+  u_lb << __u_lb, .4;
+  u_ub << __u_ub, 1.5;
+  u_ref << __u__ref, .5;
+  u_weight << __u__weight, .7;
+}
+
 ptr<crocoddyl::ShootingProblem>
 generate_problem(const Generate_params &gen_args, size_t &nx, size_t &nu) {
 
@@ -1332,228 +1571,408 @@ generate_problem(const Generate_params &gen_args, size_t &nx, size_t &nu) {
   ptr<Dynamics> dyn;
 
   std::vector<boost::shared_ptr<crocoddyl::ActionModelAbstract>> amq_runs;
-  Eigen::VectorXd goal_v = gen_args.goal;
+  Vxd goal_v = gen_args.goal;
 
-  if (opti_params.regularize_wrt_init_guess && gen_args.contour_control) {
+  if (gen_args.free_time && gen_args.contour_control) {
     CHECK(false, AT);
   }
 
+  Vxd x_ub, x_lb, u_ub, u_lb, u_ref;
+  Vxd weight_b;
+  Vxd u_weight;
 
-  Eigen::VectorXd x_ub , x_lb;
+  double dt = .0;
 
+  if (__in(vstr{"unicycle_first_order_0", "unicycle_second_order_0"},
+           gen_args.name))
+    dt = .1;
+  else if (__in(vstr{"quad2d", "quadrotor_0"}, gen_args.name))
+    dt = .01;
+  else
+    CHECK(false, AT);
+
+  double max_ = std::numeric_limits<double>::max();
+  double low_ = std::numeric_limits<double>::lowest();
   if (gen_args.name == "unicycle_first_order_0") {
-
-    x_ub =
-        std::numeric_limits<double>::max() * Eigen::VectorXd::Ones(4);
-    x_ub(3) = gen_args.max_alpha;
-
-    Eigen::VectorXd weight_b(4);
-    weight_b << 0, 0, 0, 200.;
-
     dyn = mk<Dynamics_unicycle>(gen_args.free_time);
-
-    if (gen_args.contour_control) {
-      dyn = mk<Dynamics_contour>(dyn, !gen_args.only_contour_last);
-      // dyn = mk<Dynamics_Contour>(dyn, false);
-    }
-
-    nx = dyn->nx;
-    nu = dyn->nu;
-
-    ptr<Cost> control_feature;
-
-    if (gen_args.free_time && !gen_args.contour_control)
-      control_feature = mk<Control_cost>(
-          nx, nu, nu, Eigen::Vector3d(.2, .2, 1.), Eigen::Vector3d(0., 0., .5));
-    else if (!gen_args.free_time && !gen_args.contour_control)
-      control_feature = mk<Control_cost>(nx, nu, nu, Eigen::Vector2d(.5, .5),
-                                         Eigen::Vector2d::Zero());
-    else if (!gen_args.free_time && gen_args.contour_control) {
-      control_feature = mk<Control_cost>(
-          nx, nu, nu, Eigen::Vector3d(.5, .5, 0.), Eigen::Vector3d::Zero());
+    if (gen_args.free_time) {
+      u_weight = V3d(.2, .2, 1.);
+      u_ref = V3d(0., 0., .5);
+      u_lb = V3d(-.5, -.5, .4);
+      u_ub = V3d(.5, .5, 1.5);
+    } else if (gen_args.contour_control) {
+      u_weight = V3d(.5, .5, .1);
+      u_ref = V3d(0, 0, dt);
+      u_lb = V3d(-.5, -.5, -10.);
+      u_ub = V3d(.5, .5, 10);
+      x_ub = max_ * Vxd::Ones(4);
+      x_ub(3) = gen_args.max_alpha;
+      weight_b = Vxd(4);
+      weight_b << 0, 0, 0, 200.;
     } else {
-      CHECK_EQ(true, false, AT);
+      u_weight = V2d(.5, .5);
+      u_ref = V2d::Zero();
+      u_lb = V2d(-.5, -.5);
+      u_ub = V2d(.5, .5);
     }
-
-    for (size_t t = 0; t < gen_args.N; t++) {
-
-      std::vector<ptr<Cost>> feats_run;
-      ptr<Cost> cl_feature = mk<Col_cost>(nx, nu, 1, gen_args.cl);
-      feats_run = {cl_feature, control_feature};
-
-      if (gen_args.states_weights.size() && gen_args.states.size()) {
-
-        assert(gen_args.states_weights.size() == gen_args.states.size());
-        assert(gen_args.states_weights.size() == gen_args.N);
-
-        ptr<Cost> state_feature = mk<State_cost>(
-            nx, nu, nx,
-            .5 * opti_params.weight_goal * gen_args.states_weights.at(t),
-            gen_args.states.at(t));
-        feats_run.push_back(state_feature);
-      }
-
-      boost::static_pointer_cast<Col_cost>(cl_feature)->non_zero_flags = {
-          true, true, true};
-
-      if (gen_args.contour_control)
-        boost::static_pointer_cast<Col_cost>(cl_feature)->nx_effective = nx - 1;
-
-      if (gen_args.contour_control) {
-
-        if (!gen_args.linear_contour) {
-          ptr<Contour_cost> contour =
-              mk<Contour_cost>(nx, nu, gen_args.interpolator);
-          contour->ref_alpha = gen_args.alpha_refs(t);
-          contour->weight_contour *= gen_args.cost_alpha_multis(t);
-          feats_run.push_back(contour);
-        } else {
-          std::cout << "warning, no contour in the trajectory " << std::endl;
-          // ptr<Contour_cost_x> contour_x =
-          //     mk<Contour_cost_x>(nx, nu, gen_args.interpolator);
-          // contour_x->weight = opti_params.k_contour;
-
-          ptr<Contour_cost_alpha_u> contour_alpha_u =
-              mk<Contour_cost_alpha_u>(nx, nu);
-          contour_alpha_u->k = opti_params.k_linear;
-
-          // idea: use this only if it is close
-          // ptr<Contour_cost_alpha_x> contour_alpha_x =
-          //     mk<Contour_cost_alpha_x>(nx, nu);
-          // contour_alpha_x->k = .1 * opti_params.k_linear;
-
-          ptr<Cost> state_bounds = mk<State_bounds>(nx, nu, nx, x_ub, weight_b);
-
-          // feats_run.push_back(contour_x);
-          feats_run.push_back(contour_alpha_u);
-          // feats_run.push_back(contour_alpha_x);
-          feats_run.push_back(state_bounds);
-        }
-      }
-
-      auto am_run = to_am_base(mk<ActionModelQ>(dyn, feats_run));
-
-      if (opti_params.control_bounds) {
-
-        if (gen_args.free_time) {
-          am_run->set_u_lb(Eigen::Vector3d(-.5, -.5, .4));
-          am_run->set_u_ub(Eigen::Vector3d(.5, .5, 1.5));
-        } else if (gen_args.contour_control) {
-          am_run->set_u_lb(Eigen::Vector3d(-.5, -.5, -10.));
-          am_run->set_u_ub(Eigen::Vector3d(.5, .5, 10.));
-        } else {
-          // am_run->set_u_lb(Eigen::Vector2d(-.5, -.5));
-          // am_run->set_u_ub(Eigen::Vector2d(.5, .5));
-          // am_run->set_u_lb(Eigen::Vector2d(-.5, -.5));
-          // am_run->set_u_ub(Eigen::Vector2d(.5, .5));
-
-          am_run->set_u_lb(Eigen::Vector2d(-.5, -.5));
-          am_run->set_u_ub(Eigen::Vector2d(.5, .5));
-        }
-      }
-
-      amq_runs.push_back(am_run);
-    }
-
-    if (gen_args.contour_control) {
-
-      if (!gen_args.linear_contour) {
-        ptr<Contour_cost> Contour =
-            mk<Contour_cost>(nx, nu, gen_args.interpolator);
-        Contour->ref_alpha = gen_args.alpha_refs(gen_args.N);
-        Contour->weight_contour *= gen_args.cost_alpha_multis(gen_args.N);
-
-        feats_terminal.push_back(Contour);
-      } else {
-        ptr<Cost> state_bounds = mk<State_bounds>(nx, nu, nx, ub, weight_b);
-        ptr<Contour_cost_x> contour_x =
-            mk<Contour_cost_x>(nx, nu, gen_args.interpolator);
-        feats_terminal.push_back(contour_x);
-        feats_terminal.push_back(state_bounds);
-      }
-    }
-
-    // if (gen_args.goal_cost && gen_args.contour_control) {
-    //
-    //   std::cout << "goal and contour " << std::endl;
-    //   Eigen::VectorXd weight = Eigen::VectorXd::Ones(nx);
-    //   // weight(nx - 1) = 0.;
-    //   std::cout << "weights " << std::endl;
-    //   std::cout << weight.format(FMT) << std::endl;
-    //   ptr<Cost> state_feature = mk<State_cost>(
-    //       nx, nu, nx, opti_params.weight_goal * weight, gen_args.goal);
-    //
-    //   ptr<Cost> state_bounds = mk<State_bounds>(nx, nu, nx, ub, weight_b);
-    //
-    //   feats_terminal = {state_feature, state_bounds};
-    // }
-
-    if (gen_args.goal_cost) {
-      ptr<Cost> state_feature = mk<State_cost>(
-          nx, nu, nx, opti_params.weight_goal * Eigen::VectorXd::Ones(nx),
-          gen_args.goal);
-      feats_terminal.push_back(state_feature);
-    }
-    am_terminal = to_am_base(mk<ActionModelQ>(dyn, feats_terminal));
-
   } else if (gen_args.name == "unicycle_second_order_0") {
-
-#if 0 
-
     dyn = mk<Dynamics_unicycle2>(gen_args.free_time);
-    nx = dyn->nx;
-    nu = dyn->nu;
-    ptr<Cost> cl_feature = mk<Col_cost>(nx, nu, 1, opts.cl);
-    boost::static_pointer_cast<Col_cost>(cl_feature)->non_zero_flags = {
-        true, true, true, false, false};
 
-    ptr<Cost> control_feature = mk<Control_cost>(
-        nx, nu, nu, Eigen::Vector2d(.5, .5), Eigen::Vector2d::Zero());
+    weight_b = Eigen::VectorXd(5);
+    x_ub = Eigen::VectorXd(5);
+    x_lb = Eigen::VectorXd(5);
 
-    ptr<Cost> state_feature = mk<State_cost>(
-        nx, nu, nx, 100. * Eigen::VectorXd::Ones(nx),
-        Eigen::VectorXd::Map(opts.goal.data(), opts.goal.size()));
+    weight_b << 0., 0., 0., 20., 20.;
+    x_ub << max_, max_, max_, .5, .5;
+    x_lb << low_, low_, low_, -.5, -.5;
 
-    ptr<Cost> feats_run =
-        mk<All_cost>(nx, nu, cl_feature->nr + control_feature->nr,
-                     std::vector<ptr<Cost>>{cl_feature, control_feature});
-
-    feats_terminal = mk<All_cost>(nx, nu, state_feature->nr,
-                                  std::vector<ptr<Cost>>{state_feature});
-
-    am_run = to_am_base(mk<ActionModelQ>(dyn, feats_run));
-
-    if (opts.control_bounds) {
-      am_run->set_u_lb(Eigen::Vector2d(-.25, -.25));
-      am_run->set_u_ub(Eigen::Vector2d(.25, .25));
+    if (gen_args.free_time) {
+      u_weight = V3d(.2, .2, 1.);
+      u_ref = V3d(0, 0, .5);
+      u_lb = V3d(-.25, -.25, .4);
+      u_ub = V3d(.25, .25, 1.5);
+    } else if (gen_args.contour_control) {
+      u_weight = V3d(.5, .5, .1);
+      u_ref = V3d(.0, .0, dt);
+      u_lb = V3d(-.25, -.25, -10);
+      u_ub = V3d(.25, .25, 10);
+      // i need new bounds for alpha
+      x_ub.resize(6);
+      x_lb.resize(6);
+      weight_b.resize(6);
+      weight_b << 0., 0., 0., 20., 20., 100;
+      x_ub << max_, max_, max_, .5, .5, gen_args.max_alpha;
+      x_lb << low_, low_, low_, -.5, -.5, -10;
+    } else {
+      u_weight = V2d(.5, .5);
+      u_ref = V2d::Zero();
+      u_lb = V2d(-.25, -.25);
+      u_ub = V2d(.25, .25);
     }
-    am_terminal = to_am_base(mk<ActionModelQ>(dyn, feats_terminal));
+  } else if (gen_args.name == "car_first_order_with_1_trailers_0") {
 
-    // TODO
-    amq_runs = std::vector<boost::shared_ptr<crocoddyl::ActionModelAbstract>>(
-        opts.N, am_run);
+    std::cout << "missing the term to constrain the angle diff! " << std::endl;
 
-    // TODO: option to regularize w.r.t. intial guess.
-  //
-  //
-  //
+    Vxd l(1);
+    l << .5;
+    dyn = mk<Dynamics_car_with_trailers>(l, gen_args.free_time);
 
-#endif
-  } else {
-    throw -1;
+    V2d __u_lb = V2d(-.1, -M_PI / 3.);
+    V2d __u_ub = V2d(.5, M_PI / 3.);
+
+    if (gen_args.free_time) {
+      u_weight = V3d(.2, .2, 1.);
+      u_lb = V3d();
+      u_ub = V3d();
+      u_lb << __u_lb, .4;
+      u_ub << __u_ub, 1.5;
+      u_ref = V3d(0, 0, .5);
+    } else if (gen_args.contour_control) {
+      u_weight = V3d(.5, .5, .1);
+      u_lb = V3d();
+      u_ub = V3d();
+      u_lb << __u_lb, -10.;
+      u_ub << __u_ub, 10.;
+      x_ub = max_ * Vxd::Ones(5);
+      x_ub(4) = gen_args.max_alpha;
+      weight_b = Vxd(5);
+      weight_b << 0, 0, 0, 0, 200.;
+      u_ref = V3d::Zero();
+    } else {
+      u_weight = V2d(.2, .2);
+      u_lb = __u_lb;
+      u_ub = __u_ub;
+      u_ref = V2d::Zero();
+    }
+  } else if (gen_args.name == "quad2d") {
+
+    double max_v = 10;
+    double max_omega = 10;
+    Vxd __x_lb = Vxd(6);
+    Vxd __x_ub = Vxd(6);
+    Vxd __weight_xb = 10. * Vxd::Ones(6);
+    // Vxd __weight_xb = 100 * Vxd::Ones(6);
+
+    __x_lb << low_, low_, low_, -max_v, -max_v, -max_omega;
+    __x_ub << max_, max_, max_, max_v, max_v, max_omega;
+
+    double max_f = 2.;
+    V2d __u_lb = V2d(0, 0);
+    V2d __u_ub = V2d(max_f, max_f);
+    dyn = mk<Dynamics_quadcopter2d>(gen_args.free_time);
+
+    if (gen_args.free_time) {
+      u_weight = .5 * V3d(.5, .5, 1.);
+      u_lb = V3d();
+      u_ub = V3d();
+      u_lb << __u_lb, .4;
+      u_ub << __u_ub, 1.5;
+      u_ref = V3d(0, 0, .5);
+
+      x_lb = __x_lb;
+      x_ub = __x_ub;
+      weight_b = __weight_xb;
+
+    } else if (gen_args.contour_control) {
+      u_weight = .5 * V3d(.5, .5, .1);
+      u_lb = V3d();
+      u_ub = V3d();
+      u_lb << __u_lb, -10.;
+      u_ub << __u_ub, 10.;
+      u_ref = V3d::Zero();
+
+      x_lb = Vxd(7);
+      x_ub = Vxd(7);
+      weight_b = Vxd(7);
+
+      x_lb << __x_lb, -10;
+      x_ub << __x_ub, gen_args.max_alpha;
+      weight_b << __weight_xb, 200;
+
+    }
+
+    else {
+      u_weight = .5 * V2d(.5, .5);
+      u_lb = __u_lb;
+      u_ub = __u_ub;
+      u_ref = V2d::Zero();
+
+      x_lb = __x_lb;
+      x_ub = __x_ub;
+      weight_b = __weight_xb;
+    }
   }
 
+  else if (gen_args.name == "quadrotor_0") {
+
+    double max_v = 10;
+    double max_omega = 10;
+    nx = 13;
+    Vxd __x_lb = Vxd(nx);
+    Vxd __x_ub = Vxd(nx);
+    Vxd __weight_xb = 10. * Vxd::Ones(nx);
+
+    __x_lb.segment(0, 7) << low_, low_, low_, low_, low_, low_, low_;
+    __x_lb.segment(7, 3) << -max_v, -max_v, -max_v;
+    __x_lb.segment(10, 3) << -max_omega, -max_omega, -max_omega;
+
+    __x_ub.segment(0, 7) << max_, max_, max_, max_, max_, max_, max_;
+    __x_ub.segment(7, 3) << max_v, max_v, max_v;
+    __x_ub.segment(10, 3) << max_omega, max_omega, max_omega;
+
+    double max_f = 2.;
+    V4d __u_lb = V4d(0, 0, 0, 0);
+    V4d __u_ref = V4d(0, 0, 0, 0);
+    V4d __u_ub = V4d(max_f, max_f, max_f, max_f);
+    V4d __u__weight = .5 * V4d::Ones();
+
+    dyn = mk<Dynamics_quadcopter3d>(gen_args.free_time);
+
+    if (gen_args.free_time) {
+
+      modify_u_bound_for_free_time(__u_lb, __u_ub, __u__weight, __u_ref, u_lb,
+                                   u_ub, u_weight, u_ref);
+
+      x_lb = __x_lb;
+      x_ub = __x_ub;
+      weight_b = __weight_xb;
+
+    } else if (gen_args.contour_control) {
+
+      modify_u_bound_for_contour(__u_lb, __u_ub, __u__weight, __u_ref, u_lb,
+                                 u_ub, u_weight, u_ref);
+
+      modify_x_bound_for_contour(__x_lb, __x_ub, __weight_xb, x_lb, x_ub,
+                                 weight_b, gen_args.max_alpha);
+
+    } else {
+      u_lb = __u_lb;
+      u_ub = __u_ub;
+      u_ref = __u_ref;
+      u_weight = __u__weight;
+
+      x_lb = __x_lb;
+      x_ub = __x_ub;
+      weight_b = __weight_xb;
+    }
+  } else {
+    CHECK(false, AT);
+  }
+
+  std::cout << STR_V(x_ub) << std::endl;
+  std::cout << STR_V(x_lb) << std::endl;
+  std::cout << STR_V(u_ub) << std::endl;
+  std::cout << STR_V(u_lb) << std::endl;
+  std::cout << STR_V(u_ref) << std::endl;
+  std::cout << STR_V(weight_b) << std::endl;
+  std::cout << STR_V(u_weight) << std::endl;
+
+  if (gen_args.contour_control) {
+    dyn = mk<Dynamics_contour>(dyn, true);
+  }
+
+  CHECK(dyn, AT);
+  nx = dyn->nx;
+  nu = dyn->nu;
+
+  ptr<Cost> control_feature = mk<Control_cost>(nx, nu, nu, u_weight, u_ref);
+
+  for (size_t t = 0; t < gen_args.N; t++) {
+
+    std::vector<ptr<Cost>> feats_run;
+    feats_run.push_back(control_feature);
+
+    ptr<Cost> cl_feature = mk<Col_cost>(nx, nu, 1, gen_args.cl);
+
+    if (gen_args.name == "unicycle_first_order_0") {
+      boost::static_pointer_cast<Col_cost>(cl_feature)->non_zero_flags = {
+          true, true, true};
+    } else if (gen_args.name == "unicycle_second_order_0") {
+      boost::static_pointer_cast<Col_cost>(cl_feature)->non_zero_flags = {
+          true, true, true, false, false};
+    } else if (gen_args.name == "car_first_order_with_1_trailers_0") {
+      boost::static_pointer_cast<Col_cost>(cl_feature)->non_zero_flags = {
+          true, true, true, true};
+    } else if (gen_args.name == "quad2d") {
+      boost::static_pointer_cast<Col_cost>(cl_feature)->non_zero_flags = {
+          true, true, true, false, false, false};
+    } else if (gen_args.name == "quadrotor_0") {
+      boost::static_pointer_cast<Col_cost>(cl_feature)->non_zero_flags = {
+          true,  true,  true,  true,  true,  true, true,
+          false, false, false, false, false, false};
+    } else {
+      CHECK(false, AT);
+    }
+
+    if (gen_args.cl && gen_args.collisions)
+      feats_run.push_back(cl_feature);
+    else {
+      std::cout << "not adding collision feature -- it is a nullptr or "
+                   "collisions is false"
+                << std::endl;
+    }
+    //
+    if (gen_args.name == "quad2d") {
+      std::cout << "adding regularization on w and v" << std::endl;
+
+      Vxd state_weights(6);
+      state_weights << .0, .0, .0, .2, .2, .2;
+      Vxd state_ref = Vxd::Zero(6);
+
+      ptr<Cost> state_feature =
+          mk<State_cost>(nx, nu, nx, state_weights, state_ref);
+      feats_run.push_back(state_feature);
+    }
+    if (gen_args.name == "quadrotor_0") {
+      std::cout << "adding regularization on q, w and v" << std::endl;
+      Vxd state_weights(13);
+      state_weights.setOnes();
+      state_weights *= .2;
+      state_weights.segment(0, 3).setZero();
+      Vxd state_ref = Vxd::Zero(13);
+      state_ref(6) = 1.;
+
+      ptr<Cost> state_feature =
+          mk<State_cost>(nx, nu, nx, state_weights, state_ref);
+      feats_run.push_back(state_feature);
+
+      std::cout << "adding regularization on quaternion " << std::endl;
+
+      ptr<Cost> quat_feature = mk<Quaternion_cost>(nx, nu);
+      feats_run.push_back(quat_feature);
+    }
+
+    if (gen_args.states_weights.size() && gen_args.states.size()) {
+
+      assert(gen_args.states_weights.size() == gen_args.states.size());
+      assert(gen_args.states_weights.size() == gen_args.N);
+
+      ptr<Cost> state_feature = mk<State_cost>(
+          nx, nu, nx, gen_args.states_weights.at(t), gen_args.states.at(t));
+      feats_run.push_back(state_feature);
+    }
+
+    if (x_lb.size())
+      feats_run.push_back(mk<State_bounds>(nx, nu, nx, x_lb, -weight_b));
+
+    if (x_ub.size())
+      feats_run.push_back(mk<State_bounds>(nx, nu, nx, x_ub, weight_b));
+
+    if (gen_args.contour_control && gen_args.cl)
+      boost::static_pointer_cast<Col_cost>(cl_feature)->nx_effective = nx - 1;
+
+    if (gen_args.contour_control) {
+
+      CHECK(gen_args.linear_contour, AT);
+
+      ptr<Contour_cost_alpha_u> contour_alpha_u =
+          mk<Contour_cost_alpha_u>(nx, nu);
+      contour_alpha_u->k = opti_params.k_linear;
+
+      feats_run.push_back(contour_alpha_u);
+
+      std::cout << "warning, no contour in non-terminal states" << std::endl;
+      // ptr<Contour_cost_x> contour_x =
+      //     mk<Contour_cost_x>(nx, nu, gen_args.interpolator);
+      // contour_x->weight = opti_params.k_contour;
+
+      std::cout << "warning, no cost on alpha in non-terminal states"
+                << std::endl;
+      // idea: use this only if it is close
+      // ptr<Contour_cost_alpha_x> contour_alpha_x =
+      //     mk<Contour_cost_alpha_x>(nx, nu);
+      // contour_alpha_x->k = .1 * opti_params.k_linear;
+
+      // feats_run.push_back(contour_x);
+      // feats_run.push_back(contour_alpha_x);
+    }
+
+    auto am_run = to_am_base(mk<ActionModelQ>(dyn, feats_run));
+
+    if (opti_params.control_bounds) {
+      am_run->set_u_lb(u_lb);
+      am_run->set_u_ub(u_ub);
+    }
+    amq_runs.push_back(am_run);
+  }
+
+  // Terminal
+
+  if (gen_args.contour_control) {
+
+    CHECK(gen_args.linear_contour, AT);
+    ptr<Cost> state_bounds = mk<State_bounds>(nx, nu, nx, x_ub, weight_b);
+    ptr<Contour_cost_x> contour_x =
+        mk<Contour_cost_x>(nx, nu, gen_args.interpolator);
+    contour_x->weight = opti_params.k_contour;
+
+    // continue here: i have to add a weight!!
+
+    feats_terminal.push_back(contour_x);
+    feats_terminal.push_back(state_bounds);
+  }
+
+  if (gen_args.goal_cost) {
+    ptr<Cost> state_feature = mk<State_cost>(
+        nx, nu, nx, opti_params.weight_goal * Vxd::Ones(nx), gen_args.goal);
+    feats_terminal.push_back(state_feature);
+  }
+  am_terminal = to_am_base(mk<ActionModelQ>(dyn, feats_terminal));
+
   if (opti_params.use_finite_diff) {
+    std::cout << "using finite diff!" << std::endl;
 
     std::vector<boost::shared_ptr<crocoddyl::ActionModelAbstract>>
         amq_runs_diff(amq_runs.size());
 
+    // double disturbance = 1e-4; // should be high, becaues I have collisions
+    double disturbance = opti_params.disturbance;
     std::transform(
         amq_runs.begin(), amq_runs.end(), amq_runs_diff.begin(),
         [&](const auto &am_run) {
           auto am_rundiff = mk<crocoddyl::ActionModelNumDiff>(am_run, true);
           boost::static_pointer_cast<crocoddyl::ActionModelNumDiff>(am_rundiff)
-              ->set_disturbance(1e-4);
+              ->set_disturbance(disturbance);
           if (opti_params.control_bounds) {
             am_rundiff->set_u_lb(am_run->get_u_lb());
             am_rundiff->set_u_ub(am_run->get_u_ub());
@@ -1566,9 +1985,14 @@ generate_problem(const Generate_params &gen_args, size_t &nx, size_t &nu) {
     auto am_terminal_diff =
         mk<crocoddyl::ActionModelNumDiff>(am_terminal, true);
     boost::static_pointer_cast<crocoddyl::ActionModelNumDiff>(am_terminal_diff)
-        ->set_disturbance(1e-4);
+        ->set_disturbance(disturbance);
     am_terminal = am_terminal_diff;
   }
+
+  CHECK(am_terminal, AT);
+
+  for (auto &a : amq_runs)
+    CHECK(a, AT);
 
   ptr<crocoddyl::ShootingProblem> problem =
       mk<crocoddyl::ShootingProblem>(gen_args.start, amq_runs, am_terminal);
@@ -1576,18 +2000,20 @@ generate_problem(const Generate_params &gen_args, size_t &nx, size_t &nu) {
   return problem;
 };
 
-bool check_dynamics(const std::vector<Eigen::VectorXd> &xs_out,
-                    const std::vector<Eigen::VectorXd> &us_out,
-                    ptr<Dynamics> dyn) {
+bool check_dynamics(const std::vector<Vxd> &xs_out,
+                    const std::vector<Vxd> &us_out, ptr<Dynamics> dyn) {
 
-  double tolerance = 1e-4;
+  CHECK(xs_out.size(), AT);
+  CHECK(us_out.size(), AT);
+  CHECK(dyn, AT);
   CHECK_EQ(xs_out.size(), us_out.size() + 1, AT);
 
+  double tolerance = 1e-4;
   size_t N = us_out.size();
   bool feasible = true;
 
   for (size_t i = 0; i < N; i++) {
-    Eigen::VectorXd xnext(dyn->nx);
+    Vxd xnext(dyn->nx);
 
     auto &x = xs_out.at(i);
     auto &u = us_out.at(i);
@@ -1595,8 +2021,9 @@ bool check_dynamics(const std::vector<Eigen::VectorXd> &xs_out,
 
     if ((xnext - xs_out.at(i + 1)).norm() > tolerance) {
       std::cout << "Infeasible at " << i << std::endl;
-      std::cout << xnext.transpose() << " " << xs_out.at(i + 1).transpose()
-                << std::endl;
+      std::cout << xnext.format(FMT) << std::endl;
+      std::cout << xs_out.at(i + 1).format(FMT) << std::endl;
+      std::cout << (xnext - xs_out.at(i + 1)).format(FMT) << std::endl;
       feasible = false;
       break;
     }
@@ -1605,38 +2032,61 @@ bool check_dynamics(const std::vector<Eigen::VectorXd> &xs_out,
   return feasible;
 }
 
-Eigen::VectorXd enforce_bounds(const Eigen::VectorXd &us,
-                               const Eigen::VectorXd &lb,
-                               const Eigen::VectorXd &ub) {
+Vxd enforce_bounds(const Vxd &us, const Vxd &lb, const Vxd &ub) {
 
+  CHECK_EQ(us.size(), lb.size(), AT);
+  CHECK_EQ(us.size(), ub.size(), AT);
   return us.cwiseMax(lb).cwiseMin(ub);
 }
 
 void read_from_file(File_parser_inout &inout) {
 
-  double dt = .1;
-
-  std::cout << "Warning, dt is hardcoded to: " << dt << std::endl;
+  double dt = 0;
 
   YAML::Node init = YAML::LoadFile(inout.init_guess);
   YAML::Node env = YAML::LoadFile(inout.env_file);
 
-  // load the collision checker
-  std::cout << "loading collision checker... " << std::endl;
-  inout.cl = mk<CollisionChecker>();
-  inout.cl->load(inout.env_file);
-  std::cout << "DONE" << std::endl;
+  if (!env["robots"]) {
+    CHECK(false, AT);
+    // ...
+  }
 
   inout.name = env["robots"][0]["type"].as<std::string>();
 
+  if (__in(vstr{"unicycle_first_order_0", "unicycle_second_order_0"},
+           inout.name))
+    dt = .1;
+  else if (__in(vstr{"quad2d", "quadrotor_0"}, inout.name))
+    dt = .01;
+  else
+    CHECK(false, AT);
+
+  std::cout << STR_(dt) << std::endl;
+  // load the collision checker
+  if (__in(vstr{"unicycle_first_order_0", "unicycle_second_order_0",
+                "car_first_order_with_1_trailers_0", "quad2d", "quadrotor_0"},
+           inout.name)) {
+    inout.cl = mk<CollisionChecker>();
+    inout.cl->load(inout.env_file);
+  } else {
+    std::cout << "this robot doesn't have collision checking " << std::endl;
+    inout.cl = nullptr;
+  }
+
   std::vector<std::vector<double>> states;
-  // std::vector<Eigen::VectorXd> xs_init;
-  // std::vector<Eigen::VectorXd> us_init;
+  // std::vector<Vxd> xs_init;
+  // std::vector<Vxd> us_init;
 
   size_t N;
   std::vector<std::vector<double>> actions;
 
   if (!inout.new_format) {
+
+    if (!init["result"]) {
+      CHECK(false, AT);
+      // ...
+    }
+
     for (const auto &state : init["result"][0]["states"]) {
       std::vector<double> p;
       for (const auto &elem : state) {
@@ -1658,15 +2108,17 @@ void read_from_file(File_parser_inout &inout) {
     inout.xs.resize(states.size());
     inout.us.resize(actions.size());
 
-    std::transform(
-        states.begin(), states.end(), inout.xs.begin(),
-        [](const auto &s) { return Eigen::VectorXd::Map(s.data(), s.size()); });
+    std::transform(states.begin(), states.end(), inout.xs.begin(),
+                   [](const auto &s) { return Vxd::Map(s.data(), s.size()); });
 
-    std::transform(
-        actions.begin(), actions.end(), inout.us.begin(),
-        [](const auto &s) { return Eigen::VectorXd::Map(s.data(), s.size()); });
+    std::transform(actions.begin(), actions.end(), inout.us.begin(),
+                   [](const auto &s) { return Vxd::Map(s.data(), s.size()); });
 
   } else {
+
+    if (!init["result2"]) {
+      CHECK(false, AT);
+    }
 
     std::cout << "Reading results in the new format " << std::endl;
     for (const auto &state : init["result2"][0]["states"]) {
@@ -1698,39 +2150,36 @@ void read_from_file(File_parser_inout &inout) {
     // 0 1 2 3 4
 
     // we use floor in the time to be more agressive
-    std::cout << "DT hardcoded to .1 " << std::endl;
+    std::cout << STR_(dt) << std::endl;
 
     double total_time = _times.back();
 
     int num_time_steps = std::ceil(total_time / dt);
 
-    Eigen::VectorXd times = Eigen::VectorXd::Map(_times.data(), _times.size());
+    Vxd times = Vxd::Map(_times.data(), _times.size());
 
-    std::vector<Eigen::VectorXd> _xs_init(states.size());
-    std::vector<Eigen::VectorXd> _us_init(actions.size());
+    std::vector<Vxd> _xs_init(states.size());
+    std::vector<Vxd> _us_init(actions.size());
 
-    std::vector<Eigen::VectorXd> xs_init_new;
-    std::vector<Eigen::VectorXd> us_init_new;
+    std::vector<Vxd> xs_init_new;
+    std::vector<Vxd> us_init_new;
 
     int nx = 3;
     int nu = 2;
 
-    std::transform(
-        states.begin(), states.end(), _xs_init.begin(),
-        [](const auto &s) { return Eigen::VectorXd::Map(s.data(), s.size()); });
+    std::transform(states.begin(), states.end(), _xs_init.begin(),
+                   [](const auto &s) { return Vxd::Map(s.data(), s.size()); });
 
-    std::transform(
-        actions.begin(), actions.end(), _us_init.begin(),
-        [](const auto &s) { return Eigen::VectorXd::Map(s.data(), s.size()); });
+    std::transform(actions.begin(), actions.end(), _us_init.begin(),
+                   [](const auto &s) { return Vxd::Map(s.data(), s.size()); });
 
-    auto ts =
-        Eigen::VectorXd::LinSpaced(num_time_steps + 1, 0, num_time_steps * dt);
+    auto ts = Vxd::LinSpaced(num_time_steps + 1, 0, num_time_steps * dt);
 
     std::cout << "taking samples at " << ts.transpose() << std::endl;
 
     for (size_t ti = 0; ti < num_time_steps + 1; ti++) {
-      Eigen::VectorXd xout(nx);
-      Eigen::VectorXd Jout(nx);
+      Vxd xout(nx);
+      Vxd Jout(nx);
 
       if (ts(ti) > times.tail(1)(0))
         xout = _xs_init.back();
@@ -1741,8 +2190,8 @@ void read_from_file(File_parser_inout &inout) {
 
     auto times_u = times.head(times.size() - 1);
     for (size_t ti = 0; ti < num_time_steps; ti++) {
-      Eigen::VectorXd uout(nu);
-      Eigen::VectorXd Jout(nu);
+      Vxd uout(nu);
+      Vxd Jout(nu);
       if (ts(ti) > times_u.tail(1)(0))
         uout = _us_init.back();
       else
@@ -1780,8 +2229,8 @@ void read_from_file(File_parser_inout &inout) {
     _goal.push_back(e.as<double>());
   }
 
-  inout.start = Eigen::VectorXd::Map(_start.data(), _start.size());
-  inout.goal = Eigen::VectorXd::Map(_goal.data(), _goal.size());
+  inout.start = Vxd::Map(_start.data(), _start.size());
+  inout.goal = Vxd::Map(_goal.data(), _goal.size());
 
   bool verbose = false;
   if (verbose) {
@@ -1796,15 +2245,20 @@ void read_from_file(File_parser_inout &inout) {
   }
 }
 
-void convert_traj_with_variable_time(const std::vector<Eigen::VectorXd> &xs,
-                                     const std::vector<Eigen::VectorXd> &us,
-                                     std::vector<Eigen::VectorXd> &xs_out,
-                                     std::vector<Eigen::VectorXd> &us_out) {
+void convert_traj_with_variable_time(const std::vector<Vxd> &xs,
+                                     const std::vector<Vxd> &us,
+                                     std::vector<Vxd> &xs_out,
+                                     std::vector<Vxd> &us_out,
+                                     const double &dt) {
+
+  CHECK(xs.size(), AT);
+  CHECK(us.size(), AT);
+  CHECK_EQ(xs.size(), us.size() + 1, AT);
 
   size_t N = us.size();
   size_t nx = xs.front().size();
+
   size_t nu = us.front().size();
-  double dt = .1;
   double total_time =
       std::accumulate(us.begin(), us.end(), 0., [&dt](auto &a, auto &b) {
         return a + dt * b(b.size() - 1);
@@ -1824,33 +2278,34 @@ void convert_traj_with_variable_time(const std::vector<Eigen::VectorXd> &xs,
   // now I have to sample at every dt
   // TODO: lOOK for Better solution than the trick with scaling
 
-  auto times = Eigen::VectorXd(N + 1);
+  auto times = Vxd(N + 1);
   times.setZero();
   for (size_t i = 1; i < times.size(); i++) {
     times(i) = times(i - 1) + dt * us.at(i - 1)(nu - 1);
   }
-  std::cout << times.transpose() << std::endl;
+  // std::cout << times.transpose() << std::endl;
 
   // TODO: be careful with SO(2)
-  std::vector<Eigen::VectorXd> x_out, u_out;
+  std::vector<Vxd> x_out, u_out;
   for (size_t i = 0; i < num_time_steps + 1; i++) {
     double t = i * dt / scaling_factor;
-    Eigen::VectorXd out(nx);
-    Eigen::VectorXd Jout(nx);
+    Vxd out(nx);
+    Vxd Jout(nx);
     linearInterpolation(times, xs, t, out, Jout);
     x_out.push_back(out);
   }
 
-  std::vector<Eigen::VectorXd> u_nx_orig(us.size());
+  std::vector<Vxd> u_nx_orig(us.size());
   std::transform(us.begin(), us.end(), u_nx_orig.begin(),
                  [&nu](auto &s) { return s.head(nu - 1); });
 
   for (size_t i = 0; i < num_time_steps; i++) {
     double t = i * dt / scaling_factor;
-    Eigen::VectorXd out(nu - 1);
-    std::cout << " i and time and num_time_steps is " << i << " " << t << " "
-              << num_time_steps << std::endl;
-    Eigen::VectorXd J(nu - 1);
+    Vxd out(nu - 1);
+    // std::cout << " i and time and num_time_steps is " << i << " " << t << "
+    // "
+    //           << num_time_steps << std::endl;
+    Vxd J(nu - 1);
     linearInterpolation(times.head(times.size() - 1), u_nx_orig, t, out, J);
     u_out.push_back(out);
   }
@@ -1875,20 +2330,20 @@ int inside_bounds(int i, int lb, int ub) {
     return i;
 }
 
-auto smooth_traj(const std::vector<Eigen::VectorXd> &us_init) {
+auto smooth_traj(const std::vector<Vxd> &us_init) {
 
   size_t n = us_init.front().size();
-  std::vector<Eigen::VectorXd> us_out(us_init.size());
+  std::vector<Vxd> us_out(us_init.size());
   // kernel
 
-  Eigen::VectorXd kernel(5);
+  Vxd kernel(5);
 
   kernel << 1, 2, 3, 2, 1;
 
   kernel /= kernel.sum();
 
   for (size_t i = 0; i < us_init.size(); i++) {
-    Eigen::VectorXd out = Eigen::VectorXd::Zero(n);
+    Vxd out = Vxd::Zero(n);
     for (size_t j = 0; j < kernel.size(); j++) {
       out += kernel(j) * us_init.at(inside_bounds(i - kernel.size() / 2 + j, 0,
                                                   us_init.size() - 1));
@@ -1898,23 +2353,102 @@ auto smooth_traj(const std::vector<Eigen::VectorXd> &us_init) {
   return us_out;
 }
 
+struct ReportCost {
+  double cost;
+  int time;
+  std::string name;
+  Eigen::VectorXd r;
+  CostTYPE type;
+};
+
+std::vector<ReportCost>
+get_report(ptr<ActionModelQ> p,
+           std::function<void(ptr<Cost>, Eigen::Ref<Vxd>)> fun) {
+
+  std::vector<ReportCost> reports;
+  for (size_t j = 0; j < p->features.size(); j++) {
+    ReportCost report;
+    auto &f = p->features.at(j);
+    Vxd r(f->nr);
+    fun(f, r);
+    report.type = CostTYPE::least_squares;
+    report.name = f->get_name();
+    report.r = r;
+    if (f->cost_type == CostTYPE::least_squares) {
+      report.cost = .5 * r.dot(r);
+    } else if (f->cost_type == CostTYPE::linear) {
+      report.cost = r.sum();
+    }
+    reports.push_back(report);
+  }
+  return reports;
+}
+
+std::vector<ReportCost> report_problem(ptr<crocoddyl::ShootingProblem> problem,
+                                       const std::vector<Vxd> &xs,
+                                       const std::vector<Vxd> &us,
+                                       const char *file_name) {
+  std::vector<ReportCost> reports;
+
+  for (size_t i = 0; i < problem->get_runningModels().size(); i++) {
+    auto &x = xs.at(i);
+    auto &u = us.at(i);
+    auto p = boost::static_pointer_cast<ActionModelQ>(
+        problem->get_runningModels().at(i));
+    std::vector<ReportCost> reports_i = get_report(
+        p, [&](ptr<Cost> f, Eigen::Ref<Vxd> r) { f->calc(r, x, u); });
+
+    for (auto &report_ii : reports_i)
+      report_ii.time = i;
+    reports.insert(reports.end(), reports_i.begin(), reports_i.end());
+  }
+
+  auto p =
+      boost::static_pointer_cast<ActionModelQ>(problem->get_terminalModel());
+  std::vector<ReportCost> reports_t = get_report(
+      p, [&](ptr<Cost> f, Eigen::Ref<Vxd> r) { f->calc(r, xs.back()); });
+
+  for (auto &report_ti : reports_t)
+    report_ti.time = xs.size() - 1;
+  ;
+
+  reports.insert(reports.begin(), reports_t.begin(), reports_t.end());
+
+  // write down the reports.
+  //
+
+  std::string one_space = " ";
+  std::string two_space = "  ";
+  std::string four_space = "    ";
+  std::ofstream reports_file(file_name);
+  for (auto &report : reports) {
+    reports_file << "-" << one_space << "name: " << report.name << std::endl;
+    reports_file << two_space << "time: " << report.time << std::endl;
+    reports_file << two_space << "cost: " << report.cost << std::endl;
+    reports_file << two_space << "type: " << static_cast<int>(report.type)
+                 << std::endl;
+    if (report.r.size()) {
+      reports_file << two_space << "r: " << report.r.format(FMT) << std::endl;
+    }
+  }
+
+  return reports;
+}
+
 void solve_with_custom_solver(File_parser_inout &file_inout,
                               Result_opti &opti_out) {
 
   // list of single solver
 
-  std::vector<SOLVER> solvers{SOLVER::traj_opt,      SOLVER::traj_opt_free_time,
-                              SOLVER::mpc,           SOLVER::mpcc,
-                              SOLVER::mpcc2,         SOLVER::mpcc_linear,
-                              SOLVER::mpc_adaptative};
+  std::vector<SOLVER> solvers{
+      SOLVER::traj_opt,      SOLVER::traj_opt_free_time_proxi,
+      SOLVER::mpc,           SOLVER::mpcc,
+      SOLVER::mpcc2,         SOLVER::mpcc_linear,
+      SOLVER::mpc_adaptative};
 
-  assert(std::find_if(solvers.begin(), solvers.end(), [](auto &s) {
-           return s == static_cast<SOLVER>(opti_params.solver_id);
-         }) != solvers.end());
-
-  double dt = .1;
-  std::cout << "Warning: "
-            << "dt is hardcoded to " << dt << std::endl;
+  assert(__in_if(solvers, [](const SOLVER &s) {
+    return s == static_cast<SOLVER>(opti_params.solver_id);
+  }));
 
   bool verbose = false;
   auto cl = file_inout.cl;
@@ -1924,23 +2458,55 @@ void solve_with_custom_solver(File_parser_inout &file_inout,
   auto goal = file_inout.goal;
   auto start = file_inout.start;
   auto name = file_inout.name;
+  double dt = 0;
+
+  if (__in(vstr{"unicycle_first_order_0", "unicycle_second_order_0"}, name))
+    dt = .1;
+  else if (__in(vstr{"quad2d", "quadrotor_0"}, name))
+    dt = .01;
+  else
+    CHECK(false, AT);
+
+  std::cout << STR_(dt) << std::endl;
+
+  CHECK(us_init.size(), AT);
+  CHECK(xs_init.size(), AT);
+  CHECK_EQ(xs_init.size(), us_init.size() + 1, AT);
+  const size_t _nx = xs_init.front().size();
+  const size_t _nu = us_init.front().size();
 
   SOLVER solver = static_cast<SOLVER>(opti_params.solver_id);
 
   if (opti_params.repair_init_guess) {
-    std::cout << "WARNING: reparing init guess, annoying SO2" << std::endl;
-    for (size_t i = 1; i < N + 1; i++) {
-      xs_init.at(i)(2) = xs_init.at(i - 1)(2) +
-                         diff_angle(xs_init.at(i)(2), xs_init.at(i - 1)(2));
-    }
-    goal(2) = xs_init.at(N)(2) + diff_angle(goal(2), xs_init.at(N)(2));
+    if (name == "unicycle_first_order_0" || name == "unicycle_second_order_0") {
+      std::cout << "WARNING: reparing init guess, annoying SO2" << std::endl;
+      for (size_t i = 1; i < N + 1; i++) {
+        xs_init.at(i)(2) = xs_init.at(i - 1)(2) +
+                           diff_angle(xs_init.at(i)(2), xs_init.at(i - 1)(2));
+      }
+      goal(2) = xs_init.at(N)(2) + diff_angle(goal(2), xs_init.at(N)(2));
 
-    std::cout << "goal is now (maybe updated) " << goal.transpose()
-              << std::endl;
+      std::cout << "goal is now (maybe updated) " << goal.transpose()
+                << std::endl;
+    } else if (name == "car_first_order_with_1_trailers_0") {
+
+      std::cout << "WARNING: reparing init guess, annoying SO2" << std::endl;
+      for (size_t i = 1; i < N + 1; i++) {
+        xs_init.at(i)(2) = xs_init.at(i - 1)(2) +
+                           diff_angle(xs_init.at(i)(2), xs_init.at(i - 1)(2));
+
+        xs_init.at(i)(3) = xs_init.at(i - 1)(3) +
+                           diff_angle(xs_init.at(i)(3), xs_init.at(i - 1)(3));
+      }
+      goal(2) = xs_init.at(N)(2) + diff_angle(goal(2), xs_init.at(N)(2));
+      goal(3) = xs_init.at(N)(3) + diff_angle(goal(3), xs_init.at(N)(3));
+
+      std::cout << "goal is now (maybe updated) " << goal.transpose()
+                << std::endl;
+    }
   }
 
   if (opti_params.smooth_traj) {
-
     for (size_t i = 0; i < 10; i++) {
       xs_init = smooth_traj(xs_init);
       xs_init.at(0) = start;
@@ -1988,8 +2554,8 @@ void solve_with_custom_solver(File_parser_inout &file_inout,
   }
 
   bool feasible;
-  std::vector<Eigen::VectorXd> xs_out;
-  std::vector<Eigen::VectorXd> us_out;
+  std::vector<Vxd> xs_out;
+  std::vector<Vxd> us_out;
 
   std::cout << "WARNING: "
             << "i modify last state to match goal" << std::endl;
@@ -2010,61 +2576,61 @@ void solve_with_custom_solver(File_parser_inout &file_inout,
 
   if (solver == SOLVER::mpc || solver == SOLVER::mpcc ||
       solver == SOLVER::mpcc_linear || solver == SOLVER::mpc_adaptative) {
-    // i could not stop when I reach the goal, only stop when I reach it with
-    // the step move. Then, I would do the last at full speed? ( I hope :) )
-    // Anyway, now is just fine
+    // i could not stop when I reach the goal, only stop when I reach
+    // it with the step move. Then, I would do the last at full speed?
+    // ( I hope :) ) Anyway, now is just fine
 
-    CHECK_GEQ(opti_params.num_steps_to_optimize, opti_params.num_steps_to_move,
-              AT);
+    CHECK_GEQ(opti_params.window_optimize, opti_params.window_shift, AT);
 
     bool finished = false;
 
-    std::vector<Eigen::VectorXd> xs_opt;
-    std::vector<Eigen::VectorXd> us_opt;
+    std::vector<Vxd> xs_opt;
+    std::vector<Vxd> us_opt;
 
-    std::vector<Eigen::VectorXd> xs_init_rewrite = xs_init;
-    std::vector<Eigen::VectorXd> us_init_rewrite = us_init;
+    std::vector<Vxd> xs_init_rewrite = xs_init;
+    std::vector<Vxd> us_init_rewrite = us_init;
 
-    std::vector<Eigen::VectorXd> xs_warmstart_mpcc;
-    std::vector<Eigen::VectorXd> us_warmstart_mpcc;
+    std::vector<Vxd> xs_warmstart_mpcc;
+    std::vector<Vxd> us_warmstart_mpcc;
 
-    std::vector<Eigen::VectorXd> xs_warmstart_adptative;
-    std::vector<Eigen::VectorXd> us_warmstart_adptative;
+    std::vector<Vxd> xs_warmstart_adptative;
+    std::vector<Vxd> us_warmstart_adptative;
 
     xs_opt.push_back(start);
     xs_init_rewrite.at(0) = start;
 
     debug_file_yaml << "opti:" << std::endl;
 
-    auto times = Eigen::VectorXd::LinSpaced(xs_init.size(), 0,
-                                            (xs_init.size() - 1) * dt);
+    auto times = Vxd::LinSpaced(xs_init.size(), 0, (xs_init.size() - 1) * dt);
 
     double max_alpha = times(times.size() - 1);
 
     ptr<Interpolator> path = mk<Interpolator>(times, xs_init);
+    ptr<Interpolator> path_u =
+        mk<Interpolator>(times.head(times.size() - 1), us_init);
 
-    std::vector<Eigen::VectorXd> xs;
-    std::vector<Eigen::VectorXd> us;
+    std::vector<Vxd> xs;
+    std::vector<Vxd> us;
 
     double previous_alpha;
 
-    Eigen::VectorXd previous_state = start;
+    Vxd previous_state = start;
     ptr<crocoddyl::ShootingProblem> problem;
 
-    Eigen::VectorXd goal_mpc(3);
+    Vxd goal_mpc(_nx);
 
     bool is_last = false;
 
     double total_time = 0;
     size_t counter = 0;
     size_t total_iterations = 0;
-    size_t num_steps_to_optimize_i = 0;
+    size_t window_optimize_i = 0;
 
     bool close_to_goal = false;
 
-    Eigen::VectorXd goal_with_alpha(4);
-    goal_with_alpha.head(3) = goal;
-    goal_with_alpha(3) = max_alpha;
+    Vxd goal_with_alpha(_nx + 1);
+    goal_with_alpha.head(_nx) = goal;
+    goal_with_alpha(_nx) = max_alpha;
 
     bool last_reaches_ = false;
     size_t index_first_goal = 0;
@@ -2074,16 +2640,16 @@ void solve_with_custom_solver(File_parser_inout &file_inout,
 
         auto start_i = previous_state;
         if (solver == SOLVER::mpc) {
-          assert(N - counter * opti_params.num_steps_to_move >= 0);
-          size_t remaining_steps = N - counter * opti_params.num_steps_to_move;
+          assert(N - counter * opti_params.window_shift >= 0);
+          size_t remaining_steps = N - counter * opti_params.window_shift;
 
-          num_steps_to_optimize_i =
-              std::min(opti_params.num_steps_to_optimize, remaining_steps);
+          window_optimize_i =
+              std::min(opti_params.window_optimize, remaining_steps);
 
           int subgoal_index =
-              counter * opti_params.num_steps_to_move + num_steps_to_optimize_i;
+              counter * opti_params.window_shift + window_optimize_i;
 
-          is_last = opti_params.num_steps_to_optimize > remaining_steps;
+          is_last = opti_params.window_optimize > remaining_steps;
 
           if (is_last)
             goal_mpc = goal;
@@ -2103,11 +2669,11 @@ void solve_with_custom_solver(File_parser_inout &file_inout,
           size_t index = std::distance(path->x.begin(), it);
           std::cout << "starting with approx index " << index << std::endl;
           std::cout << "Non adaptative index would be: "
-                    << counter * opti_params.num_steps_to_move << std::endl;
+                    << counter * opti_params.window_shift << std::endl;
 
-          num_steps_to_optimize_i = opti_params.num_steps_to_optimize;
+          window_optimize_i = opti_params.window_optimize;
           // next goal:
-          size_t goal_index = index + num_steps_to_optimize_i;
+          size_t goal_index = index + window_optimize_i;
           if (goal_index > xs_init.size() - 1) {
             std::cout << "trying to reach the goal " << std::endl;
             goal_mpc = goal;
@@ -2123,37 +2689,36 @@ void solve_with_custom_solver(File_parser_inout &file_inout,
 
         // i nd
 
-        Generate_params gen_args{
-            .free_time = false,
-            .name = name,
-            .N = num_steps_to_optimize_i,
-            .goal = goal_mpc,
-            .start = start_i,
-            .cl = cl,
-            .states = {},
-            .actions = {},
-        };
+        Generate_params gen_args{.free_time = false,
+                                 .name = name,
+                                 .N = window_optimize_i,
+                                 .goal = goal_mpc,
+                                 .start = start_i,
+                                 .cl = cl,
+                                 .states = {},
+                                 .actions = {},
+                                 .collisions =
+                                     opti_params.collision_weight > 1e-3};
 
         size_t nx, nu;
 
         problem = generate_problem(gen_args, nx, nu);
 
+        // report problem
+
         if (opti_params.use_warmstart) {
 
           if (solver == SOLVER::mpc) {
-            xs = std::vector<Eigen::VectorXd>(
-                xs_init_rewrite.begin() +
-                    counter * opti_params.num_steps_to_move,
-                xs_init_rewrite.begin() +
-                    counter * opti_params.num_steps_to_move +
-                    num_steps_to_optimize_i + 1);
+            xs = std::vector<Vxd>(
+                xs_init_rewrite.begin() + counter * opti_params.window_shift,
+                xs_init_rewrite.begin() + counter * opti_params.window_shift +
+                    window_optimize_i + 1);
 
-            us = std::vector<Eigen::VectorXd>(
-                us_init_rewrite.begin() +
-                    counter * opti_params.num_steps_to_move,
-                us_init_rewrite.begin() +
-                    counter * opti_params.num_steps_to_move +
-                    num_steps_to_optimize_i);
+            us = std::vector<Vxd>(
+                us_init_rewrite.begin() + counter * opti_params.window_shift,
+                us_init_rewrite.begin() + counter * opti_params.window_shift +
+                    window_optimize_i);
+
           } else {
 
             if (counter) {
@@ -2161,372 +2726,308 @@ void solve_with_custom_solver(File_parser_inout &file_inout,
               xs = xs_warmstart_adptative;
               us = us_warmstart_adptative;
 
-              size_t missing_steps = num_steps_to_optimize_i - us.size();
+              size_t missing_steps = window_optimize_i - us.size();
 
-              Eigen::VectorXd u_last = Eigen::VectorXd::Zero(nu);
-              Eigen::VectorXd x_last = xs.back();
+              Vxd u_last = Vxd::Zero(nu);
+              Vxd x_last = xs.back();
 
               // TODO: Sample the interpolator to get new init guess.
-              for (size_t i = 0; i < missing_steps; i++) {
-                us.push_back(u_last);
-                xs.push_back(x_last);
+
+              if (opti_params.shift_repeat) {
+                for (size_t i = 0; i < missing_steps; i++) {
+                  us.push_back(u_last);
+                  xs.push_back(x_last);
+                }
+              } else {
+
+                std::cout << "filling window by sampling the trajectory"
+                          << std::endl;
+                Vxd last = xs_warmstart_adptative.back().head(_nx);
+
+                auto it = std::min_element(path->x.begin(), path->x.end(),
+                                           [&](const auto &a, const auto &b) {
+                                             return (a - last).squaredNorm() <=
+                                                    (b - last).squaredNorm();
+                                           });
+
+                size_t last_index = std::distance(path->x.begin(), it);
+                double alpha_of_last = path->times(last_index);
+                std::cout << STR_(last_index) << std::endl;
+                // now I
+
+                Vxd out(_nx);
+                Vxd J(_nx);
+
+                Vxd out_u(_nu);
+                Vxd J_u(_nu);
+
+                for (size_t i = 0; i < missing_steps; i++) {
+                  {
+                    path->interpolate(
+                        std::min(alpha_of_last + (i + 1) * dt, max_alpha), out,
+                        J);
+                    xs.push_back(out);
+                  }
+
+                  {
+                    path_u->interpolate(
+                        std::min(alpha_of_last + i * dt, max_alpha - dt), out_u,
+                        J_u);
+                    us.push_back(out_u);
+                  }
+                }
               }
+
             } else {
-              xs = std::vector<Eigen::VectorXd>(num_steps_to_optimize_i + 1,
-                                                gen_args.start);
-              us = std::vector<Eigen::VectorXd>(num_steps_to_optimize_i,
-                                                Eigen::VectorXd::Zero(nu));
+              std::cout << "first iteration -- using first" << std::endl;
+
+              if (window_optimize_i + 1 < xs_init.size()) {
+                xs = std::vector<Vxd>(xs_init.begin(),
+                                      xs_init.begin() + window_optimize_i + 1);
+                us = std::vector<Vxd>(us_init.begin(),
+                                      us_init.begin() + window_optimize_i);
+              } else {
+                std::cout << "Optimizing more steps than required" << std::endl;
+                xs = xs_init;
+                us = us_init;
+
+                size_t missing_steps = window_optimize_i - us.size();
+                Vxd u_last = Vxd::Zero(nu);
+                Vxd x_last = xs.back();
+
+                // TODO: Sample the interpolator to get new init guess.
+
+                for (size_t i = 0; i < missing_steps; i++) {
+                  us.push_back(u_last);
+                  xs.push_back(x_last);
+                }
+              }
+
+              // xs = std::vector<Vxd>(window_optimize_i + 1,
+              // gen_args.start); us =
+              // std::vector<Vxd>(window_optimize_i, Vxd::Zero(nu));
             }
           }
-          CHECK_EQ(xs.size(), num_steps_to_optimize_i + 1, AT);
-          CHECK_EQ(us.size(), num_steps_to_optimize_i, AT);
+          CHECK_EQ(xs.size(), window_optimize_i + 1, AT);
+          CHECK_EQ(us.size(), window_optimize_i, AT);
 
           CHECK_EQ(xs.size(), us.size() + 1, AT);
-          CHECK_EQ(us.size(), num_steps_to_optimize_i, AT);
+          CHECK_EQ(us.size(), window_optimize_i, AT);
 
         } else {
-          xs = std::vector<Eigen::VectorXd>(num_steps_to_optimize_i + 1,
-                                            gen_args.start);
-          us = std::vector<Eigen::VectorXd>(num_steps_to_optimize_i,
-                                            Eigen::VectorXd::Zero(nu));
+          xs = std::vector<Vxd>(window_optimize_i + 1, gen_args.start);
+          us = std::vector<Vxd>(window_optimize_i, Vxd::Zero(nu));
         }
       } else if (solver == SOLVER::mpcc || solver == SOLVER::mpcc_linear) {
 
-        bool only_contour_last = true;
-        const double threshold_alpha_close = 2.; //
-        bool add_contour_to_all_when_close_to_gaol = true;
-        const bool regularize_wrt_init_guess = false;
+        window_optimize_i =
+            std::min(opti_params.window_optimize, us_init.size());
 
-        num_steps_to_optimize_i =
-            std::min(opti_params.num_steps_to_optimize, us_init.size());
+        std::cout << "previous state " << previous_state.format(FMT)
+                  << std::endl;
         // approx alpha of first state
         auto it = std::min_element(
             path->x.begin(), path->x.end(), [&](const auto &a, const auto &b) {
               return (a - previous_state).squaredNorm() <=
                      (b - previous_state).squaredNorm();
             });
+        size_t first_index = std::distance(path->x.begin(), it);
+        double alpha_of_first = path->times(first_index);
 
-        size_t index = std::distance(path->x.begin(), it);
-        std::cout << "starting with approx index " << index << std::endl;
-        double alpha_of_first = path->times(index);
-        std::cout << "alpha of first " << alpha_of_first << std::endl;
+        size_t expected_last_index = first_index + window_optimize_i;
 
-        double alpha_ref = alpha_of_first + opti_params.alpha_rate *
-                                                num_steps_to_optimize_i * dt;
+        // std::cout << "starting with approx first_index " <<
+        // first_index << std::endl; std::cout << "alpha of first " <<
+        // alpha_of_first << std::endl;
 
-        // lets create a vector of alpha_refs
-        Eigen::VectorXd alpha_refs = Eigen::VectorXd::LinSpaced(
-            num_steps_to_optimize_i + 1, alpha_of_first,
-            alpha_of_first + num_steps_to_optimize_i * dt);
+        Vxd alpha_refs =
+            Vxd::LinSpaced(window_optimize_i + 1, alpha_of_first,
+                           alpha_of_first + window_optimize_i * dt);
 
-        Eigen::VectorXd alpha_refs_goal = Eigen::VectorXd::LinSpaced(
-            num_steps_to_optimize_i + 1, alpha_of_first,
-            alpha_of_first +
-                opti_params.alpha_rate * num_steps_to_optimize_i * dt);
-        alpha_refs_goal = alpha_refs_goal.cwiseMin(max_alpha);
-        alpha_refs = alpha_refs.cwiseMin(max_alpha);
+        double expected_final_alpha =
+            std::min(alpha_of_first + window_optimize_i * dt, max_alpha);
 
-        Eigen::VectorXd cost_alpha_multis =
-            Eigen::VectorXd::Ones(num_steps_to_optimize_i + 1);
-        cost_alpha_multis(0) =
-            1.; // almost zero weight on alpha at the beginning
-
-        std::cout << "vector of alpha refs  is " << std::endl;
-        std::cout << alpha_refs.transpose() << std::endl;
-
-        std::cout << "vector of alpha refs goals  is " << std::endl;
-        std::cout << alpha_refs_goal.transpose() << std::endl;
-
-        if (alpha_ref > max_alpha) {
-          for (size_t i = 0; i < cost_alpha_multis.size(); i++) {
-            if (alpha_refs_goal(i) >= max_alpha - 1e-4) {
-              cost_alpha_multis(i) = 10.; //  Add higher alpha at the end
-            }
-          }
-        }
-
-        alpha_ref = std::min(alpha_ref, max_alpha);
-
-        double cost_alpha_multi = 1.;
-        int missing_indexes = times.size() - index;
-
-        bool use_goal_reaching_formulation =
-            std::fabs(alpha_of_first - max_alpha) < threshold_alpha_close;
-
-        std::cout << "hardcoding " << std::endl;
-        use_goal_reaching_formulation = true;
-        add_contour_to_all_when_close_to_gaol = true;
-
-        if (use_goal_reaching_formulation) {
-          std::cout << "we are close to the goal" << std::endl;
-
-#if 0
-#endif
-          if (add_contour_to_all_when_close_to_gaol) {
-            only_contour_last = false;
-            cost_alpha_multi = 1.;
-          } else {
-            std::cout << "alpha is close to the reference alpha " << std::endl;
-            std::cout << std::fabs(alpha_of_first - max_alpha) << std::endl;
-            std::cout << "adding very high cost to alpha" << std::endl;
-            cost_alpha_multi = 100.;
-          }
-        }
-
-        double cx_init;
-        double cu_init;
-
-        // if (!only_contour_last) {
-        //   // the alpha_ref
-        // }
-        //
-        // else {
-
-        cx_init = std::min(alpha_of_first + 1.01 * num_steps_to_optimize_i * dt,
-                           max_alpha - 1e-3);
-        cu_init = cx_init;
-        // }
-
-        if (use_goal_reaching_formulation &&
-            add_contour_to_all_when_close_to_gaol) {
-          cx_init = alpha_of_first;
-          cu_init = 0.;
-        }
-
-        std::cout << "cx_init:" << cx_init << std::endl;
-        std::cout << "alpha_rate:" << opti_params.alpha_rate << std::endl;
-        std::cout << "alpha_ref:" << alpha_ref << std::endl;
-        std::cout << "max alpha " << max_alpha << std::endl;
+        std::cout << STR(first_index, ":") << std::endl;
+        std::cout << STR(expected_final_alpha, ":") << std::endl;
+        std::cout << STR(expected_last_index, ":") << std::endl;
+        std::cout << STR(alpha_of_first, ":") << std::endl;
+        std::cout << STR(max_alpha, ":") << std::endl;
 
         size_t nx, nu;
-        const size_t _nx = 3;
-        const size_t _nu = 2;
 
-        Eigen::VectorXd start_ic(_nx + 1);
+        Vxd start_ic(_nx + 1);
         start_ic.head(_nx) = previous_state.head(_nx);
-        start_ic(_nx) = cx_init;
+        start_ic(_nx) = alpha_of_first;
 
         bool goal_cost = false;
 
-        if (std::fabs(alpha_refs(alpha_refs.size() - 1) - max_alpha) < 1e-3) {
-          std::cout << "alpha_refs > max_alpha" << std::endl;
-          close_to_goal = true;
-        }
-
-        if (close_to_goal) {
-          std::cout << "i am close to the goal " << std::endl;
-          goal_cost = true;
+        if (expected_final_alpha > max_alpha - 1e-3 || close_to_goal) {
+          std::cout << "alpha_refs > max_alpha || close to goal" << std::endl;
+          goal_cost = true; // new
         }
 
         std::cout << "goal " << goal_with_alpha.format(FMT) << std::endl;
+        std::cout << STR_(goal_cost) << std::endl;
 
-        //
-
-        size_t index_add_goal_cost = 10;
-        std::vector<Eigen::VectorXd> state_weights(num_steps_to_optimize_i);
-        for (size_t t = 0; t < num_steps_to_optimize_i; t++) {
-          if (t * dt > max_alpha - alpha_of_first && false)
-            // if (t * dt > max_alpha - alpha_of_first )
-            state_weights.at(t) = 1. * Eigen::VectorXd::Ones(4);
-          else
-            state_weights.at(t) = Eigen::VectorXd::Zero(4);
-        }
+        std::vector<Vxd> state_weights;
+        std::vector<Vxd> _states(window_optimize_i);
 
         int try_faster = 5;
         if (last_reaches_) {
-          std::cout << "last_reaches_"
-                    << "special " << std::endl;
-          std::cout << "try faster is " << try_faster << std::endl;
-          // the goal was at step
-          for (size_t t = 0; t < num_steps_to_optimize_i; t++) {
-            if (t >
-                index_first_goal - opti_params.num_steps_to_move - try_faster)
-              state_weights.at(t) = 1. * Eigen::VectorXd::Ones(4);
+          std::cout << "last_reaches_ adds goal cost special" << std::endl;
+          std::cout << "try_faster: " << try_faster << std::endl;
+
+          state_weights.resize(window_optimize_i);
+          _states.resize(window_optimize_i);
+
+          for (size_t t = 0; t < window_optimize_i; t++) {
+            if (t > index_first_goal - opti_params.window_shift - try_faster)
+              state_weights.at(t) = 1. * Vxd::Ones(_nx + 1);
             else
-              state_weights.at(t) = Eigen::VectorXd::Zero(4);
+              state_weights.at(t) = Vxd::Zero(_nx + 1);
+          }
+
+          for (size_t t = 0; t < window_optimize_i; t++) {
+            _states.at(t) = goal_with_alpha;
           }
         }
 
-        std::vector<Eigen::VectorXd> _states(num_steps_to_optimize_i);
-        for (size_t t = 0; t < num_steps_to_optimize_i; t++) {
-          _states.at(t) = goal_with_alpha;
-        }
+        Generate_params gen_args{
+            .free_time = false,
+            .name = name,
+            .N = window_optimize_i,
+            .goal = goal_with_alpha,
+            .start = start_ic,
+            .cl = cl,
+            .states = _states,
+            .states_weights = state_weights,
+            .actions = {},
+            .contour_control = true,
+            .interpolator = path,
+            .max_alpha = max_alpha,
+            .linear_contour = solver == SOLVER::mpcc_linear,
+            .goal_cost = goal_cost,
+            .collisions = opti_params.collision_weight > 1e-3
 
-        Generate_params gen_args{.free_time = false,
-                                 .name = name,
-                                 .N = num_steps_to_optimize_i,
-                                 .goal = goal_with_alpha,
-                                 .start = start_ic,
-                                 .cl = cl,
-                                 .states = _states,
-                                 .states_weights = state_weights,
-                                 .actions = {},
-                                 .contour_control = true,
-                                 .interpolator = path,
-                                 .ref_alpha = alpha_ref,
-                                 .max_alpha = max_alpha,
-                                 .cost_alpha_multi = cost_alpha_multi,
-                                 .only_contour_last = only_contour_last,
-                                 .alpha_refs = alpha_refs_goal,
-                                 .cost_alpha_multis = cost_alpha_multis,
-                                 .linear_contour =
-                                     solver == SOLVER::mpcc_linear,
-                                 .goal_cost = goal_cost};
+        };
 
         problem = generate_problem(gen_args, nx, nu);
 
         if (opti_params.use_warmstart) {
-          // TODO: I need a more clever initialization. For example, using the
-          // ones missing from last time, and then the default?
+
+          // TODO: I need a more clever initialization. For example,
+          // using the ones missing from last time, and then the
+          // default?
 
           std::cout << "warmstarting " << std::endl;
-          size_t first_index = index;
-          size_t last_index = index + num_steps_to_optimize_i;
 
-          std::vector<Eigen::VectorXd> xs_i;
-          std::vector<Eigen::VectorXd> us_i;
+          std::vector<Vxd> xs_i;
+          std::vector<Vxd> us_i;
 
-          bool reuse_opti = true;
-          std::cout << "counter: " << counter << std::endl;
-          if (counter && reuse_opti) {
+          std::cout << STR(counter, ":") << std::endl;
 
-            std::cout << "new warmstart" << std::endl;
+          if (counter) {
+            std::cout << "reusing solution from last iteration "
+                         "(window swift)"
+                      << std::endl;
             xs_i = xs_warmstart_mpcc;
             us_i = us_warmstart_mpcc;
 
-            size_t missing_steps = num_steps_to_optimize_i - us_i.size();
+            size_t missing_steps = window_optimize_i - us_i.size();
 
-            Eigen::VectorXd u_last = Eigen::VectorXd::Zero(3);
-            Eigen::VectorXd x_last = xs_i.back();
+            Vxd u_last = Vxd::Zero(_nu + 1);
+            Vxd x_last = xs_i.back();
 
             // TODO: Sample the interpolator to get new init guess.
-            for (size_t i = 0; i < missing_steps; i++) {
-              us_i.push_back(u_last);
-              xs_i.push_back(x_last);
+
+            if (opti_params.shift_repeat) {
+              std::cout << "filling window with last solution " << std::endl;
+              for (size_t i = 0; i < missing_steps; i++) {
+                us_i.push_back(u_last);
+                xs_i.push_back(x_last);
+              }
+            } else {
+              // get the alpha  of the last one.
+              std::cout << "filling window by sampling the trajectory"
+                        << std::endl;
+              Vxd last = xs_warmstart_mpcc.back().head(_nx);
+
+              auto it = std::min_element(path->x.begin(), path->x.end(),
+                                         [&](const auto &a, const auto &b) {
+                                           return (a - last).squaredNorm() <=
+                                                  (b - last).squaredNorm();
+                                         });
+
+              size_t last_index = std::distance(path->x.begin(), it);
+              double alpha_of_last = path->times(last_index);
+              std::cout << STR_(last_index) << std::endl;
+              // now I
+
+              Vxd out(_nx);
+              Vxd J(_nx);
+
+              Vxd out_u(_nu);
+              Vxd J_u(_nu);
+
+              Vxd uu(_nu + 1);
+              Vxd xx(_nx + 1);
+              for (size_t i = 0; i < missing_steps; i++) {
+                {
+                  path->interpolate(
+                      std::min(alpha_of_last + (i + 1) * dt, max_alpha), out,
+                      J);
+                  xx.head(_nx) = out;
+                  xx(_nx) = alpha_of_last + i * dt;
+                  xs_i.push_back(xx);
+                }
+
+                {
+                  path_u->interpolate(
+                      std::min(alpha_of_last + i * dt, max_alpha - dt), out_u,
+                      J_u);
+                  uu.head(_nu) = out_u;
+                  uu(_nu) = dt;
+                  us_i.push_back(uu);
+                }
+              }
             }
-
-          } else if (last_index < xs_init.size() - 1) {
-            std::cout << "last index is " << last_index << std::endl;
-            // TODO: I should reuse the ones in OPT
-            xs_i = std::vector<Eigen::VectorXd>(&xs_init.at(first_index),
-                                                &xs_init.at(last_index) + 1);
-            us_i = std::vector<Eigen::VectorXd>(&us_init.at(first_index),
-                                                &us_init.at(last_index));
-          } else if (first_index < xs_init.size() - 1) {
-            std::cout << "here " << std::endl;
-
-            // copy some indexes, and fill the others
-
-            // 0 1 2 3 4
-
-            // starting from index 3, i need five states: 3 4 4
-            // size_t num_extra = (xs_init.size() - 1) - first_index;
-            auto xs_1 = std::vector<Eigen::VectorXd>(
-                xs_init.begin() + first_index, xs_init.end());
-
-            // Eigen::VectorXd xref(4);
-            // xref.head(3) = goal;
-            // xref(3) = max_alpha;
-
-            auto xs_2 = std::vector<Eigen::VectorXd>(
-                num_steps_to_optimize_i + 1 - xs_1.size(), goal);
-
-            xs_1.insert(xs_1.end(), xs_2.begin(), xs_2.end());
-
-            auto us_1 = std::vector<Eigen::VectorXd>(
-                us_init.begin() + first_index, us_init.end());
-
-            // Eigen::VectorXd uref(3);
-            // uref << 0., 0., 0.;
-
-            auto us_2 = std::vector<Eigen::VectorXd>(num_steps_to_optimize_i -
-                                                         us_1.size(),
-                                                     Eigen::VectorXd::Zero(2));
-
-            us_1.insert(us_1.end(), us_2.begin(), us_2.end());
-
-            xs_i = xs_1;
-            us_i = us_1;
-
           } else {
+            std::cout << "first iteration, using initial guess trajectory"
+                      << std::endl;
 
-            std::cout << "here 2" << std::endl;
+            Vxd x(_nx + 1);
+            Vxd u(_nu + 1);
+            for (size_t i = 0; i < window_optimize_i + 1; i++) {
 
-            xs_i = std::vector<Eigen::VectorXd>(num_steps_to_optimize_i + 1,
-                                                xs_init.at(first_index));
-            us_i = std::vector<Eigen::VectorXd>(num_steps_to_optimize_i,
-                                                Eigen::VectorXd::Zero(2));
-          }
+              x.head(_nx) = xs_init.at(i);
+              x(_nx) = alpha_of_first + dt * i;
+              xs_i.push_back(x);
 
-          CHECK_EQ(xs_i.size(), num_steps_to_optimize_i + 1, AT);
-          CHECK_EQ(us_i.size(), num_steps_to_optimize_i, AT);
-
-          std::vector<Eigen::VectorXd> xcs_i(xs_i.size());
-          std::vector<Eigen::VectorXd> ucs_i(us_i.size());
-
-          bool old = false;
-          if (old) {
-            std::transform(xs_i.begin(), xs_i.end(), xcs_i.begin(),
-                           [&_nx, &cx_init](auto &x) {
-                             Eigen::VectorXd new_last(_nx + 1);
-                             new_last.head(_nx) = x;
-                             new_last(_nx) = cx_init;
-                             return new_last;
-                           });
-
-            std::transform(us_i.begin(), us_i.end(), ucs_i.begin(),
-                           [&_nu, &cu_init](auto &u) {
-                             Eigen::VectorXd new_last(_nu + 1);
-                             new_last.head(_nu) = u;
-                             new_last(_nu) = cu_init;
-                             return new_last;
-                           });
-          } else if (counter && reuse_opti) {
-            xcs_i = xs_i;
-            ucs_i = us_i;
-          }
-
-          else {
-
-            for (size_t i = 0; i < xcs_i.size(); i++) {
-              Eigen::VectorXd new_last(_nx + 1);
-              new_last.head(_nx) = xs_i.at(i);
-              new_last(_nx) = alpha_refs(i);
-              xcs_i.at(i) = new_last;
-            }
-
-            for (size_t i = 0; i < ucs_i.size(); i++) {
-              Eigen::VectorXd new_last(_nu + 1);
-              new_last.head(_nu) = us_i.at(i);
-              new_last(_nu) = alpha_refs(i + 1) - alpha_refs(i);
-              ucs_i.at(i) = new_last;
+              if (i < window_optimize_i) {
+                u.head(_nu) = us_init.at(i);
+                u(_nu) = dt;
+                us_i.push_back(u);
+              }
             }
           }
-
-          xs = xcs_i;
-          us = ucs_i;
+          xs = xs_i;
+          us = us_i;
 
         } else {
-
-          Eigen::VectorXd u0c(3);
-          u0c.head(2).setZero();
-          u0c(2) = cu_init;
-          xs = std::vector<Eigen::VectorXd>(num_steps_to_optimize_i + 1,
-                                            gen_args.start);
-          us = std::vector<Eigen::VectorXd>(num_steps_to_optimize_i, u0c);
-          //
-          // std::cout << "warmstarting the alpha's" << std::endl;
-          //
-          // for (size_t i = 0; i < xs.size(); i++) {
-          //   xs.at(i)(3) = alpha_refs(i);
-          // }
-          //
-          // for (size_t i = 0; i < us.size(); i++) {
-          //   Eigen::VectorXd new_last(_nu + 1);
-          //   us.at(i)(2) = alpha_refs(i + 1) - alpha_refs(i);
-          // }
+          std::cout << "no warmstart " << std::endl;
+          // no warmstart
+          Vxd u0c(_nu + 1);
+          u0c.head(_nu).setZero();
+          u0c(_nu) = dt;
+          xs = std::vector<Vxd>(window_optimize_i + 1, gen_args.start);
+          us = std::vector<Vxd>(window_optimize_i, u0c);
         }
+        CHECK_EQ(xs.size(), window_optimize_i + 1, AT);
+        CHECK_EQ(us.size(), window_optimize_i, AT);
       }
+      // report problem
+
+      // auto models = problem->get_runningModels();
 
       crocoddyl::SolverBoxFDDP ddp(problem);
       ddp.set_th_stop(opti_params.th_stop);
@@ -2540,51 +3041,52 @@ void solve_with_custom_solver(File_parser_inout &file_inout,
 
       // ENFORCING BOUNDS
 
-      Eigen::VectorXd x_lb, x_ub, u_lb, u_ub;
+      Vxd x_lb, x_ub, u_lb, u_ub;
 
+      double inf = std::numeric_limits<double>::max();
       if (solver == SOLVER::mpcc || solver == SOLVER::mpcc_linear) {
-        double inf = 1e6;
-        x_lb.resize(4);
-        x_ub.resize(4);
-        u_lb.resize(3);
-        u_ub.resize(3);
 
-        x_lb << -inf, -inf, -inf, 0.;
-        x_ub << inf, inf, inf, max_alpha;
-        u_lb << -inf, -inf, 0.;
-        u_ub << inf, inf, inf;
+        x_lb = -inf * Vxd::Ones(_nx + 1);
+        x_ub = inf * Vxd::Ones(_nx + 1);
+
+        u_lb = -inf * Vxd::Ones(_nu + 1);
+        u_ub = inf * Vxd::Ones(_nu + 1);
+
+        x_lb(x_lb.size() - 1) = 0;
+        x_ub(x_ub.size() - 1) = max_alpha;
+        u_lb(u_lb.size() - 1) = 0;
 
       } else {
-        double inf = 1e6;
-        x_lb.resize(3);
-        x_ub.resize(3);
-        u_lb.resize(2);
-        u_ub.resize(2);
+        std::cout << "_nx" << _nx << std::endl;
+        x_lb = -inf * Vxd::Ones(_nx);
+        x_ub = inf * Vxd::Ones(_nx);
 
-        x_lb << -inf, -inf, -inf;
-        x_ub << inf, inf, inf;
-        u_lb << -inf, -inf;
-        u_ub << inf, inf;
+        u_lb = -inf * Vxd::Ones(_nu);
+        u_ub = inf * Vxd::Ones(_nu);
       }
 
       if (opti_params.noise_level > 1e-8) {
         for (size_t i = 0; i < xs.size(); i++) {
-          xs.at(i) += opti_params.noise_level *
-                      Eigen::VectorXd::Random(xs.front().size());
+          std::cout << "i " << i << " " << xs.at(i).size() << std::endl;
+          xs.at(i) += opti_params.noise_level * Vxd::Random(xs.front().size());
           xs.at(i) = enforce_bounds(xs.at(i), x_lb, x_ub);
         }
 
         for (size_t i = 0; i < us.size(); i++) {
-          us.at(i) += opti_params.noise_level *
-                      Eigen::VectorXd::Random(us.front().size());
+          us.at(i) += opti_params.noise_level * Vxd::Random(us.front().size());
           us.at(i) = enforce_bounds(us.at(i), u_lb, u_ub);
         }
       }
 
       crocoddyl::Timer timer;
+
+      if (!opti_params.use_finite_diff)
+        report_problem(problem, xs, us, "report-0.yaml");
       ddp.solve(xs, us, opti_params.max_iter, false, opti_params.init_reg);
-      size_t iterations_i = ddp.get_iter();
       double time_i = timer.get_duration();
+      size_t iterations_i = ddp.get_iter();
+      if (!opti_params.use_finite_diff)
+        report_problem(problem, ddp.get_xs(), ddp.get_us(), "report-1.yaml");
       accumulated_time += time_i;
       // solver == SOLVER::traj_opt_smooth_then_free_time) {
 
@@ -2592,28 +3094,28 @@ void solve_with_custom_solver(File_parser_inout &file_inout,
       std::cout << "iterations: " << iterations_i << std::endl;
       total_time += time_i;
       total_iterations += iterations_i;
-      std::vector<Eigen::VectorXd> xs_i_sol = ddp.get_xs();
-      std::vector<Eigen::VectorXd> us_i_sol = ddp.get_us();
+      std::vector<Vxd> xs_i_sol = ddp.get_xs();
+      std::vector<Vxd> us_i_sol = ddp.get_us();
 
-      previous_state = xs_i_sol.at(opti_params.num_steps_to_move).head(3);
+      previous_state = xs_i_sol.at(opti_params.window_shift).head(_nx);
 
       size_t copy_steps = 0;
 
       auto fun_is_goal = [&](const auto &x) {
-        return (x.head(3) - goal).norm() < 1e-2;
+        return (x.head(_nx) - goal).norm() < 1e-2;
       };
 
       if (solver == SOLVER::mpc_adaptative) {
         // check if I reach the goal.
 
-        size_t final_index = num_steps_to_optimize_i;
-        Eigen::VectorXd x_last = ddp.get_xs().at(final_index);
+        size_t final_index = window_optimize_i;
+        Vxd x_last = ddp.get_xs().at(final_index);
         std::cout << "**\n" << std::endl;
         std::cout << "checking as final index: " << final_index << std::endl;
         std::cout << "last state: " << x_last.format(FMT) << std::endl;
         std::cout << "true last state: " << ddp.get_xs().back().format(FMT)
                   << std::endl;
-        std::cout << "distance to goal: " << (x_last.head(3) - goal).norm()
+        std::cout << "distance to goal: " << (x_last.head(_nx) - goal).norm()
                   << std::endl;
 
         if (fun_is_goal(x_last)) {
@@ -2629,16 +3131,17 @@ void solve_with_custom_solver(File_parser_inout &file_inout,
       else if (solver == SOLVER::mpcc || solver == SOLVER::mpcc_linear) {
 
         std::cout << "if final reaches the goal, i stop" << std::endl;
-        std::cout << "ideally, I should check if I can check the goal faster, "
+        std::cout << "ideally, I should check if I can check the goal "
+                     "faster, "
                      "with a small linear search "
                   << std::endl;
-        // Eigen::VectorXd x_last = ddp.get_xs().back();
-        size_t final_index = num_steps_to_optimize_i;
-        // size_t final_index = opti_params.num_steps_to_move;
+        // Vxd x_last = ddp.get_xs().back();
+        size_t final_index = window_optimize_i;
+        // size_t final_index = opti_params.window_shift;
         std::cout << "final index is " << final_index << std::endl;
 
-        double alpha_mpcc = ddp.get_xs().at(final_index)(3);
-        Eigen::VectorXd x_last = ddp.get_xs().at(final_index);
+        double alpha_mpcc = ddp.get_xs().at(final_index)(_nx);
+        Vxd x_last = ddp.get_xs().at(final_index);
         last_reaches_ = fun_is_goal(ddp.get_xs().back());
 
         std::cout << "**\n" << std::endl;
@@ -2647,7 +3150,7 @@ void solve_with_custom_solver(File_parser_inout &file_inout,
         std::cout << "last state: " << x_last.format(FMT) << std::endl;
         std::cout << "true last state: " << ddp.get_xs().back().format(FMT)
                   << std::endl;
-        std::cout << "distance to goal: " << (x_last.head(3) - goal).norm()
+        std::cout << "distance to goal: " << (x_last.head(_nx) - goal).norm()
                   << std::endl;
         std::cout << "last_reaches_: " << last_reaches_ << std::endl;
         std::cout << "\n**\n";
@@ -2677,9 +3180,9 @@ void solve_with_custom_solver(File_parser_inout &file_inout,
 
           assert(it != ddp.get_xs().end());
 
-          num_steps_to_optimize_i = std::distance(ddp.get_xs().begin(), it);
+          window_optimize_i = std::distance(ddp.get_xs().begin(), it);
           std::cout << "changing the number of steps to optimize(copy) to "
-                    << num_steps_to_optimize_i << std::endl;
+                    << window_optimize_i << std::endl;
         }
 
         std::cout << "checking if i am close to the goal " << std::endl;
@@ -2688,43 +3191,45 @@ void solve_with_custom_solver(File_parser_inout &file_inout,
 
         for (size_t i = 0; i < ddp.get_xs().size(); i++) {
           auto &x = ddp.get_xs().at(i);
-          if ((x.head(3) - goal).norm() < 1e-1) {
+          if ((x.head(_nx) - goal).norm() < 1e-1) {
             std::cout << "one state is close to goal! " << std::endl;
             close_to_goal = true;
           }
 
-          if (std::fabs(x(3) - max_alpha) < 1e-1) {
+          if (std::fabs(x(_nx) - max_alpha) < 1e-1) {
             std::cout << "alpha is close to final " << std::endl;
             close_to_goal = true;
           }
         }
+
+        std::cout << "done" << std::endl;
       }
 
       if (is_last)
-        copy_steps = num_steps_to_optimize_i;
+        copy_steps = window_optimize_i;
       else
-        copy_steps = opti_params.num_steps_to_move;
+        copy_steps = opti_params.window_shift;
 
       for (size_t i = 0; i < copy_steps; i++)
-        xs_opt.push_back(xs_i_sol.at(i + 1).head(3));
+        xs_opt.push_back(xs_i_sol.at(i + 1).head(_nx));
 
       for (size_t i = 0; i < copy_steps; i++)
         us_opt.push_back(us_i_sol.at(i).head(2));
 
       if (solver == SOLVER::mpc) {
-        for (size_t i = 0; i < num_steps_to_optimize_i; i++) {
-          xs_init_rewrite.at(1 + counter * opti_params.num_steps_to_move + i) =
-              xs_i_sol.at(i + 1).head(3);
+        for (size_t i = 0; i < window_optimize_i; i++) {
+          xs_init_rewrite.at(1 + counter * opti_params.window_shift + i) =
+              xs_i_sol.at(i + 1).head(_nx);
 
-          us_init_rewrite.at(counter * opti_params.num_steps_to_move + i) =
-              us_i_sol.at(i).head(2);
+          us_init_rewrite.at(counter * opti_params.window_shift + i) =
+              us_i_sol.at(i).head(_nu);
         }
       } else if (solver == SOLVER::mpc_adaptative) {
 
         xs_warmstart_adptative.clear();
         us_warmstart_adptative.clear();
 
-        for (size_t i = copy_steps; i < num_steps_to_optimize_i; i++) {
+        for (size_t i = copy_steps; i < window_optimize_i; i++) {
           xs_warmstart_adptative.push_back(xs_i_sol.at(i));
           us_warmstart_adptative.push_back(us_i_sol.at(i));
         }
@@ -2737,7 +3242,7 @@ void solve_with_custom_solver(File_parser_inout &file_inout,
         xs_warmstart_mpcc.clear();
         us_warmstart_mpcc.clear();
 
-        for (size_t i = copy_steps; i < num_steps_to_optimize_i; i++) {
+        for (size_t i = copy_steps; i < window_optimize_i; i++) {
           xs_warmstart_mpcc.push_back(xs_i_sol.at(i));
           us_warmstart_mpcc.push_back(us_i_sol.at(i));
         }
@@ -2765,9 +3270,9 @@ void solve_with_custom_solver(File_parser_inout &file_inout,
       if (solver == SOLVER::mpc || solver == SOLVER::mpc_adaptative) {
         debug_file_yaml << "    goal: " << goal_mpc.format(FMT) << std::endl;
       } else if (solver == SOLVER::mpcc || solver == SOLVER::mpcc_linear) {
-        double alpha_mpcc = ddp.get_xs().back()(3);
-        Eigen::VectorXd out(3);
-        Eigen::VectorXd Jout(3);
+        double alpha_mpcc = ddp.get_xs().back()(_nx);
+        Vxd out(_nx);
+        Vxd Jout(_nx);
         path->interpolate(alpha_mpcc, out, Jout);
         debug_file_yaml << "    alpha: " << alpha_mpcc << std::endl;
         debug_file_yaml << "    state_alpha: " << out.format(FMT) << std::endl;
@@ -2808,15 +3313,28 @@ void solve_with_custom_solver(File_parser_inout &file_inout,
     // checking feasibility
 
     std::cout << "checking feasibility" << std::endl;
-    size_t nx = 3;
-    size_t nu = 2;
-    ptr<Cost> feat_col = mk<Col_cost>(nx, nu, 1, cl);
+    ptr<Col_cost> feat_col = mk<Col_cost>(_nx, _nu, 1, cl);
     boost::static_pointer_cast<Col_cost>(feat_col)->margin = 0.;
-    Eigen::VectorXd goal_last = Eigen::VectorXd::Map(goal.data(), goal.size());
+    Vxd goal_last = Vxd::Map(goal.data(), goal.size());
 
     bool feasible_ = check_feas(feat_col, xs_out, us_out, goal_last);
 
-    ptr<Dynamics> dyn = mk<Dynamics_unicycle>();
+    ptr<Dynamics> dyn;
+
+    if (name == "unicycle_first_order_0")
+      dyn = mk<Dynamics_unicycle>(false);
+    else if (name == "unicycle_second_order_0")
+      dyn = mk<Dynamics_unicycle2>(false);
+    else if (name == "car_first_order_with_1_trailers_0") {
+      Vxd l(1);
+      l << .5;
+      dyn = mk<Dynamics_car_with_trailers>(l, false);
+    } else if (name == "quad2d")
+      dyn = mk<Dynamics_quadcopter2d>(false);
+    else if (name == "quadrotor_0")
+      dyn = mk<Dynamics_quadcopter3d>(false);
+    else
+      CHECK(false, AT);
 
     bool dynamics_feas = check_dynamics(xs_out, us_out, dyn);
 
@@ -2827,13 +3345,12 @@ void solve_with_custom_solver(File_parser_inout &file_inout,
     std::cout << "feasible_ is " << feasible_ << std::endl;
     std::cout << "feasible is " << feasible << std::endl;
   } else if (solver == SOLVER::traj_opt ||
-             solver == SOLVER::traj_opt_free_time) {
-
-    if (solver == SOLVER::traj_opt_free_time) {
-      std::vector<Eigen::VectorXd> us_init_time(us_init.size());
+             solver == SOLVER::traj_opt_free_time_proxi) {
+    if (solver == SOLVER::traj_opt_free_time_proxi) {
+      std::vector<Vxd> us_init_time(us_init.size());
       size_t nu = us_init.front().size();
       for (size_t i = 0; i < N; i++) {
-        Eigen::VectorXd u(nu + 1);
+        Vxd u(nu + 1);
         u.head(nu) = us_init.at(i);
         u(nu) = 1.;
         us_init_time.at(i) = u;
@@ -2841,23 +3358,35 @@ void solve_with_custom_solver(File_parser_inout &file_inout,
       us_init = us_init_time;
     }
 
-    Generate_params gen_args{
-        .free_time = solver == SOLVER::traj_opt_free_time,
-        .name = name,
-        .N = N,
-        .goal = goal,
-        .start = start,
-        .cl = cl,
-        .states = xs_init,
-        .actions = us_init,
+    // if reg
+
+    std::vector<Vxd> regs;
+    if (opti_params.states_reg && solver == SOLVER::traj_opt) {
+      double state_reg_weight = 100.;
+      regs = std::vector<Vxd>(xs_init.size() - 1,
+                              state_reg_weight * Vxd::Ones(_nx));
+    }
+
+    Generate_params gen_args{.free_time =
+                                 solver == SOLVER::traj_opt_free_time_proxi,
+                             .name = name,
+                             .N = N,
+                             .goal = goal,
+                             .start = start,
+                             .cl = cl,
+                             .states = {xs_init.begin(), xs_init.end() - 1},
+                             .states_weights = regs,
+                             .actions = us_init,
+                             .collisions = opti_params.collision_weight > 1e-3
+
     };
 
     size_t nx, nu;
 
     ptr<crocoddyl::ShootingProblem> problem =
         generate_problem(gen_args, nx, nu);
-    std::vector<Eigen::VectorXd> xs(N + 1, gen_args.start);
-    std::vector<Eigen::VectorXd> us(N, Eigen::VectorXd::Zero(nu));
+    std::vector<Vxd> xs(N + 1, gen_args.start);
+    std::vector<Vxd> us(N, Vxd::Zero(nu));
 
     if (opti_params.use_warmstart) {
       xs = xs_init;
@@ -2867,12 +3396,12 @@ void solve_with_custom_solver(File_parser_inout &file_inout,
     if (opti_params.noise_level > 0.) {
       for (size_t i = 0; i < xs.size(); i++) {
         assert(xs.at(i).size() == nx);
-        xs.at(i) += opti_params.noise_level * Eigen::VectorXd::Random(nx);
+        xs.at(i) += opti_params.noise_level * Vxd::Random(nx);
       }
 
       for (size_t i = 0; i < us.size(); i++) {
-        assert(us.at(i).size() == nx);
-        us.at(i) += opti_params.noise_level * Eigen::VectorXd::Random(nu);
+        assert(us.at(i).size() == nu);
+        us.at(i) += opti_params.noise_level * Vxd::Random(nu);
       }
     }
 
@@ -2887,12 +3416,17 @@ void solve_with_custom_solver(File_parser_inout &file_inout,
     }
 
     crocoddyl::Timer timer;
+
+    if (!opti_params.use_finite_diff)
+      report_problem(problem, xs, us, "report-0.yaml");
     ddp.solve(xs, us, opti_params.max_iter, false, opti_params.init_reg);
     std::cout << "time: " << timer.get_duration() << std::endl;
     accumulated_time += timer.get_duration();
+    if (!opti_params.use_finite_diff)
+      report_problem(problem, ddp.get_xs(), ddp.get_us(), "report-1.yaml");
 
     // check the distance to the goal:
-    ptr<Cost> feat_col = mk<Col_cost>(nx, nu, 1, cl);
+    ptr<Col_cost> feat_col = mk<Col_cost>(nx, nu, 1, cl);
     boost::static_pointer_cast<Col_cost>(feat_col)->margin = 0.;
 
     feasible = check_feas(feat_col, ddp.get_xs(), ddp.get_us(), gen_args.goal);
@@ -2901,21 +3435,50 @@ void solve_with_custom_solver(File_parser_inout &file_inout,
     std::cout << "solution" << std::endl;
     std::cout << problem->calc(xs, us) << std::endl;
 
-    if (solver == SOLVER::traj_opt_free_time) {
-      std::vector<Eigen::VectorXd> _xs;
-      std::vector<Eigen::VectorXd> _us;
+    if (solver == SOLVER::traj_opt_free_time_proxi) {
+      std::vector<Vxd> _xs;
+      std::vector<Vxd> _us;
 
-      auto dyn = mk<Dynamics_unicycle>(true);
+      ptr<Dynamics> dyn;
+      if (name == "unicycle_first_order_0")
+        dyn = mk<Dynamics_unicycle>(true);
+      else if (name == "unicycle_second_order_0")
+        dyn = mk<Dynamics_unicycle2>(true);
+      else if (name == "car_first_order_with_1_trailers_0") {
+        Vxd l(1);
+        l << .5;
+        dyn = mk<Dynamics_car_with_trailers>(l, true);
+      } else if (name == "quad2d") {
+        dyn = mk<Dynamics_quadcopter2d>(true);
+      } else if (name == "quadrotor_0") {
+        dyn = mk<Dynamics_quadcopter3d>(true);
+      }
+
+      else
+        CHECK(false, AT);
 
       std::cout << "max error before "
                 << max_rollout_error(dyn, ddp.get_xs(), ddp.get_us())
                 << std::endl;
 
-      convert_traj_with_variable_time(ddp.get_xs(), ddp.get_us(), _xs, _us);
+      convert_traj_with_variable_time(ddp.get_xs(), ddp.get_us(), _xs, _us, dt);
       xs_out = _xs;
       us_out = _us;
 
-      dyn = mk<Dynamics_unicycle>(false);
+      if (name == "unicycle_first_order_0")
+        dyn = mk<Dynamics_unicycle>(false);
+      else if (name == "unicycle_second_order_0")
+        dyn = mk<Dynamics_unicycle2>(false);
+      else if (name == "car_first_order_with_1_trailers_0") {
+        Vxd l(1);
+        l << .5;
+        dyn = mk<Dynamics_car_with_trailers>(l, false);
+      } else if (name == "quad2d") {
+        dyn = mk<Dynamics_quadcopter2d>(false);
+      } else if (name == "quadrotor_0") {
+        dyn = mk<Dynamics_quadcopter3d>(false);
+      } else
+        CHECK(false, AT);
 
       std::cout << "max error after " << max_rollout_error(dyn, xs_out, us_out)
                 << std::endl;
@@ -2932,73 +3495,6 @@ void solve_with_custom_solver(File_parser_inout &file_inout,
     debug_file_yaml << "usOPT: " << std::endl;
     for (auto &u : us_out)
       debug_file_yaml << "  - " << u.format(FMT) << std::endl;
-
-    if (solver == SOLVER::traj_opt_smooth_then_free_time) {
-
-      CHECK_EQ(opti_params.free_time, false, AT);
-
-      std::cout << "repeating now with free time" << std::endl;
-      gen_args.free_time = true;
-      gen_args.states = xs_out;
-      gen_args.actions = us_out;
-
-      problem = generate_problem(gen_args, nx, nu);
-      std::vector<Eigen::VectorXd> xs(N + 1, Eigen::VectorXd::Zero(nx));
-      std::vector<Eigen::VectorXd> us(N, Eigen::VectorXd::Zero(nu));
-
-      std::cout << " nu " << nu << std::endl;
-      for (size_t t = 0; t < N + 1; t++) {
-        xs.at(t) = ddp.get_xs().at(t);
-      }
-      for (size_t t = 0; t < N; t++) {
-        us.at(t) = Eigen::VectorXd::Ones(nu);
-        us.at(t).head(nu - 1) = ddp.get_us().at(t);
-      }
-
-      for (auto &x : xs) {
-        std::cout << x.transpose() << std::endl;
-      }
-
-      for (auto &u : us) {
-        std::cout << u.transpose() << std::endl;
-      }
-
-      std::cout << "feasible is " << feasible << std::endl;
-
-      std::cout << "before..." << std::endl;
-      std::cout << "cost " << problem->calc(ddp.get_xs(), us) << std::endl;
-      feasible = check_feas(feat_col, ddp.get_xs(), us, gen_args.goal);
-      std::cout << "feasible is " << feasible << std::endl;
-
-      ddp = crocoddyl::SolverBoxFDDP(problem);
-      ddp.set_th_stop(opti_params.th_stop);
-      ddp.set_th_acceptnegstep(opti_params.th_acceptnegstep);
-
-      if (opti_params.CALLBACKS) {
-        std::vector<ptr<crocoddyl::CallbackAbstract>> cbs;
-        cbs.push_back(mk<crocoddyl::CallbackVerbose>());
-        ddp.setCallbacks(cbs);
-      }
-
-      crocoddyl::Timer timer;
-      ddp.solve(xs, us, opti_params.max_iter, false, opti_params.init_reg);
-      std::cout << "time: " << timer.get_duration() << std::endl;
-      accumulated_time += timer.get_duration();
-
-      feasible =
-          check_feas(feat_col, ddp.get_xs(), ddp.get_us(), gen_args.goal);
-      std::cout << "feasible is: " << feasible << std::endl;
-
-      // convert form
-
-      std::vector<Eigen::VectorXd> _xs;
-      std::vector<Eigen::VectorXd> _us;
-
-      convert_traj_with_variable_time(ddp.get_xs(), ddp.get_us(), _xs, _us);
-
-      xs_out = _xs;
-      us_out = _us;
-    };
   }
 
   std::ofstream results_txt("out.txt");
@@ -3019,6 +3515,17 @@ void solve_with_custom_solver(File_parser_inout &file_inout,
 
 void compound_solvers(File_parser_inout file_inout, Result_opti &opti_out) {
   read_from_file(file_inout);
+  opti_out.name = file_inout.name;
+
+  std::cout << "file_inout parsed " << std::endl;
+  file_inout.print(std::cout);
+
+  CHECK(file_inout.us.size(), AT);
+  CHECK(file_inout.xs.size(), AT);
+  CHECK_EQ(file_inout.xs.size(), file_inout.us.size() + 1, AT);
+
+  size_t _nx = file_inout.xs.front().size();
+  size_t _nu = file_inout.us.front().size();
 
   switch (static_cast<SOLVER>(opti_params.solver_id)) {
 
@@ -3065,11 +3572,6 @@ void compound_solvers(File_parser_inout file_inout, Result_opti &opti_out) {
         std::cout << "iteration " << i << std::endl;
         opti_params.solver_id = static_cast<int>(SOLVER::mpcc);
         opti_params.control_bounds = 1;
-        if (i == 0)
-          opti_params.alpha_rate = 1.;
-        else
-          opti_params.alpha_rate = 1.2;
-
         opti_params.debug_file_name =
             "debug_file_mpcc_" + std::to_string(i) + ".yaml";
 
@@ -3125,19 +3627,26 @@ void compound_solvers(File_parser_inout file_inout, Result_opti &opti_out) {
 
   case SOLVER::time_search_traj_opt: {
 
-    auto check_with_rate = [](const File_parser_inout &file_inout, double rate,
-                              Result_opti &opti_out) {
-      const double dt = .1;
+    auto check_with_rate = [&](const File_parser_inout &file_inout, double rate,
+                               Result_opti &opti_out) {
+      double dt = 0.;
+      auto name = file_inout.name;
 
-      std::vector<Eigen::VectorXd> us_init = file_inout.us;
-      std::vector<Eigen::VectorXd> xs_init = file_inout.xs;
+      if (__in(vstr{"unicycle_first_order_0", "unicycle_second_order_0"}, name))
+        dt = .1;
+      else if (__in(vstr{"quad2d", "quadrotor_0"}, name))
+        dt = .01;
+      else
+        CHECK(false, AT);
 
-      Eigen::VectorXd times = Eigen::VectorXd::LinSpaced(us_init.size() + 1, 0,
-                                                         us_init.size() * dt);
+      std::vector<Vxd> us_init = file_inout.us;
+      std::vector<Vxd> xs_init = file_inout.xs;
+
+      Vxd times = Vxd::LinSpaced(us_init.size() + 1, 0, us_init.size() * dt);
 
       // resample a trajectory
       size_t original_n = us_init.size();
-      Eigen::VectorXd times_2 = rate * times;
+      Vxd times_2 = rate * times;
 
       // create an interpolator
       Interpolator interp_x(times_2, xs_init);
@@ -3145,15 +3654,14 @@ void compound_solvers(File_parser_inout file_inout, Result_opti &opti_out) {
 
       int new_n = std::ceil(rate * original_n);
 
-      Eigen::VectorXd new_times =
-          Eigen::VectorXd::LinSpaced(new_n + 1, 0, new_n * dt);
-      std::vector<Eigen::VectorXd> new_xs(new_n + 1);
-      std::vector<Eigen::VectorXd> new_us(new_n);
+      Vxd new_times = Vxd::LinSpaced(new_n + 1, 0, new_n * dt);
+      std::vector<Vxd> new_xs(new_n + 1);
+      std::vector<Vxd> new_us(new_n);
 
-      Eigen::VectorXd x(3);
-      Eigen::VectorXd Jx(3);
-      Eigen::VectorXd u(2);
-      Eigen::VectorXd Ju(2);
+      Vxd x(_nx);
+      Vxd Jx(_nx);
+      Vxd u(_nu);
+      Vxd Ju(_nu);
 
       for (size_t i = 0; i < new_times.size(); i++) {
         interp_x.interpolate(new_times(i), x, Jx);
@@ -3173,12 +3681,9 @@ void compound_solvers(File_parser_inout file_inout, Result_opti &opti_out) {
       solve_with_custom_solver(file_next, opti_out);
     };
 
-    double max_rate = 1.5;
-    double min_rate = .7;
-    int num_rates_to_test = 10;
-
-    Eigen::VectorXd rates =
-        Eigen::VectorXd::LinSpaced(num_rates_to_test, min_rate, max_rate);
+    Vxd rates = Vxd::LinSpaced(opti_params.tsearch_num_check,
+                               opti_params.tsearch_min_rate,
+                               opti_params.tsearch_max_rate);
 
     Result_opti opti_out_local;
     size_t counter = 0;
@@ -3223,6 +3728,43 @@ void compound_solvers(File_parser_inout file_inout, Result_opti &opti_out) {
       opti_out = best;
     }
   } break;
+
+  case SOLVER::traj_opt_free_time: {
+
+    bool do_final_repair_step = true;
+    opti_params.control_bounds = true;
+    opti_params.solver_id = static_cast<int>(SOLVER::traj_opt_free_time_proxi);
+    opti_params.control_bounds = 1;
+    opti_params.debug_file_name = "debug_file_trajopt_freetime_proxi.yaml";
+    std::cout << "**\nopti params is " << std::endl;
+    opti_params.print(std::cout);
+
+    solve_with_custom_solver(file_inout, opti_out);
+
+    if (!opti_out.feasible) {
+      std::cout << "warning"
+                << " "
+                << "infeasible" << std::endl;
+      do_final_repair_step = false;
+    }
+
+    if (do_final_repair_step) {
+
+      opti_params.control_bounds = true;
+      opti_params.solver_id = static_cast<int>(SOLVER::traj_opt);
+      opti_params.control_bounds = 1;
+      opti_params.debug_file_name =
+          "debug_file_trajopt_after_freetime_proxi.yaml";
+
+      file_inout.xs = opti_out.xs_out;
+      file_inout.us = opti_out.us_out;
+
+      solve_with_custom_solver(file_inout, opti_out);
+    }
+  }
+
+  break;
+
   default: {
     solve_with_custom_solver(file_inout, opti_out);
   }
@@ -3232,7 +3774,6 @@ void compound_solvers(File_parser_inout file_inout, Result_opti &opti_out) {
 ;
 
 void Result_opti::write_yaml(std::ostream &out) {
-
   out << "feasible: " << feasible << std::endl;
   out << "cost: " << cost << std::endl;
 
@@ -3246,13 +3787,17 @@ void Result_opti::write_yaml(std::ostream &out) {
 }
 
 void Result_opti::write_yaml_db(std::ostream &out) {
-
+  CHECK((name != ""), AT);
   out << "feasible: " << feasible << std::endl;
   out << "cost: " << cost << std::endl;
   out << "result:" << std::endl;
   out << "  - states:" << std::endl;
   for (auto &x : xs_out) {
-    x(2) = std::remainder(x(2), 2 * M_PI);
+    if (__in(vstr{"unicycle_first_order_0", "unicycle_second_order_0",
+                  "car_first_order_with_1_trailers_0"},
+             name)) {
+      x(2) = std::remainder(x(2), 2 * M_PI);
+    }
     out << "      - " << x.format(FMT) << std::endl;
   }
 
@@ -3263,16 +3808,34 @@ void Result_opti::write_yaml_db(std::ostream &out) {
 };
 
 void File_parser_inout::add_options(po::options_description &desc) {
-  desc.add_options()("env", po::value<std::string>(&env_file)->required())(
-      "waypoints", po::value<std::string>(&init_guess)->required())(
-      "new_format", po::value<bool>(&new_format)->default_value(new_format));
+  // desc.add_options()("env", po::value<std::string>(&env_file)->required())(
+  //     "waypoints", po::value<std::string>(&init_guess)->required())(
+  //     "new_format",
+  //     po::value<bool>(&new_format)->default_value(new_format));
+  set_from_boostop(desc, VAR_WITH_NAME(init_guess));
+  set_from_boostop(desc, VAR_WITH_NAME(env_file));
+  set_from_boostop(desc, VAR_WITH_NAME(new_format));
+  set_from_boostop(desc, VAR_WITH_NAME(problem_name));
+}
+
+void File_parser_inout::read_from_yaml(const char *file) {
+  std::cout << "loading file: " << file << std::endl;
+  YAML::Node node = YAML::LoadFile(file);
+  read_from_yaml(node);
+}
+
+void File_parser_inout::read_from_yaml(YAML::Node &node) {
+  set_from_yaml(node, VAR_WITH_NAME(env_file));
+  set_from_yaml(node, VAR_WITH_NAME(init_guess));
+  set_from_yaml(node, VAR_WITH_NAME(new_format));
+  set_from_yaml(node, VAR_WITH_NAME(problem_name));
 }
 
 void File_parser_inout::print(std::ostream &out) {
-
   std::string be = "";
   std::string af = ": ";
   out << be << STR(init_guess, af) << std::endl;
+  out << be << STR(problem_name, af) << std::endl;
   out << be << STR(env_file, af) << std::endl;
   out << be << STR(new_format, af) << std::endl;
   out << be << STR(name, af) << std::endl;
@@ -3288,4 +3851,517 @@ void File_parser_inout::print(std::ostream &out) {
 
   out << be << "start" << af << start.format(FMT) << std::endl;
   out << be << "goal" << af << start.format(FMT) << std::endl;
+}
+
+Dynamics_car_with_trailers::Dynamics_car_with_trailers(const Vxd &hitch_lengths,
+                                                       bool free_time)
+    : num_trailers(hitch_lengths.size()), hitch_lengths(hitch_lengths),
+      free_time(free_time) {
+  nx = 3 + num_trailers;
+  nu = 2;
+
+  if (free_time)
+    nu += 1;
+}
+
+void Dynamics_car_with_trailers::calc(Eigen::Ref<Eigen::VectorXd> xnext,
+                                      const Eigen::Ref<const VectorXs> &x,
+                                      const Eigen::Ref<const VectorXs> &u) {
+  check_input_calc(xnext, x, u, nx, nu);
+  double dt_ = dt;
+  if (free_time)
+    dt_ *= u[2];
+
+  const double &v = u(0);
+  const double &phi = u(1);
+  const double &yaw = x(2);
+
+  const double &c = std::cos(yaw);
+  const double &s = std::sin(yaw);
+
+  xnext(0) = x(0) + dt_ * v * c;
+  xnext(1) = x(1) + dt_ * v * s;
+  xnext(2) = x(2) + dt_ * v / l * std::tan(phi);
+
+  if (num_trailers) {
+    CHECK_EQ(num_trailers, 1, AT);
+    double d = hitch_lengths(0);
+    double theta_dot = v / d;
+    theta_dot *= std::sin(x(2) - x(3));
+    xnext(3) = x(3) + theta_dot * dt_;
+  }
+}
+
+void Dynamics_car_with_trailers::calcDiff(Eigen::Ref<Eigen::MatrixXd> Fx,
+                                          Eigen::Ref<Eigen::MatrixXd> Fu,
+                                          const Eigen::Ref<const VectorXs> &x,
+                                          const Eigen::Ref<const VectorXs> &u) {
+  check_input_calcdiff(Fx, Fu, x, u, nx, nu);
+  // CHECK_EQ(free_time, false, AT);
+
+  const double &v = u(0);
+  const double &phi = u(1);
+  const double &yaw = x(2);
+
+  const double &c = std::cos(yaw);
+  const double &s = std::sin(yaw);
+
+  double dt_ = dt;
+  if (free_time)
+    dt_ *= u[2];
+
+  Fx.setIdentity();
+  Fx(0, 2) = -dt_ * v * s;
+  Fx(1, 2) = dt_ * v * c;
+
+  Fu(0, 0) = dt_ * c;
+  Fu(1, 0) = dt_ * s;
+  Fu(2, 0) = dt_ / l * std::tan(phi);
+  Fu(2, 1) = dt_ * v / l / (std::cos(phi) * std::cos(phi));
+
+  if (free_time) {
+    Fu(0, 2) = dt * v * c;
+    Fu(1, 2) = dt * v * s;
+    Fu(2, 2) = dt * v / l * std::tan(phi);
+  }
+
+  if (num_trailers) {
+    CHECK_EQ(num_trailers, 1, AT);
+    double d = hitch_lengths(0);
+    // double theta_dot = v / d;
+    // double theta_dot =  v / d * std::sin(x(2) - x(3));
+    // xnext(3) = x(3) + theta_dot * dt_;
+    Fx(3, 2) = dt_ * v / d * std::cos(x(2) - x(3));
+    Fx(3, 3) -= dt_ * v / d * std::cos(x(2) - x(3));
+    Fu(3, 0) = dt_ * std::sin(x(2) - x(3)) / d;
+    if (free_time) {
+      Fu(3, 2) = dt * v / d * std::sin(x(2) - x(3));
+    }
+  }
+}
+
+Dynamics_quadcopter2d::Dynamics_quadcopter2d(bool free_time)
+    : free_time(free_time) {
+  nx = 6;
+  nu = 2;
+  if (free_time)
+    nu += 1;
+}
+
+void Dynamics_quadcopter2d::compute_acc(const Eigen::Ref<const VectorXs> &x,
+                                        const Eigen::Ref<const VectorXs> &u) {
+
+  const double &f1 = u_nominal * u(0);
+  const double &f2 = u_nominal * u(1);
+  const double &c = std::cos(x(2));
+  const double &s = std::sin(x(2));
+
+  const double &xdot = x(3);
+  const double &ydot = x(4);
+  const double &thetadot = x(5);
+
+  data.xdotdot = -m_inv * (f1 + f2) * s;
+  data.ydotdot = m_inv * (f1 + f2) * c - g;
+  data.thetadotdot = l * I_inv * (f1 - f2);
+
+  if (drag_against_vel) {
+    data.xdotdot -= m_inv * k_drag_linear * xdot;
+    data.ydotdot -= m_inv * k_drag_linear * ydot;
+    data.thetadotdot -= I_inv * k_drag_angular * thetadot;
+  }
+}
+
+void Dynamics_quadcopter2d::calc(Eigen::Ref<Eigen::VectorXd> xnext,
+                                 const Eigen::Ref<const VectorXs> &x,
+                                 const Eigen::Ref<const VectorXs> &u) {
+  check_input_calc(xnext, x, u, nx, nu);
+
+  compute_acc(x, u);
+
+  double dt_ = dt;
+  if (free_time)
+    dt_ *= u(2);
+
+  xnext.head(3) = x.head(3) + dt_ * x.segment(3, 3);
+  xnext.segment(3, 3) << x(3) + dt_ * data.xdotdot, x(4) + dt_ * data.ydotdot,
+      x(5) + dt_ * data.thetadotdot;
+}
+
+void Dynamics_quadcopter2d::calcDiff(Eigen::Ref<Eigen::MatrixXd> Fx,
+                                     Eigen::Ref<Eigen::MatrixXd> Fu,
+                                     const Eigen::Ref<const Vxd> &x,
+                                     const Eigen::Ref<const Vxd> &u) {
+  check_input_calcdiff(Fx, Fu, x, u, nx, nu);
+  compute_acc(x, u);
+
+  const double &f1 = u_nominal * u(0);
+  const double &f2 = u_nominal * u(1);
+  const double &c = std::cos(x(2));
+  const double &s = std::sin(x(2));
+
+  double dt_ = dt;
+  if (free_time)
+    dt_ *= u(2);
+
+  Fx.setIdentity();
+  Fx.block(0, 3, 3, 3).setIdentity();
+  Fx.block(0, 3, 3, 3) *= dt_;
+
+  const double &d_xdotdot_dtheta = -m_inv * (f1 + f2) * c;
+  const double &d_ydotdot_dtheta = m_inv * (f1 + f2) * (-s);
+
+  Fx(3, 2) = dt_ * d_xdotdot_dtheta;
+  Fx(4, 2) = dt_ * d_ydotdot_dtheta;
+
+  Fu(3, 0) = -dt_ * m_inv * s * u_nominal;
+  Fu(3, 1) = -dt_ * m_inv * s * u_nominal;
+
+  Fu(4, 0) = dt_ * m_inv * c * u_nominal;
+  Fu(4, 1) = dt_ * m_inv * c * u_nominal;
+
+  Fu(5, 0) = dt_ * l * I_inv * u_nominal;
+  Fu(5, 1) = -dt_ * l * I_inv * u_nominal;
+
+  if (drag_against_vel) {
+    Fx(3, 3) -= m_inv * dt_ * k_drag_linear;
+    Fx(4, 4) -= m_inv * dt_ * k_drag_linear;
+    Fx(5, 5) -= I_inv * dt_ * k_drag_angular;
+  }
+
+  if (free_time) {
+    Fu.col(2) << dt * x.segment(3, 3), dt * data.xdotdot, dt * data.ydotdot,
+        dt * data.thetadotdot;
+  }
+}
+
+void quat_product(const Eigen::Vector4d &p, const Eigen::Vector4d &q,
+                  Eigen::Ref<Eigen::VectorXd> out,
+                  Eigen::Ref<Eigen::Matrix4d> Jp,
+                  Eigen::Ref<Eigen::Matrix4d> Jq) {
+
+  const double px = p(0);
+  const double py = p(1);
+  const double pz = p(2);
+  const double pw = p(3);
+
+  const double qx = q(0);
+  const double qy = q(1);
+  const double qz = q(2);
+  const double qw = q(3);
+
+  out(0) = pw * qx + px * qw + py * qz - pz * qy;
+  out(1) = pw * qy - px * qz + py * qw + pz * qx;
+  out(2) = pw * qz + px * qy - py * qx + pz * qw;
+  out(3) = pw * qw - px * qx - py * qy - pz * qz;
+
+  Eigen::Vector4d dyw_dq{-px, -py, -pz, pw};
+  Eigen::Vector4d dyx_dq{pw, -pz, py, px};
+  Eigen::Vector4d dyy_dq{pz, pw, -px, py};
+  Eigen::Vector4d dyz_dq{-py, px, pw, pz};
+
+  Jq.row(0) = dyx_dq;
+  Jq.row(1) = dyy_dq;
+  Jq.row(2) = dyz_dq;
+  Jq.row(3) = dyw_dq;
+
+  Eigen::Vector4d dyw_dp{-qx, -qy, -qz, qw};
+  Eigen::Vector4d dyx_dp{qw, qz, -qy, qx};
+  Eigen::Vector4d dyy_dp{-qz, qw, qx, qy};
+  Eigen::Vector4d dyz_dp{qy, -qx, qw, qz};
+
+  Jp.row(0) = dyx_dp;
+  Jp.row(1) = dyy_dp;
+  Jp.row(2) = dyz_dp;
+  Jp.row(3) = dyw_dp;
+}
+
+Dynamics_quadcopter3d::Dynamics_quadcopter3d(bool free_time)
+    : free_time(free_time) {
+  nx = 13;
+  nu = 4;
+  CHECK_EQ(free_time, false, AT);
+
+  B0 << 1, 1, 1, 1, -arm, -arm, arm, arm, -arm, arm, arm, -arm, -t2t, t2t, -t2t,
+      t2t;
+
+  Fu_selection.setZero();
+  Fu_selection(2, 0) = 1.;
+
+  // [ 0, 0, 0, 0]   [eta(0)]    =
+  // [ 0, 0, 0, 0]   [eta(1)]
+  // [ 1, 0, 0, 0]   [eta(2)]
+  //                 [eta(3)]
+
+  Ftau_selection.setZero();
+  Ftau_selection(0, 1) = 1.;
+  Ftau_selection(1, 2) = 1.;
+  Ftau_selection(2, 3) = 1.;
+
+  // [ 0, 1, 0, 0]   [eta(0)]    =
+  // [ 0, 0, 1, 0]   [eta(1)]
+  // [ 0, 0, 0, 1]   [eta(2)]
+  //                 [eta(3)]
+
+  Fu_selection_B0 = Fu_selection * B0;
+  Ftau_selection_B0 = Ftau_selection * B0;
+}
+
+// def integrate_quat(self, q, wb, dt):
+//     return multiply(q, exp(_promote_vec(wb * dt / 2)))
+
+Eigen::Quaterniond
+get_quat_from_ang_vel_time(const Eigen::Vector3d &angular_rotation) {
+
+  Eigen::Quaterniond deltaQ;
+  auto theta = angular_rotation * 0.5;
+  float thetaMagSq = theta.squaredNorm();
+  float s;
+  if (thetaMagSq * thetaMagSq / 24.0 < std::numeric_limits<float>::min()) {
+    deltaQ.w() = 1.0 - thetaMagSq / 2.0;
+    s = 1.0 - thetaMagSq / 6.0;
+  } else {
+    float thetaMag = std::sqrt(thetaMagSq);
+    deltaQ.w() = std::cos(thetaMag);
+    // Real part:
+    // cos ( thetaMag )   = cos (sqrt(  || omega * dt * .5 ||^2 )  =  cos( ||
+    // omega * dt  || * .5)
+    s = std::sin(thetaMag) / thetaMag;
+  }
+  // Imaginary part
+  //  omega * dt . 5 /  (||omega * dt || * .5) * sin(  || omega * dt  || * .5
+  //  ) = omega * dt  /  ||omega * dt ||  * sin(  || omega * dt  || * .5 )
+  deltaQ.x() = theta.x() * s;
+  deltaQ.y() = theta.y() * s;
+  deltaQ.z() = theta.z() * s;
+
+  return deltaQ;
+}
+
+Eigen::Quaterniond qintegrate(const Eigen::Quaterniond &q,
+                              const Eigen::Vector3d &omega, float dt) {
+  Eigen::Quaterniond deltaQ = get_quat_from_ang_vel_time(omega * dt);
+  return q * deltaQ;
+};
+
+void Dynamics_quadcopter3d::calc(Eigen::Ref<Eigen::VectorXd> xnext,
+                                 const Eigen::Ref<const VectorXs> &x,
+                                 const Eigen::Ref<const VectorXs> &u) {
+
+  check_input_calc(xnext, x, u, nx, nu);
+  Eigen::Vector4d f = u_nominal * u;
+  // const double &f1 = u_nominal * u(0);
+  // const double &f2 = u_nominal * u(1);
+
+  CHECK_EQ(free_time, false, AT);
+  Eigen::Vector3d f_u;
+  Eigen::Vector3d tau_u;
+
+  if (force_control) {
+    Eigen::Vector4d eta = B0 * f;
+    f_u << 0, 0, eta(0);
+
+    // f_u
+    // [ 0, 0, 0, 0]   [eta(0)]    =
+    // [ 0, 0, 0, 0]   [eta(1)]
+    // [ 1, 0, 0, 0]   [eta(2)]
+    //                 [eta(3)]
+
+    // tau_u
+
+    // [ 0, 1, 0, 0]   [eta(0)]    =
+    // [ 0, 0, 1, 0]   [eta(1)]
+    // [ 0, 0, 0, 1]   [eta(2)]
+    //                 [eta(3)]
+
+    tau_u << eta(1), eta(2), eta(3);
+  } else {
+    CHECK(false, AT);
+  }
+
+  Eigen::Vector3d pos = x.head(3).head<3>();
+  Eigen::Vector4d q = x.segment(3, 4).head<4>().normalized();
+  Eigen::Vector3d vel = x.segment(7, 3).head<3>();
+  Eigen::Vector3d w = x.segment(10, 3).head<3>();
+
+  Eigen::Ref<V3d> pos_next = xnext.head(3);
+  Eigen::Ref<V4d> q_next = xnext.segment(3, 4);
+  Eigen::Ref<V3d> vel_next = xnext.segment(7, 3);
+  Eigen::Ref<V3d> w_next = xnext.segment(10, 3);
+
+  auto fa_v = Eigen::Vector3d(0, 0, 0); // drag model
+
+  Eigen::Vector3d a =
+      m_inv * (grav_v + Eigen::Quaterniond(q)._transformVector(f_u) + fa_v);
+  // easy to get derivatives :)
+  // see (174)
+  // and 170
+  //
+  // d a / d fu = m_inv * R
+
+  pos_next = pos + dt * vel;
+  vel_next = vel + dt * a;
+
+  // w is in body frame.
+  Eigen::Vector4d __q_next = qintegrate(Eigen::Quaterniond(q), w, dt).coeffs();
+  q_next = __q_next;
+
+  // derivative w.r.t w?
+
+  w_next =
+      w + dt * inverseJ_v.cwiseProduct((J_v.cwiseProduct(w)).cross(w) + tau_u);
+
+  // dw_next / d_tau = dt *  inverseJ_M
+
+  // derivative of cross product
+
+  // d / dx [ a x b ] = da / dx x b + a x db / dx
+
+  // d / dx [ Jw x w ] = J x b + a x db / dx
+
+  // J ( A x B ) = Skew(A) * JB - Skew(B) JA
+
+  // J ( Kw x w ) = Skew(k w) * Id - Skew(w) * K
+
+  // dw_next /  tau = inverseJ_
+}
+
+void Dynamics_quadcopter3d::calcDiff(Eigen::Ref<Eigen::MatrixXd> Fx,
+                                     Eigen::Ref<Eigen::MatrixXd> Fu,
+                                     const Eigen::Ref<const VectorXs> &x,
+                                     const Eigen::Ref<const VectorXs> &u) {
+
+  // std::cout << "dif" << std::endl;
+  check_input_calcdiff(Fx, Fu, x, u, nx, nu);
+
+  CHECK_EQ(free_time, false, AT);
+
+  Eigen::Vector4d f = u_nominal * u;
+
+  // todo: refactor this
+  if (force_control) {
+    Eigen::Vector4d eta = B0 * f;
+    data.f_u << 0, 0, eta(0);
+    data.tau_u << eta(1), eta(2), eta(3);
+  } else {
+    CHECK(false, AT);
+  }
+
+  Eigen::Vector4d q = x.segment(3, 4).head<4>().normalized();
+
+  // lets do some parts analytically.
+  Fx.block<3, 3>(0, 0).diagonal() = Eigen::Vector3d::Ones();
+  Fx.block<3, 3>(0, 7).diagonal() = dt * Eigen::Vector3d::Ones();
+  Fx.block<3, 3>(7, 7).diagonal() = Eigen::Vector3d::Ones();
+
+  // I compute with finite diff only the quaternions, the w and the u's
+
+  // quaternion
+  // for (size_t i = 3; i < 7; i++) {
+  //   Eigen::MatrixXd xe;
+  //   xe = x;
+  //   xe(i) += eps;
+  //   Eigen::VectorXd xnexte(nx);
+  //   xnexte.setZero();
+  //   calc(xnexte, xe, u);
+  //   auto df = (xnexte - xnext) / eps;
+  //   Fx.col(i) = df;
+  // }
+
+  // auto &&a =
+  //     m_inv * (grav_v + Eigen::Quaterniond(q)._transformVector(f_u) +
+  //     fa_v);
+
+  Eigen::Vector3d y;
+  const Eigen::Vector4d &xq = x.segment<4>(3);
+
+  rotate_with_q(xq, data.f_u, y, data.Jx, data.Ja);
+
+  Fx.block<3, 4>(7, 3).noalias() = dt * m_inv * data.Jx;
+
+  const Eigen::Vector3d &w = x.segment<3>(10);
+
+  // q_next = qintegrate(Eigen::Quaterniond(q), w, dt).coeffs();
+  Eigen::Quaterniond deltaQ = get_quat_from_ang_vel_time(w * dt);
+  Eigen::Vector4d xq_normlized;
+  Eigen::Matrix4d Jqnorm;
+  Eigen::Matrix4d J1;
+  Eigen::Matrix4d J2;
+  Eigen::Vector4d yy;
+  normalize(xq, xq_normlized, Jqnorm);
+  quat_product(xq_normlized, deltaQ.coeffs(), yy, J1, J2);
+
+  Fx.block<4, 4>(3, 3).noalias() = J1 * Jqnorm;
+
+  // angular velocity
+  // for (size_t i = 10; i < 13; i++) {
+  //   Eigen::MatrixXd xe;
+  //   xe = x;
+  //   xe(i) += eps;
+  //   Eigen::VectorXd xnexte(nx);
+  //   xnexte.setZero();
+  //   calc(xnexte, xe, u);
+  //   auto df = (xnexte - xnext) / eps;
+  //   Fx.col(i) = df;
+  // }
+
+  // w_next =
+  //     w + dt * inverseJ_v.cwiseProduct((J_v.cwiseProduct(w)).cross(w) +
+  //     tau_u);
+
+  // dw_next / d_tau = dt *  inverseJ_M
+
+  // derivative of cross product
+
+  // d / dx [ a x b ] = da / dx x b + a x db / dx
+
+  // d / dx [ Jw x w ] = J x b + a x db / dx
+
+  // J ( A x B ) = Skew(A) * JB - Skew(B) JA
+
+  // J ( Kw x w ) = Skew(k w) * Id - Skew(w) * K
+
+  finite_diff_jac(
+      [&](const Eigen::VectorXd &x, Eigen::Ref<Eigen::VectorXd> y) {
+        y = Eigen::Vector4d(qintegrate(Eigen::Quaterniond(q), x, dt).coeffs());
+      },
+      w, 4, Fx.block<4, 3>(3, 10), 1e-5);
+
+  Fx.block<3, 3>(10, 10).diagonal().setOnes();
+  Fx.block<3, 3>(10, 10).noalias() +=
+      dt * inverseJ_M * (Skew(J_v.cwiseProduct(w)) - Skew(w) * J_M);
+
+  Eigen::Matrix3d R = Eigen::Quaterniond(q).toRotationMatrix();
+
+  Fu.block<3, 4>(7, 0).noalias() = u_nominal * dt * m_inv * R * Fu_selection_B0;
+  Fu.block<3, 4>(10, 0).noalias() =
+      u_nominal * dt * inverseJ_M * Ftau_selection_B0;
+}
+
+Quaternion_cost::Quaternion_cost(size_t nx, size_t nu) : Cost(nx, nu, 1){};
+
+void Quaternion_cost::calc(Eigen::Ref<Eigen::VectorXd> r,
+                           const Eigen::Ref<const Eigen::VectorXd> &x) {
+  CHECK_GEQ(k_quat, 0., AT);
+  Eigen::Vector4d q = x.segment<4>(3);
+  r(0) = k_quat * (q.squaredNorm() - 1);
+}
+
+void Quaternion_cost::calc(Eigen::Ref<Eigen::VectorXd> r,
+                           const Eigen::Ref<const Eigen::VectorXd> &x,
+                           const Eigen::Ref<const Eigen::VectorXd> &u) {
+  calc(r, x);
+}
+
+void Quaternion_cost::calcDiff(Eigen::Ref<Eigen::MatrixXd> Jx,
+                               const Eigen::Ref<const Eigen::VectorXd> &x) {
+
+  Eigen::Vector4d q = x.segment<4>(3);
+  Jx.row(0).segment<4>(3) = (2. * k_quat) * q;
+}
+
+void Quaternion_cost::calcDiff(Eigen::Ref<Eigen::MatrixXd> Jx,
+                               Eigen::Ref<Eigen::MatrixXd> Ju,
+                               const Eigen::Ref<const Eigen::VectorXd> &x,
+                               const Eigen::Ref<const Eigen::VectorXd> &u) {
+  calcDiff(Jx, x);
 }

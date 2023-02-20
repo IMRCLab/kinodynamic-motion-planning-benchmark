@@ -22,26 +22,53 @@ void CollisionChecker::load(const std::string &filename) {
 
   std::vector<fcl::CollisionObjectf *> obstacles;
   for (const auto &obs : env["environment"]["obstacles"]) {
+    const auto &size = obs["size"];
     if (obs["type"].as<std::string>() == "box") {
-      const auto &size = obs["size"];
-      std::shared_ptr<fcl::CollisionGeometryf> geom;
-      geom.reset(new fcl::Boxf(size[0].as<float>(), size[1].as<float>(), 1.0));
-      const auto &center = obs["center"];
-      auto co = new fcl::CollisionObjectf(geom);
-      co->setTranslation(
-          fcl::Vector3f(center[0].as<float>(), center[1].as<float>(), 0));
-      co->computeAABB();
-      obstacles.push_back(co);
+
+      if (size.size() == 2) {
+        std::shared_ptr<fcl::CollisionGeometryf> geom;
+        geom.reset(
+            new fcl::Boxf(size[0].as<float>(), size[1].as<float>(), 1.0));
+        const auto &center = obs["center"];
+        auto co = new fcl::CollisionObjectf(geom);
+        co->setTranslation(
+            fcl::Vector3f(center[0].as<float>(), center[1].as<float>(), 0));
+        co->computeAABB();
+        obstacles.push_back(co);
+      } else {
+        std::shared_ptr<fcl::CollisionGeometryf> geom;
+        geom.reset(new fcl::Boxf(size[0].as<float>(), size[1].as<float>(),
+                                 size[2].as<float>()));
+        const auto &center = obs["center"];
+        auto co = new fcl::CollisionObjectf(geom);
+        co->setTranslation(fcl::Vector3f(center[0].as<float>(),
+                                         center[1].as<float>(),
+                                         center[2].as<float>()));
+        co->computeAABB();
+        obstacles.push_back(co);
+      }
     } else if (obs["type"].as<std::string>() == "sphere") {
-      const auto &size = obs["size"];
-      std::shared_ptr<fcl::CollisionGeometryf> geom;
-      geom.reset(new fcl::Spheref(size[0].as<float>()));
-      const auto &center = obs["center"];
-      auto co = new fcl::CollisionObjectf(geom);
-      co->setTranslation(
-          fcl::Vector3f(center[0].as<float>(), center[1].as<float>(), 0));
-      co->computeAABB();
-      obstacles.push_back(co);
+
+      if (size.size() == 2) {
+        std::shared_ptr<fcl::CollisionGeometryf> geom;
+        geom.reset(new fcl::Spheref(size[0].as<float>()));
+        const auto &center = obs["center"];
+        auto co = new fcl::CollisionObjectf(geom);
+        co->setTranslation(
+            fcl::Vector3f(center[0].as<float>(), center[1].as<float>(), 0));
+        co->computeAABB();
+        obstacles.push_back(co);
+      } else {
+        std::shared_ptr<fcl::CollisionGeometryf> geom;
+        geom.reset(new fcl::Spheref(size[0].as<float>()));
+        const auto &center = obs["center"];
+        auto co = new fcl::CollisionObjectf(geom);
+        co->setTranslation(fcl::Vector3f(center[0].as<float>(),
+                                         center[1].as<float>(),
+                                         center[2].as<float>()));
+        co->computeAABB();
+        obstacles.push_back(co);
+      }
     } else {
       throw std::runtime_error("Unknown obstacle type!");
     }

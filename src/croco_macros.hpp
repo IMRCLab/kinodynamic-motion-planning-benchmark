@@ -4,11 +4,26 @@
 
 
 #define NAMEOF(variable) #variable
+
+#define VAR_WITH_NAME(variable) variable, #variable
+
+
 #define STRINGIFY(x) #x
 #define TOSTRING(x) STRINGIFY(x)
 #define AT __FILE__ ":" TOSTRING(__LINE__)
 
 #define STR(x, sep) #x << sep << x
+
+
+
+#define STR_(x) #x << ": " << x
+
+
+#define FMT_E Eigen::IOFormat(6, Eigen::DontAlignCols, ",", ",", "", "", "[", "]")
+
+
+#define STR_V(x) #x << ": " << x.format(FMT_E) 
+
 
 #define CHECK(A, msg)                                                          \
   if (!A) {                                                                    \
