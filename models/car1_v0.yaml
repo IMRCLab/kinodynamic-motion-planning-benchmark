@@ -1,0 +1,13 @@
+distance_weights: [1, 0.5 , 0.5]
+num_trailers: 1
+dt: 0.1
+l: 0.25
+max_vel: 0.5
+min_vel: -0.1
+max_steering_abs: 1.047198 # PI / 3
+shape: box
+shape_trailer: box
+size: [.5, .25]
+size_trailer: [.3, .25]
+hitch_lengths: [.5]
+max_angular_vel: 10

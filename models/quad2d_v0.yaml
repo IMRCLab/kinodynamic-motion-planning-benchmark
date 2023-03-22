@@ -1,0 +1,25 @@
+distance_weights:  [ 1., .5 , .2 , .2 ] # p , R, v , w
+max_f: 1.3
+max_vel: 4       
+max_angular_vel: 8
+max_acc: 25
+max_angular_acc: 25
+dt: 0.01
+
+# Big drone
+# m: 2.5
+# I: 1.2
+# l: .5
+
+# Crazy fly - style
+m: 0.034
+I: 1e-4
+l: 0.1
+
+size: [.5, .25]
+shape:  "box"
+
+drag_against_vel: false
+k_drag_linear: .0001
+k_drag_angular: .0001
+

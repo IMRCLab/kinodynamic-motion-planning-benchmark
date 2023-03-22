@@ -1,4 +1,6 @@
 #include "ocp.hpp"
+#include "crocoddyl/core/utils/timer.hpp"
+
 
 int main(int argc, const char *argv[]) {
 
@@ -75,15 +77,27 @@ int main(int argc, const char *argv[]) {
   Result_opti result;
   crocoddyl::Timer timer;
   accumulated_time = 0.;
+
+  // TODO: in solver with binary search, update the initial guess
+  // once we found one that is feasible!
+
   compound_solvers(file_inout, result);
   double d = timer.get_duration();
   std::cout << STR_(accumulated_time) << std::endl;
 
-  std::cout << "writing results original " << std::endl;
+  std::cout << "Result summary " << std::endl;
+  std::cout << STR_(result.feasible) << std::endl;
+  std::cout << STR_(result.cost) << std::endl;
+  std::cout << STR_(result.name) << std::endl;
+  std::cout << STR_(result.name) << std::endl;
+  std::cout << STR_(result.xs_out.size()) << std::endl;
+  std::cout << STR_(result.us_out.size()) << std::endl;
+
+  std::cout << "writing results to:" << out << std::endl;
   std::ofstream file_out(out);
   result.write_yaml_db(file_out);
 
-  std::cout << "writing results benchmark " << std::endl;
+  std::cout << "writing results extended to:" << out_bench << std::endl;
   std::ofstream ff(out_bench);
   std::cout << "writing to " << out << std::endl;
   ff << "solver_name: " << opti_params.solver_name << std::endl;
@@ -95,4 +109,12 @@ int main(int argc, const char *argv[]) {
   ff << "time_stamp: " << get_time_stamp() << std::endl;
   ff << "solver_file: " << yaml_solver_file << std::endl;
   ff << "problem_file: " << yaml_problem_file << std::endl;
+
+  if (result.feasible) {
+    std::cout << "croco success -- returning " << std::endl;
+    return EXIT_SUCCESS;
+  } else {
+    std::cout << "croco failed -- returning " << std::endl;
+    return EXIT_FAILURE;
+  }
 }

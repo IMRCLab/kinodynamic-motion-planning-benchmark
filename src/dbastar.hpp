@@ -228,7 +228,7 @@ struct AStarNode {
   bool valid = true;
 };
 
-float heuristic(std::shared_ptr<Robot> robot, const ob::State *s,
+float heuristic(std::shared_ptr<RobotOmpl> robot, const ob::State *s,
                 const ob::State *g);
 
 template <typename Fun, typename... Args>
@@ -311,11 +311,11 @@ void write_heuristic_map(
 //     double resolution = .2) {
 
 bool check_edge_at_resolution(const Sample_ *start, const Sample_ *goal,
-                              std::shared_ptr<Robot> robot,
+                              std::shared_ptr<RobotOmpl> robot,
                               double resolution = .2);
 
 void build_heuristic_distance(const std::vector<Sample_ *> &batch_samples,
-                              std::shared_ptr<Robot> robot,
+                              std::shared_ptr<RobotOmpl> robot,
                               std::vector<SampleNode> &heuristic_map,
                               double distance_threshold, double resolution);
 
@@ -366,7 +366,7 @@ void print_matrix(std::ostream &out,
 
 double heuristicCollisionsTree(ompl::NearestNeighbors<HeuNode *> *T_heu,
                                const ob::State *s,
-                               std::shared_ptr<Robot> robot);
+                               std::shared_ptr<RobotOmpl> robot);
 
 enum class Duplicate_detection {
   NO = 0,
@@ -381,11 +381,14 @@ enum class Terminate_status {
   UNKNOWN = 3,
 };
 
-template <typename T>
-void set_from_boostop(po::options_description &desc, T &var, const char *name);
 
-#define NAMEOF(variable) #variable
-#define VAR_WITH_NAME(variable) variable, #variable
+template <typename T>
+void set_from_boostop(po::options_description &desc, T &var, const char *name) {
+  desc.add_options()(name, po::value<T>(&var)->default_value(var));
+}
+
+
+
 
 struct Inout_db {
 
@@ -415,14 +418,13 @@ struct Inout_db {
 
 struct Options_db {
 
-  float delta = .1;
-  float epsilon = .1;
+  float delta = .3;
+  float epsilon = 1.;
   float alpha = .5;
   bool filterDuplicates = true;
   float maxCost = std::numeric_limits<float>::infinity();
   int new_heu = 0;
   size_t max_motions = std::numeric_limits<int>::max();
-  std::string outputFile = "out.yaml";
   double resolution = .2;
   double delta_factor_goal = 1;
   double cost_delta_factor = 0;
@@ -436,7 +438,8 @@ struct Options_db {
   double epsilon_soft_duplicate = 1.5;
   bool add_node_if_better = false;
   bool debug = false;
-  bool add_after_expand = false;
+  bool add_after_expand = false; // this does not improve cost of closed nodes. it is fine if heu is admissible
+  bool propagate_controls = false; // TODO: check what happens, in the style of Raul Shome
 
   void add_options(po::options_description &desc);
 
@@ -483,15 +486,15 @@ void generate_env(YAML::Node &env,
                   std::vector<fcl::CollisionObjectf *> &obstacles,
                   fcl::BroadPhaseCollisionManagerf *bpcm_env);
 
-void load_motion_primitives(const std::string &motionsFile, Robot &robot,
+void load_motion_primitives(const std::string &motionsFile, RobotOmpl &robot,
                             std::vector<Motion> &motions, int max_motions,
                             bool cut_actions);
 
-double automatic_delta(double delta_in, double alpha, Robot &robot,
+double automatic_delta(double delta_in, double alpha, RobotOmpl &robot,
                        ompl::NearestNeighbors<Motion *> &T_m);
 
 void filte_duplicates(std::vector<Motion> &motions, double delta, double alpha,
-                      Robot &robot, ompl::NearestNeighbors<Motion *> &T_m);
+                      RobotOmpl &robot, ompl::NearestNeighbors<Motion *> &T_m);
 
 struct Heu_fun {
   virtual double h(const ompl::base::State *x) = 0;
@@ -500,10 +503,10 @@ struct Heu_fun {
 
 struct Heu_euclidean : Heu_fun {
 
-  Heu_euclidean(std::shared_ptr<Robot> robot, ob::State *goal)
+  Heu_euclidean(std::shared_ptr<RobotOmpl> robot, ob::State *goal)
       : robot(robot), goal(goal) {}
 
-  std::shared_ptr<Robot> robot;
+  std::shared_ptr<RobotOmpl> robot;
   ob::State *goal;
 
   virtual double h(const ompl::base::State *x) override {
@@ -524,10 +527,10 @@ struct Heu_blind : Heu_fun {
 
 struct Heu_roadmap : Heu_fun {
 
-  std::shared_ptr<Robot> robot;
+  std::shared_ptr<RobotOmpl> robot;
   ompl::NearestNeighbors<HeuNode *> *T_heu;
 
-  Heu_roadmap(std::shared_ptr<Robot> robot,
+  Heu_roadmap(std::shared_ptr<RobotOmpl> robot,
               ompl::NearestNeighbors<HeuNode *> *T_heu)
       : robot(robot), T_heu(T_heu) {}
 

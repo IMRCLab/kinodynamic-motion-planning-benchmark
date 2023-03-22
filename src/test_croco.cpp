@@ -1,3 +1,4 @@
+#include "robot_models.hpp"
 #include <algorithm>
 #include <cmath>
 #include <fstream>
@@ -26,7 +27,7 @@
 #include "crocoddyl/core/utils/timer.hpp"
 #include <boost/program_options.hpp>
 
-#include "collision_checker.hpp"
+// #include "collision_checker.hpp"
 #include "croco_macros.hpp"
 
 // save data without the cluster stuff
@@ -40,11 +41,14 @@
 #include <regex>
 
 #include "ocp.hpp"
+#include "croco_models.hpp"
 #include <Eigen/Dense>
 #include <iostream>
 #include <unsupported/Eigen/AutoDiff>
 
 using namespace std;
+
+Eigen::VectorXd default_vector;
 
 using namespace crocoddyl;
 
@@ -306,47 +310,193 @@ BOOST_AUTO_TEST_CASE(eigen_derivatives) {
   }
 }
 
-BOOST_AUTO_TEST_CASE(quad2d) {
+BOOST_AUTO_TEST_CASE(t_acrobot) {
+  double tol = 1e-7;
+  double margin_rate = 100;
   {
-    auto dyn = mk<Dynamics_quadcopter2d>();
-    dyn->drag_against_vel = false;
-    check_dyn(dyn, 1e-5);
-    auto dyn_free_time = mk<Dynamics_quadcopter2d>(true);
-    dyn_free_time->drag_against_vel = false;
-    check_dyn(dyn_free_time, 1e-5);
+    auto dyn = mk<Dynamics>(mks<Model_acrobot>());
+    check_dyn(dyn, tol, default_vector, default_vector, margin_rate);
+  }
+
+  {
+    auto dyn = mk<Dynamics>(mks<Model_acrobot>(), Control_Mode::default_mode);
+    check_dyn(dyn, tol, default_vector, default_vector, margin_rate);
+  }
+}
+
+BOOST_AUTO_TEST_CASE(acrobot_rollout) {
+  int T = 100; // one second
+  // auto dyn = mk<Dynamics_acrobot>();
+  auto model = mk<Model_acrobot>();
+
+  std::vector<Eigen::VectorXd> us;
+  std::vector<Eigen::VectorXd> xs;
+  for (size_t i = 0; i < T; i++) {
+    us.push_back(model->params.max_torque * .01 * Eigen::VectorXd::Random(1));
+  }
+
+  // rollout
+
+  Eigen::VectorXd xnext(4);
+  Eigen::VectorXd xold(4);
+  xold << 0, 0, 0, 0;
+  xs.push_back(xold);
+  double dt = .01;
+
+  for (size_t i = 0; i < T; i++) {
+    std::cout << "u " << us.at(i).format(FMT) << std::endl;
+    std::cout << "xold " << xold.format(FMT) << std::endl;
+    model->step(xnext, xold, us.at(i), dt);
+    std::cout << "xnext " << xnext.format(FMT) << std::endl;
+    xold = xnext;
+    xs.push_back(xold);
+  }
+
+  std::cout << "final state" << xs.back().format(FMT) << std::endl;
+}
+
+BOOST_AUTO_TEST_CASE(acrobot_rollout_free) {
+  auto model = mk<Model_acrobot>();
+  double dt = .01;
+  int T = 1. / dt; // one second
+
+  std::vector<Eigen::VectorXd> us;
+  std::vector<Eigen::VectorXd> xs;
+  for (size_t i = 0; i < T; i++) {
+    us.push_back(Eigen::VectorXd::Zero(1));
+  }
+
+  // rollout
+
+  Eigen::VectorXd xnext(4);
+  Eigen::VectorXd xold(4);
+  {
+    xold << 2.8, 0, 0, 0;
+    xs.push_back(xold);
+    double original_energy = model->calcEnergy(xold);
+    for (size_t i = 0; i < T; i++) {
+      std::cout << "i: " << i << std::endl;
+      std::cout << "u " << us.at(i).format(FMT) << std::endl;
+      std::cout << "xold " << xold.format(FMT) << std::endl;
+      model->step(xnext, xold, us.at(i), dt);
+      std::cout << "xnext " << xnext.format(FMT) << std::endl;
+      xold = xnext;
+      model->calcEnergy(xold);
+      xs.push_back(xold);
+    }
+
+    double last_energy = model->calcEnergy(xs.back());
+    BOOST_TEST(std::abs(original_energy - last_energy) <
+               4); // euler integration is very bad here!!
+  }
+
+  {
+    std::cout << "R4 " << std::endl;
+    xs.clear();
+    xold << 2.8, 0, 0, 0;
+    double original_energy = model->calcEnergy(xold);
+    for (size_t i = 0; i < T; i++) {
+      std::cout << "i: " << i << std::endl;
+      std::cout << "u " << us.at(i).format(FMT) << std::endl;
+      std::cout << "xold " << xold.format(FMT) << std::endl;
+      model->stepR4(xnext, xold, us.at(i), dt);
+      std::cout << "xnext " << xnext.format(FMT) << std::endl;
+      xold = xnext;
+      model->calcEnergy(xold);
+      xs.push_back(xold);
+    }
+    double last_energy = model->calcEnergy(xs.back());
+    BOOST_TEST(std::abs(original_energy - last_energy) < 1e-2);
+  }
+
+  // std::cout << "final state" << xs.back().format(FMT) << std::endl;
+
+  // dyn->max_torque =
+}
+
+BOOST_AUTO_TEST_CASE(quad2d) {
+  double tol = 1e-7;
+  {
+    auto dyn = mk<Dynamics>(mks<Model_quad2d>());
+    check_dyn(dyn, tol);
+  }
+  {
+    auto dyn_free_time =
+        mk<Dynamics>(mks<Model_quad2d>(), Control_Mode::free_time);
+
+    Eigen::VectorXd x(6);
+    x.setRandom();
+
+    Eigen::VectorXd u(3);
+    u.setRandom();
+    u(2) = std::fabs(u(2));
+
+    check_dyn(dyn_free_time, tol, x, u);
   }
 
   // now with drag
+  {
+
+    auto model = mks<Model_quad2d>();
+    model->params.drag_against_vel = true;
+    auto dyn = mk<Dynamics>(model);
+
+    check_dyn(dyn, tol);
+  }
 
   {
-    auto dyn = mk<Dynamics_quadcopter2d>();
-    dyn->drag_against_vel = true;
-    check_dyn(dyn, 1e-5);
-    auto dyn_free_time = mk<Dynamics_quadcopter2d>(true);
-    dyn_free_time->drag_against_vel = true;
-    check_dyn(dyn_free_time, 1e-5);
+
+    Eigen::VectorXd x(6);
+    x.setRandom();
+
+    Eigen::VectorXd u(3);
+    u.setRandom();
+    u(2) = std::fabs(u(2));
+
+    auto model = mks<Model_quad2d>();
+    model->params.drag_against_vel = true;
+    auto dyn = mk<Dynamics>(model);
+
+    auto dyn_free_time = mk<Dynamics>(model, Control_Mode::free_time);
+    check_dyn(dyn_free_time, tol, x, u);
   }
 }
 
 BOOST_AUTO_TEST_CASE(car_trailer) {
   {
-    std::cout << "without trailers " << std::endl;
-    ptr<Dynamics> dyn = mk<Dynamics_car_with_trailers>();
+    ptr<Dynamics> dyn = mk<Dynamics>(mks<Model_car_with_trailers>());
     check_dyn(dyn, 1e-5);
+  }
+  {
     ptr<Dynamics> dyn_free_time =
-        mk<Dynamics_car_with_trailers>(Eigen::VectorXd(), true);
-    check_dyn(dyn_free_time, 1e-5);
+        mk<Dynamics>(mks<Model_car_with_trailers>(), Control_Mode::free_time);
+
+    Eigen::VectorXd x(dyn_free_time->nx);
+    Eigen::VectorXd u(dyn_free_time->nu);
+    x.setRandom();
+    u.setRandom();
+    u(u.size() - 1) = std::fabs(u(u.size() - 1));
+
+    check_dyn(dyn_free_time, 1e-5, x, u);
   }
 
   {
-    std::cout << "with 1 trailer" << std::endl;
-    Eigen::VectorXd c(1);
-    c << .5;
-    ptr<Dynamics> dyn = mk<Dynamics_car_with_trailers>(c, false);
+    ptr<Dynamics> dyn = mk<Dynamics>(mks<Model_car_with_trailers>());
     check_dyn(dyn, 1e-5);
+  }
 
-    ptr<Dynamics> dyn_free_time = mk<Dynamics_car_with_trailers>(c, true);
-    check_dyn(dyn_free_time, 1e-5);
+  {
+
+    ptr<Dynamics> dyn_free_time =
+        mk<Dynamics>(mks<Model_car_with_trailers>(), Control_Mode::free_time);
+
+    Eigen::VectorXd x(dyn_free_time->nx);
+    Eigen::VectorXd u(dyn_free_time->nu);
+    x.setRandom();
+    u.setRandom();
+    u(u.size() - 1) = std::fabs(u(u.size() - 1));
+
+    check_dyn(dyn_free_time, 1e-5, x, u);
   }
 }
 
@@ -355,9 +505,14 @@ BOOST_AUTO_TEST_CASE(t_qintegrate) {
   Eigen::Quaterniond q = Eigen::Quaterniond(0, 0, 0, 1);
   double dt = .01;
   Eigen::Vector3d omega{0, 0, 1};
-  auto out = qintegrate(q, omega, dt);
 
-  std::cout << "out\n" << out.coeffs() << std::endl;
+  Eigen::Vector4d out;
+  Eigen::Vector4d ye;
+  Eigen::Vector4d deltaQ;
+  __get_quat_from_ang_vel_time(omega * dt, deltaQ, nullptr);
+  quat_product(q.coeffs(), deltaQ, out, nullptr, nullptr);
+
+  std::cout << "out\n" << out << std::endl;
 
   Eigen::MatrixXd JqD(4, 4);
   double eps = 1e-6;
@@ -367,8 +522,12 @@ BOOST_AUTO_TEST_CASE(t_qintegrate) {
     qe = q.coeffs();
     qe(i) += eps;
     // qe.normalize();
-    auto ye = qintegrate(Eigen::Quaterniond(qe), omega, dt);
-    auto df = (ye.coeffs() - out.coeffs()) / eps;
+
+    Eigen::Vector4d ye;
+    Eigen::Vector4d deltaQ;
+    __get_quat_from_ang_vel_time(omega * dt, deltaQ, nullptr);
+    quat_product(qe, deltaQ, ye, nullptr, nullptr);
+    auto df = (ye - out) / eps;
     JqD.col(i) = df;
   }
 
@@ -377,8 +536,12 @@ BOOST_AUTO_TEST_CASE(t_qintegrate) {
     Eigen::Vector3d omegae;
     omegae = omega;
     omegae(i) += eps;
-    auto ye = qintegrate(q, omegae, dt);
-    auto df = (ye.coeffs() - out.coeffs()) / eps;
+    Eigen::Vector4d ye;
+    Eigen::Vector4d deltaQ;
+    __get_quat_from_ang_vel_time(omegae * dt, deltaQ, nullptr);
+    quat_product(q.coeffs(), deltaQ, ye, nullptr, nullptr);
+
+    auto df = (ye - out) / eps;
     JomegaD.col(i) = df;
   }
 
@@ -386,6 +549,7 @@ BOOST_AUTO_TEST_CASE(t_qintegrate) {
   std::cout << JomegaD << std::endl;
   std::cout << "q" << std::endl;
   std::cout << JqD << std::endl;
+  // TODO: check the diffs against analytic!!
 }
 
 BOOST_AUTO_TEST_CASE(t_quat_product) {
@@ -400,7 +564,7 @@ BOOST_AUTO_TEST_CASE(t_quat_product) {
   Eigen::Matrix4d Jp;
   Eigen::Matrix4d Jq;
 
-  quat_product(p, q, out, Jp, Jq);
+  quat_product(p, q, out, &Jp, &Jq);
 
   Eigen::Quaterniond out_eigen = Eigen::Quaterniond(p) * Eigen::Quaterniond(q);
 
@@ -426,13 +590,13 @@ BOOST_AUTO_TEST_CASE(t_quat_product) {
 
   finite_diff_jac(
       [&](const Eigen::VectorXd &x, Eigen::Ref<Eigen::VectorXd> y) {
-        quat_product(x, q, y, __Jp, __Jq);
+        quat_product(x, q, y, &__Jp, &__Jq);
       },
       p, 4, JpD);
 
   finite_diff_jac(
       [&](const Eigen::VectorXd &x, Eigen::Ref<Eigen::VectorXd> y) {
-        quat_product(p, x, y, __Jp, __Jq);
+        quat_product(p, x, y, &__Jp, &__Jq);
       },
       p, 4, JqD);
 
@@ -465,10 +629,102 @@ BOOST_AUTO_TEST_CASE(t_quat_product) {
   CHECK(check3, AT);
 }
 
+BOOST_AUTO_TEST_CASE(exp_map_quat) {
+
+  using Matrix43d = Eigen::Matrix<double, 4, 3>;
+  {
+    Eigen::Vector3d v(-.1, .1, .2);
+    Eigen::Vector4d q;
+    Matrix43d J(4, 3);
+    Matrix43d Jd(4, 3);
+
+    __get_quat_from_ang_vel_time(v, q, &J);
+
+    std::cout << "q " << q.format(FMT) << std::endl;
+
+    Eigen::Quaterniond ref;
+    ref = get_quat_from_ang_vel_time(v);
+    std::cout << "ref " << ref.coeffs().format(FMT) << std::endl;
+
+    finite_diff_jac(
+        [&](const Eigen::VectorXd &xx, Eigen::Ref<Eigen::VectorXd> y) {
+          return __get_quat_from_ang_vel_time(xx, y);
+        },
+        v, 4, Jd, 1e-8);
+
+    std::cout << "error \n"
+              << (Jd - J) << std::endl
+              << "norm " << (Jd - J).norm() << std::endl;
+
+    BOOST_TEST((ref.coeffs() - q).norm() <= 1e-7);
+    BOOST_TEST((Jd - J).norm() <= 1e-7);
+  }
+
+  {
+    Eigen::Vector3d v(-.1, .1, .2);
+    v *= 1e-12;
+    Eigen::Vector4d q;
+
+    Matrix43d J(4, 3);
+    Matrix43d Jd(4, 3);
+    __get_quat_from_ang_vel_time(v, q, &J);
+
+    std::cout << "q " << q.format(FMT) << std::endl;
+
+    Eigen::Quaterniond ref;
+    ref = get_quat_from_ang_vel_time(v);
+    std::cout << "ref " << ref.coeffs().format(FMT) << std::endl;
+
+    finite_diff_jac(
+        [&](const Eigen::VectorXd &xx, Eigen::Ref<Eigen::VectorXd> y) {
+          return __get_quat_from_ang_vel_time(xx, y);
+        },
+        v, 4, Jd, 1e-9);
+
+    std::cout << "error \n"
+              << (Jd - J) << std::endl
+              << "norm " << (Jd - J).norm() << std::endl;
+
+    BOOST_TEST((Jd - J).norm() <= 1e-7);
+    BOOST_TEST((ref.coeffs() - q).norm() <= 1e-7);
+  }
+
+  {
+    Eigen::Vector3d v(0., 0., 0.);
+    v *= 1e-12;
+    Eigen::Vector4d q;
+
+    Matrix43d J(4, 3);
+    Matrix43d Jd(4, 3);
+    __get_quat_from_ang_vel_time(v, q, &J);
+
+    std::cout << "q " << q.format(FMT) << std::endl;
+
+    Eigen::Quaterniond ref;
+    ref = get_quat_from_ang_vel_time(v);
+    std::cout << "ref " << ref.coeffs().format(FMT) << std::endl;
+
+    finite_diff_jac(
+        [&](const Eigen::VectorXd &xx, Eigen::Ref<Eigen::VectorXd> y) {
+          return __get_quat_from_ang_vel_time(xx, y);
+        },
+        v, 4, Jd, 1e-13);
+
+    std::cout << Jd << std::endl;
+    std::cout << J << std::endl;
+    std::cout << "error \n"
+              << (Jd - J) << std::endl
+              << "norm " << (Jd - J).norm() << std::endl;
+
+    BOOST_TEST((Jd - J).norm() <= 1e-7);
+    BOOST_TEST((ref.coeffs() - q).norm() <= 1e-7);
+  }
+}
+
 BOOST_AUTO_TEST_CASE(quad3d_bench_time) {
 
   size_t N = 1000;
-  ptr<Dynamics> dyn = mk<Dynamics_quadcopter3d>();
+  ptr<Dynamics> dyn = mk<Dynamics>(mks<Model_quad3d>());
 
   Eigen::VectorXd xnext(13);
   xnext.setZero();
@@ -502,27 +758,66 @@ BOOST_AUTO_TEST_CASE(quad3d_bench_time) {
     }
     std::cout << timer.get_duration() << std::endl;
   }
+
+  {
+    crocoddyl::Timer timer;
+
+    Eigen::MatrixXd Fxd(nx, nx);
+    Eigen::MatrixXd Fud(nx, nu);
+    Fxd.setZero();
+    Fud.setZero();
+    for (size_t i = 0; i < N; i++) {
+      finite_diff_jac(
+          [&](const Eigen::VectorXd &xx, Eigen::Ref<Eigen::VectorXd> y) {
+            return dyn->calc(y, xx, u);
+          },
+          x, 13, Fxd);
+
+      finite_diff_jac(
+          [&](const Eigen::VectorXd &xx, Eigen::Ref<Eigen::VectorXd> y) {
+            return dyn->calc(y, x, xx);
+          },
+          u, 13, Fud);
+    }
+    std::cout << timer.get_duration() << std::endl;
+  }
 }
 
 BOOST_AUTO_TEST_CASE(quad3d) {
-  ptr<Dynamics> dyn = mk<Dynamics_quadcopter3d>();
-  check_dyn(dyn, 1e-5);
+  ptr<Dynamics> dyn = mk<Dynamics>(mks<Model_quad3d>());
+  check_dyn(dyn, 1e-6);
 }
 
 BOOST_AUTO_TEST_CASE(unicycle2) {
-  ptr<Dynamics> dyn = mk<Dynamics_unicycle2>();
+  ptr<Dynamics> dyn = mk<Dynamics>(mks<Model_unicycle2>());
   check_dyn(dyn, 1e-5);
-  ptr<Dynamics> dyn_free_time = mk<Dynamics_unicycle2>(true);
-  check_dyn(dyn_free_time, 1e-5);
+
+  {
+    Eigen::VectorXd x(5);
+    x.setRandom();
+
+    Eigen::VectorXd u(3);
+    u.setRandom();
+    u(2) = std::fabs(u(2));
+
+    ptr<Dynamics> dyn_free_time =
+        mk<Dynamics>(mks<Model_unicycle2>(), Control_Mode::free_time);
+    check_dyn(dyn_free_time, 1e-5, x, u);
+  }
 }
 
 BOOST_AUTO_TEST_CASE(test_unifree) {
-  ptr<Dynamics> dyn = mk<Dynamics_unicycle>();
+
+  ptr<Dynamics> dyn =
+      mk<Dynamics>(mks<Model_unicycle1>(), Control_Mode::default_mode);
+
   check_dyn(dyn, 1e-5);
-  ptr<Dynamics> dyn_free_time = mk<Dynamics_unicycle>(true);
+  ptr<Dynamics> dyn_free_time =
+      mk<Dynamics>(mks<Model_unicycle1>(), Control_Mode::free_time);
   check_dyn(dyn, 1e-5);
 }
 
+#if 0 
 BOOST_AUTO_TEST_CASE(contour) {
 
   size_t num_time_steps = 9;
@@ -601,6 +896,7 @@ BOOST_AUTO_TEST_CASE(contour) {
   BOOST_TEST((Jx - Jxdif).norm());
   BOOST_TEST((Ju - Judif).norm());
 }
+#endif
 
 BOOST_AUTO_TEST_CASE(linear_interpolation) {
 
@@ -641,14 +937,16 @@ BOOST_AUTO_TEST_CASE(linear_interpolation) {
   // add some test?
 }
 
+#if 0
 BOOST_AUTO_TEST_CASE(traj_opt_no_bounds) {
 
   opti_params = Opti_params();
 
   File_parser_inout file_inout;
-  file_inout.env_file = "../benchmark/unicycle_first_order_0/bugtrap_0.yaml";
-  file_inout.init_guess =
-      "../test/unicycle_first_order_0/guess_bugtrap_0_sol0.yaml";
+  file_inout.env_file = "../benchmark/unicycle_first_order_0/"
+                        "bugtrap_0.yaml";
+  file_inout.init_guess = "../test/unicycle_first_order_0/"
+                          "guess_bugtrap_0_sol0.yaml";
 
   opti_params.control_bounds = 0;
   opti_params.solver_id = static_cast<int>(SOLVER::traj_opt);
@@ -659,29 +957,15 @@ BOOST_AUTO_TEST_CASE(traj_opt_no_bounds) {
   compound_solvers(file_inout, result);
   BOOST_TEST(result.feasible);
 }
-
-bool check_equal(Eigen::MatrixXd A, Eigen::MatrixXd B, double rtol,
-                 double atol) {
-
-  CHECK_EQ(A.rows(), B.rows(), AT);
-  CHECK_EQ(A.cols(), B.cols(), AT);
-
-  auto dif = (A - B).cwiseAbs();
-  auto max_cwise = A.cwiseAbs().cwiseMax(B.cwiseAbs());
-
-  auto tmp = dif - (rtol * max_cwise +
-                    atol * Eigen::MatrixXd::Ones(A.rows(), A.cols()));
-  // all element in tmp shoulb be negative
-  return (tmp.array() <= 0).all();
-}
+#endif
 
 BOOST_AUTO_TEST_CASE(jac_quadrotor) {
+
   opti_params = Opti_params();
   opti_params.disturbance = 1e-7;
   size_t nx(13), nu(4);
   size_t N = 5;
 
-  ptr<CollisionChecker> cl = nullptr;
 
   {
 
@@ -714,17 +998,15 @@ BOOST_AUTO_TEST_CASE(jac_quadrotor) {
     //
     //
 
-    // std::vector<Eigen::VectorXd> us(N, Eigen::VectorXd::Random(4));
+    auto model_robot = mks<Model_quad3d>();
 
-    // issue with the goal!!
-    //
     Generate_params gen_args;
     gen_args.name = "quadrotor_0";
     gen_args.N = N;
     opti_params.use_finite_diff = 0;
     gen_args.goal = goal;
     gen_args.start = start;
-    gen_args.cl = cl;
+    gen_args.model_robot = model_robot;
 
     auto problem = generate_problem(gen_args, nx, nu);
     problem->calc(xs, us);
@@ -749,7 +1031,8 @@ BOOST_AUTO_TEST_CASE(jac_quadrotor) {
     std::cout << data_terminal->Lx << std::endl;
 
     // - data_terminal->Lx).isZero(tol));
-    // BOOST_CHECK((data_terminal_diff->Lx - data_terminal->Lx).isZero(tol));
+    // BOOST_CHECK((data_terminal_diff->Lx -
+    // data_terminal->Lx).isZero(tol));
     //
     BOOST_CHECK(
         check_equal(data_terminal_diff->Lx, data_terminal->Lx, tol, tol));
@@ -799,26 +1082,25 @@ BOOST_AUTO_TEST_CASE(test_jacobians) {
   ptr<Interpolator> interpolator =
       mk<Interpolator>(Eigen::Vector2d({-2., 3.}), path);
 
-  auto cl = mk<CollisionChecker>();
-  cl->load("../benchmark/unicycle_first_order_0/bugtrap_0.yaml");
 
+
+  std::shared_ptr<Model_robot> model_robot = mks<Model_unicycle1>();
   {
 
-    Eigen::VectorXd goal = Eigen::VectorXd::Random(4);
+    Eigen::VectorXd goal = Eigen::VectorXd::Random(3);
     Eigen::VectorXd start = Eigen::VectorXd::Random(4);
 
     std::vector<Eigen::VectorXd> xs(N + 1, Eigen::VectorXd::Random(4));
     std::vector<Eigen::VectorXd> us(N, Eigen::VectorXd::Random(3));
 
-    // issue with the goal!!
-    //
     Generate_params gen_args;
-    gen_args.name = "unicycle_first_order_0";
+    gen_args.name = "unicycle1_v0";
     gen_args.N = 5;
     opti_params.use_finite_diff = 0;
     gen_args.goal = goal;
     gen_args.start = start;
-    gen_args.cl = cl;
+    // gen_args.cl = cl;
+    gen_args.model_robot = model_robot;
     gen_args.contour_control = true;
     gen_args.interpolator = interpolator;
 
@@ -838,14 +1120,15 @@ BOOST_AUTO_TEST_CASE(test_jacobians) {
 
     double tol = 1e-3;
 
-    // BOOST_CHECK((
-    std::cout << data_terminal_diff->Lx << std::endl;
-    std::cout << data_terminal->Lx << std::endl;
-
     // - data_terminal->Lx).isZero(tol));
-    // BOOST_CHECK((data_terminal_diff->Lx - data_terminal->Lx).isZero(tol));
+    // BOOST_CHECK((data_terminal_diff->Lx -
+    // data_terminal->Lx).isZero(tol));
     BOOST_CHECK(
         check_equal(data_terminal_diff->Lx, data_terminal->Lx, tol, tol));
+
+    BOOST_CHECK(
+        check_equal(data_terminal_diff->Lxx, data_terminal->Lxx, tol, tol));
+
     std::cout << data_terminal_diff->Lx << std::endl;
     std::cout << data_terminal->Lx << std::endl;
 
@@ -859,9 +1142,15 @@ BOOST_AUTO_TEST_CASE(test_jacobians) {
       BOOST_CHECK(check_equal(d_diff->Lu, d->Lu, tol, tol));
       BOOST_CHECK(check_equal(d_diff->Fx, d->Fx, tol, tol));
       BOOST_CHECK(check_equal(d_diff->Fu, d->Fu, tol, tol));
+
+      BOOST_CHECK(check_equal(d_diff->Lxx, d->Lxx, tol, tol));
+      BOOST_CHECK(check_equal(d_diff->Lxu, d->Lxu, tol, tol));
+      // BOOST_CHECK(check_equal(d_diff->Luu, d->Luu, tol, tol)); //NOTE: it
+      // will give false because of Finite diff use gauss newton
     }
   }
 
+#if 1
   {
 
     Generate_params gen_args;
@@ -877,7 +1166,7 @@ BOOST_AUTO_TEST_CASE(test_jacobians) {
     opti_params.use_finite_diff = false;
     gen_args.goal = goal;
     gen_args.start = start;
-    gen_args.cl = cl;
+    gen_args.model_robot = model_robot;
     gen_args.contour_control = false;
 
     auto problem = generate_problem(gen_args, nx, nu);
@@ -916,7 +1205,7 @@ BOOST_AUTO_TEST_CASE(test_jacobians) {
 
     Generate_params gen_args;
 
-    Eigen::VectorXd goal = Eigen::VectorXd::Random(4);
+    Eigen::VectorXd goal = Eigen::VectorXd::Random(3);
     Eigen::VectorXd start = Eigen::VectorXd::Random(4);
 
     std::vector<Eigen::VectorXd> xs(N + 1, Eigen::VectorXd::Random(4));
@@ -927,7 +1216,7 @@ BOOST_AUTO_TEST_CASE(test_jacobians) {
     opti_params.use_finite_diff = 0;
     gen_args.goal = goal;
     gen_args.start = start;
-    gen_args.cl = cl;
+    gen_args.model_robot = model_robot;
     gen_args.interpolator = interpolator;
     gen_args.contour_control = true;
     gen_args.linear_contour = true;
@@ -964,6 +1253,7 @@ BOOST_AUTO_TEST_CASE(test_jacobians) {
       BOOST_CHECK(check_equal(d_diff->Fu, d->Fu, tol, tol));
     }
   }
+#endif
 }
 
 BOOST_AUTO_TEST_CASE(state_bounds) {
@@ -994,26 +1284,70 @@ BOOST_AUTO_TEST_CASE(state_bounds) {
   Eigen::VectorXd r(4);
 
   state_bounds->calc(r, x, u);
-  state_bounds->calcDiff(Jx, Ju, x, u);
 
-  std::cout << "r: " << r.format(FMT) << std::endl;
+  Eigen::VectorXd Lx(4);
+  Eigen::VectorXd Lu(4);
+  Eigen::MatrixXd Lxx(4, 4);
+  Eigen::MatrixXd Luu(4, 4);
+  Eigen::MatrixXd Lxu(4, 4);
 
-  finite_diff_cost(state_bounds, Jxdiff, Judiff, x, u, nr);
+  Eigen::VectorXd Lxdiff(4);
+  Eigen::VectorXd Ludiff(4);
+  Eigen::MatrixXd Lxxdiff(4, 4);
+  Eigen::MatrixXd Luudiff(4, 4);
+  Eigen::MatrixXd Lxudiff(4, 4);
+
+  Lx.setZero();
+  Lu.setZero();
+  Lxx.setZero();
+  Luu.setZero();
+  Lxu.setZero();
+
+  state_bounds->calcDiff(Lx, Lu, Lxx, Luu, Lxu, x, u);
+
+  finite_diff_grad(
+      [&](auto &y) {
+        state_bounds->calc(r, y, u);
+        return .5 * r.dot(r);
+      },
+      x, Lxdiff);
+
+  finite_diff_grad(
+      [&](auto &y) {
+        state_bounds->calc(r, x, y);
+        return .5 * r.dot(r);
+      },
+      u, Ludiff);
+
+  finite_diff_hess(
+      [&](auto &y) {
+        state_bounds->calc(r, y, u);
+        return .5 * r.dot(r);
+      },
+      x, Lxxdiff);
+
+  finite_diff_hess(
+      [&](auto &y) {
+        state_bounds->calc(r, x, y);
+        return .5 * r.dot(r);
+      },
+      u, Luudiff);
 
   double tol = 1e-3;
-  BOOST_CHECK(check_equal(Jx, Jxdiff, tol, tol));
-  BOOST_CHECK(check_equal(Ju, Judiff, tol, tol));
-  // compute the jacobians with finite diff
+  BOOST_CHECK(check_equal(Lx, Lxdiff, tol, tol));
+  BOOST_CHECK(check_equal(Lu, Ludiff, tol, tol));
+  BOOST_CHECK(check_equal(Lxx, Lxxdiff, tol, tol));
+  BOOST_CHECK(check_equal(Luu, Luudiff, tol, tol));
 }
 
 BOOST_AUTO_TEST_CASE(contour_park_raw) {
 
   opti_params = Opti_params();
   File_parser_inout file_inout;
-  file_inout.env_file =
-      "../benchmark/unicycle_first_order_0/parallelpark_0.yaml";
-  file_inout.init_guess =
-      "../test/unicycle_first_order_0/guess_parallelpark_0_sol0.yaml";
+  file_inout.env_file = "../benchmark/unicycle_first_order_0/"
+                        "parallelpark_0.yaml";
+  file_inout.init_guess = "../test/unicycle_first_order_0/"
+                          "guess_parallelpark_0_sol0.yaml";
 
   opti_params.control_bounds = 1;
   opti_params.use_finite_diff = 0;
@@ -1038,32 +1372,38 @@ BOOST_AUTO_TEST_CASE(contour_park_easy) {
 
   opti_params = Opti_params();
   File_parser_inout file_inout;
-  file_inout.env_file =
-      "../benchmark/unicycle_first_order_0/parallelpark_0.yaml";
+  file_inout.env_file = "../benchmark/unicycle_first_order_0/"
+                        "parallelpark_0.yaml";
   file_inout.init_guess = "../build_debug/smooth_park_debug.yaml";
 
   opti_params.control_bounds = true;
   opti_params.use_finite_diff = false;
   opti_params.k_linear = 10.;
   opti_params.k_contour = 2.;
+  opti_params.weight_goal = 300;
 
   opti_params.use_warmstart = true;
   opti_params.solver_id = static_cast<int>(SOLVER::mpcc_linear);
-  opti_params.max_iter = 50;
+  opti_params.max_iter = 20;
 
   Result_opti result;
   compound_solvers(file_inout, result);
   BOOST_TEST(result.feasible);
+
+  std::string filename = "out.yaml";
+  std::cout << "writing results to:" << filename << std::endl;
+  std::ofstream file_out(filename);
+  result.write_yaml_db(file_out);
 }
 
 BOOST_AUTO_TEST_CASE(parallel_small_step_good_init_guess) {
   opti_params = Opti_params();
 
   File_parser_inout file_inout;
-  file_inout.env_file =
-      "../benchmark/unicycle_first_order_0/parallelpark_0.yaml";
-  file_inout.init_guess =
-      "../test/unicycle_first_order_0/guess_parallelpark_mpcc.yaml";
+  file_inout.env_file = "../benchmark/unicycle_first_order_0/"
+                        "parallelpark_0.yaml";
+  file_inout.init_guess = "../test/unicycle_first_order_0/"
+                          "guess_parallelpark_mpcc.yaml";
 
   opti_params.solver_id = static_cast<int>(SOLVER::mpcc_linear);
   opti_params.control_bounds = 1;
@@ -1083,13 +1423,68 @@ BOOST_AUTO_TEST_CASE(parallel_small_step_good_init_guess) {
   BOOST_TEST_CHECK(result.cost <= 3.3);
 }
 
+
+BOOST_AUTO_TEST_CASE(bugtrap_so2_hard) {
+
+  opti_params = Opti_params();
+  File_parser_inout file_inout;
+  file_inout.env_file = "../benchmark/unicycle_first_order_0/"
+                        "bugtrap_0.yaml";
+  file_inout.init_guess = "../test/unicycle_first_order_0/guess_bugtrap_0_sol1.yaml";
+
+  opti_params.solver_id = static_cast<int>(SOLVER::traj_opt);
+  opti_params.control_bounds = 1;
+  opti_params.use_warmstart = 1;
+  opti_params.window_shift = 10;
+  opti_params.window_optimize = 40;
+  opti_params.smooth_traj = 0;
+  opti_params.k_linear = 10.;
+  opti_params.k_contour = 10.;
+  opti_params.weight_goal = 200;
+
+  Result_opti result;
+  compound_solvers(file_inout, result);
+  BOOST_TEST_CHECK(result.feasible);
+  BOOST_TEST_CHECK(result.cost <= 27.91);
+}
+
+
+BOOST_AUTO_TEST_CASE(bugtrap_so2_easy) {
+
+  opti_params = Opti_params();
+  File_parser_inout file_inout;
+  file_inout.env_file = "../benchmark/unicycle_first_order_0/"
+                        "bugtrap_0.yaml";
+  file_inout.init_guess = "../test/unicycle_first_order_0/guess_bugtrap_0_sol0.yaml";
+
+  opti_params.solver_id = static_cast<int>(SOLVER::traj_opt);
+  opti_params.control_bounds = 1;
+  opti_params.use_warmstart = 1;
+  opti_params.window_shift = 10;
+  opti_params.window_optimize = 40;
+  opti_params.smooth_traj = 1;
+  opti_params.k_linear = 10.;
+  opti_params.k_contour = 10.;
+  opti_params.weight_goal = 200;
+
+  Result_opti result;
+  compound_solvers(file_inout, result);
+  BOOST_TEST_CHECK(result.feasible);
+  BOOST_TEST_CHECK(result.cost <= 24.2);
+}
+
+
+
+
+
 BOOST_AUTO_TEST_CASE(bugtrap_bad_init_guess) {
 
   opti_params = Opti_params();
   File_parser_inout file_inout;
-  file_inout.env_file = "../benchmark/unicycle_first_order_0/bugtrap_0.yaml";
-  file_inout.init_guess =
-      "../test/unicycle_first_order_0/guess_bugtrap_0_sol0.yaml";
+  file_inout.env_file = "../benchmark/unicycle_first_order_0/"
+                        "bugtrap_0.yaml";
+  file_inout.init_guess = "../test/unicycle_first_order_0/"
+                          "guess_bugtrap_0_sol0.yaml";
 
   opti_params.solver_id = static_cast<int>(SOLVER::mpcc_linear);
   opti_params.control_bounds = 1;
@@ -1111,9 +1506,10 @@ BOOST_AUTO_TEST_CASE(bugtrap_good_init_guess) {
 
   opti_params = Opti_params();
   File_parser_inout file_inout;
-  file_inout.env_file = "../benchmark/unicycle_first_order_0/bugtrap_0.yaml";
-  file_inout.init_guess =
-      "../test/unicycle_first_order_0/guess_bugtrap_0_mpcc.yaml";
+  file_inout.env_file = "../benchmark/unicycle_first_order_0/"
+                        "bugtrap_0.yaml";
+  file_inout.init_guess = "../test/unicycle_first_order_0/"
+                          "guess_bugtrap_0_mpcc.yaml";
 
   opti_params.solver_id = static_cast<int>(SOLVER::mpcc_linear);
   opti_params.control_bounds = 1;
@@ -1135,10 +1531,10 @@ BOOST_AUTO_TEST_CASE(parallel_free_time) {
 
   opti_params = Opti_params();
   File_parser_inout file_inout;
-  file_inout.env_file =
-      "../benchmark/unicycle_first_order_0/parallelpark_0.yaml";
-  file_inout.init_guess =
-      "../test/unicycle_first_order_0/guess_parallelpark_0_sol0.yaml";
+  file_inout.env_file = "../benchmark/unicycle_first_order_0/"
+                        "parallelpark_0.yaml";
+  file_inout.init_guess = "../test/unicycle_first_order_0/"
+                          "guess_parallelpark_0_sol0.yaml";
 
   opti_params.solver_id = static_cast<int>(SOLVER::traj_opt_free_time);
   opti_params.control_bounds = 1;
@@ -1155,10 +1551,10 @@ BOOST_AUTO_TEST_CASE(parallel_bad_init_guess) {
 
   opti_params = Opti_params();
   File_parser_inout file_inout;
-  file_inout.env_file =
-      "../benchmark/unicycle_first_order_0/parallelpark_0.yaml";
-  file_inout.init_guess =
-      "../test/unicycle_first_order_0/guess_parallelpark_0_sol0.yaml";
+  file_inout.env_file = "../benchmark/unicycle_first_order_0/"
+                        "parallelpark_0.yaml";
+  file_inout.init_guess = "../test/unicycle_first_order_0/"
+                          "guess_parallelpark_0_sol0.yaml";
 
   opti_params.solver_id = static_cast<int>(SOLVER::mpcc_linear);
   opti_params.control_bounds = 1;
@@ -1181,16 +1577,21 @@ BOOST_AUTO_TEST_CASE(parallel_search_time) {
 
   opti_params = Opti_params();
   File_parser_inout file_inout;
-  file_inout.env_file =
-      "../benchmark/unicycle_first_order_0/parallelpark_0.yaml";
-  file_inout.init_guess =
-      "../test/unicycle_first_order_0/guess_parallelpark_0_sol0.yaml";
+  file_inout.env_file = "../benchmark/unicycle_first_order_0/"
+                        "parallelpark_0.yaml";
+  file_inout.init_guess = "../test/unicycle_first_order_0/"
+                          "guess_parallelpark_0_sol0.yaml";
 
-  // (opti) ⋊> ~/s/w/k/build_debug on dev ⨯ make -j4 &&  ./test_croco
-  // --run_test=quim --  --env ../benchmark/uni
-  // cycle_first_order_0/parallelpark_0.yaml  --waypoints
-  // ../test/unicycle_first_order_0/guess_parallelpark_0_so l0.yaml  --out
-  // out.yaml --solver 9 --control_bounds 1 --use_warmstart 1 > quim.txt
+  // (opti) ⋊> ~/s/w/k/build_debug on dev ⨯
+  // make -j4 &&  ./test_croco
+  // --run_test=quim --  --env
+  // ../benchmark/uni
+  // cycle_first_order_0/parallelpark_0.yaml
+  // --waypoints
+  // ../test/unicycle_first_order_0/guess_parallelpark_0_so
+  // l0.yaml  --out out.yaml --solver 9
+  // --control_bounds 1 --use_warmstart 1 >
+  // quim.txt
 
   opti_params.solver_id = static_cast<int>(SOLVER::time_search_traj_opt);
   opti_params.control_bounds = 1;
@@ -1207,9 +1608,10 @@ BOOST_AUTO_TEST_CASE(bugtrap_bad_mpc_adaptative) {
 
   opti_params = Opti_params();
   File_parser_inout file_inout;
-  file_inout.env_file = "../benchmark/unicycle_first_order_0/bugtrap_0.yaml";
-  file_inout.init_guess =
-      "../test/unicycle_first_order_0/guess_bugtrap_0_sol0.yaml";
+  file_inout.env_file = "../benchmark/unicycle_first_order_0/"
+                        "bugtrap_0.yaml";
+  file_inout.init_guess = "../test/unicycle_first_order_0/"
+                          "guess_bugtrap_0_sol0.yaml";
 
   opti_params.solver_id = static_cast<int>(SOLVER::mpc_adaptative);
 
@@ -1233,9 +1635,10 @@ BOOST_AUTO_TEST_CASE(kink_mpcc) {
 
   opti_params = Opti_params();
   File_parser_inout file_inout;
-  file_inout.env_file = "../benchmark/unicycle_first_order_0/kink_0.yaml";
-  file_inout.init_guess =
-      "../test/unicycle_first_order_0/guess_kink_0_sol0.yaml";
+  file_inout.env_file = "../benchmark/unicycle_first_order_0/"
+                        "kink_0.yaml";
+  file_inout.init_guess = "../test/unicycle_first_order_0/"
+                          "guess_kink_0_sol0.yaml";
 
   opti_params.solver_id = static_cast<int>(SOLVER::mpcc_linear);
   opti_params.control_bounds = 1;
@@ -1301,8 +1704,8 @@ BOOST_AUTO_TEST_CASE(t_normalize) {
 //  Then, I can compute the derivatives and
 
 BOOST_AUTO_TEST_CASE(matrix_rotation) {
-  // very big error. Compute the rotation of a vector.
-  // check with finite diff.
+  // very big error. Compute the rotation of a
+  // vector. check with finite diff.
 
   Eigen::MatrixXd Jq(3, 4);
   Eigen::Matrix3d Ja;
@@ -1372,10 +1775,10 @@ BOOST_AUTO_TEST_CASE(second_order_park_traj_opt) {
 
   opti_params = Opti_params();
   File_parser_inout file_inout;
-  file_inout.env_file =
-      "../benchmark/unicycle_second_order_0/parallelpark_0.yaml";
-  file_inout.init_guess =
-      "../test/unicycle_second_order_0/guess_parallelpark_0_sol0.yaml";
+  file_inout.env_file = "../benchmark/unicycle_second_order_0/"
+                        "parallelpark_0.yaml";
+  file_inout.init_guess = "../test/unicycle_second_order_0/"
+                          "guess_parallelpark_0_sol0.yaml";
 
   opti_params.solver_id = static_cast<int>(SOLVER::traj_opt);
   opti_params.control_bounds = 1;
@@ -1394,10 +1797,10 @@ BOOST_AUTO_TEST_CASE(second_order_park_time) {
 
   opti_params = Opti_params();
   File_parser_inout file_inout;
-  file_inout.env_file =
-      "../benchmark/unicycle_second_order_0/parallelpark_0.yaml";
-  file_inout.init_guess =
-      "../test/unicycle_second_order_0/guess_parallelpark_0_sol0.yaml";
+  file_inout.env_file = "../benchmark/unicycle_second_order_0/"
+                        "parallelpark_0.yaml";
+  file_inout.init_guess = "../test/unicycle_second_order_0/"
+                          "guess_parallelpark_0_sol0.yaml";
 
   opti_params.solver_id = static_cast<int>(SOLVER::traj_opt_free_time);
   opti_params.control_bounds = 1;
@@ -1412,14 +1815,185 @@ BOOST_AUTO_TEST_CASE(second_order_park_time) {
   BOOST_TEST_CHECK(result.cost <= 11.);
 }
 
+BOOST_AUTO_TEST_CASE(quadrotor_0_recovery) {
+
+  opti_params = Opti_params();
+
+  File_parser_inout file_inout;
+  file_inout.env_file = "../benchmark/quadrotor_0/"
+                        "empty_test_recovery_welf.yaml";
+
+  // auto model_robot = mks<Model_quad3d>();
+  opti_params.solver_id = 0;
+  opti_params.control_bounds = 1;
+  opti_params.use_warmstart = 1;
+  opti_params.weight_goal = 300;
+  opti_params.max_iter = 400;
+  opti_params.noise_level = 1e-3;
+  file_inout.T = 300;
+  opti_params.ref_x0 = 1;
+
+  Result_opti result;
+  compound_solvers(file_inout, result);
+  BOOST_TEST_CHECK(result.feasible);
+  std::cout << "cost is " << result.cost << std::endl;
+  BOOST_TEST_CHECK(result.cost <= 5.);
+}
+
+BOOST_AUTO_TEST_CASE(t_recovery_with_smooth) {
+
+  File_parser_inout file_inout;
+  file_inout.env_file = "../benchmark/quadrotor_0/"
+                        "empty_test_recovery_welf.yaml";
+  file_inout.T = 400;
+
+  Opti_params opti;
+  opti.solver_id = 12;
+  opti.control_bounds = 1;
+  opti.use_warmstart = 1;
+  opti.weight_goal = 100;
+  opti.max_iter = 2000;
+  opti.noise_level = 1e-4;
+  opti.ref_x0 = true;
+  opti.smooth_traj = 1;
+
+  Result_opti result;
+  compound_solvers(file_inout, result);
+  BOOST_TEST_CHECK(result.feasible);
+  std::cout << "cost is " << result.cost << std::endl;
+  BOOST_TEST_CHECK(result.cost <= 4.);
+
+  //     ./croco_main   --env
+  //     ../benchmark/quadrotor_0/empty_test_recovery_welf.yaml
+  //     --out out.yaml --solver_id 12
+  //     --control_bounds 1 --use_warmstart 1
+  //     --weight_goal 100. --max_iter 2000 --
+  // noise_level 1e-4 --use_finite_diff 0 --T
+  // 400 --ref_x0 1 --smooth_traj 1
+}
+
+BOOST_AUTO_TEST_CASE(t_slerp) {
+
+  Eigen::Vector4d a(1, 0, 0, 0);
+  Eigen::Vector4d v(0, 0, 0, 1);
+
+  Eigen::Vector4d out(0, 0, 0, 1);
+
+  std::cout << Eigen::Quaterniond(a).slerp(0, Eigen::Quaterniond(v)).coeffs()
+            << std::endl;
+  std::cout << Eigen::Quaterniond(a).slerp(0.5, Eigen::Quaterniond(v)).coeffs()
+            << std::endl;
+  std::cout << Eigen::Quaterniond(a).slerp(1., Eigen::Quaterniond(v)).coeffs()
+            << std::endl;
+}
+
+BOOST_AUTO_TEST_CASE(mpc_controller) {
+
+  opti_params = Opti_params();
+  File_parser_inout file_inout;
+  bool half = true;
+
+  if (!half) {
+    file_inout.env_file = "../benchmark/unicycle_first_order_0/"
+                          "check_region_of_attraction.yaml";
+    file_inout.T = 40;
+  } else {
+    file_inout.env_file = "../benchmark/unicycle_first_order_0/"
+                          "check_region_of_attraction_half."
+                          "yaml";
+    file_inout.T = 30;
+  }
+
+  opti_params.solver_id = static_cast<int>(SOLVER::traj_opt);
+  opti_params.control_bounds = 1;
+  opti_params.use_warmstart = true;
+  opti_params.weight_goal = 200;
+  opti_params.smooth_traj = 1;
+  opti_params.max_iter = 40;
+
+  Result_opti result;
+  CSTR_(file_inout.name);
+  compound_solvers(file_inout, result);
+  BOOST_TEST_CHECK(result.feasible);
+  std::cout << "cost is " << result.cost << std::endl;
+  BOOST_TEST_CHECK(result.cost <= 40.);
+
+  std::ofstream ref_out("ref_out-h" + std::to_string(half) + ".yaml");
+  result.write_yaml_db(ref_out);
+
+  // # controller
+  size_t num_samples = 100;
+
+  double noise_magnitude = .6;
+
+  Eigen::VectorXd start = file_inout.start;
+
+  struct Data_out {
+    bool feasible = 0;
+    Eigen::VectorXd start;
+    std::vector<Eigen::VectorXd> xs;
+    std::vector<Eigen::VectorXd> us;
+  };
+
+  std::vector<int> max_iter_array{2, 5, 10};
+
+  for (const auto &max_iter : max_iter_array) {
+    std::vector<Data_out> datas;
+
+    for (size_t i = 0; i < num_samples; i++) {
+
+      Eigen::Vector3d new_start =
+          start + noise_magnitude * Eigen::VectorXd::Random(start.size());
+
+      Result_opti resulti;
+      file_inout.xs = result.xs_out;
+      file_inout.us = result.us_out;
+      file_inout.start = new_start;
+      opti_params.max_iter = max_iter;
+      opti_params.th_acceptnegstep = 2.;
+      opti_params.smooth_traj = false;
+      solve_with_custom_solver(file_inout, resulti);
+
+      Data_out data_out{
+          .feasible = resulti.feasible,
+          .start = new_start,
+          .xs = resulti.xs_out,
+          .us = resulti.us_out,
+      };
+      datas.push_back(data_out);
+    }
+    // save to file
+    //
+    std::ofstream out("mpc_attraction-" + std::to_string(opti_params.max_iter) +
+                      "-h" + std::to_string(half) + ".yaml");
+    std::string space2 = "  ";
+    std::string space4 = "    ";
+
+    for (auto &d : datas) {
+
+      out << "- " << std::endl;
+      out << space2 << "feasible: " << d.feasible << std::endl;
+      out << space2 << "start: " << d.start.format(FMT) << std::endl;
+      out << space2 << "states: " << std::endl;
+      for (auto &s : d.xs) {
+        out << space4 << "- " << s.format(FMT) << std::endl;
+      }
+      out << space2 << "actions: " << std::endl;
+      for (auto &s : d.us) {
+        out << space4 << "- " << s.format(FMT) << std::endl;
+      }
+    }
+  }
+}
+
 BOOST_AUTO_TEST_CASE(park_second_mpcc) {
 
   opti_params = Opti_params();
   File_parser_inout file_inout;
-  file_inout.env_file =
-      "../benchmark/unicycle_second_order_0/parallelpark_0.yaml";
-  file_inout.init_guess =
-      "../test/unicycle_second_order_0/guess_parallelpark_0_sol0.yaml";
+  file_inout.env_file = "../benchmark/unicycle_second_order_0/"
+                        "parallelpark_0.yaml";
+  file_inout.init_guess = "../test/unicycle_second_order_0/"
+                          "guess_parallelpark_0_sol0.yaml";
 
   opti_params.solver_id = static_cast<int>(SOLVER::mpcc_linear);
   opti_params.control_bounds = 1;
@@ -1440,83 +2014,226 @@ BOOST_AUTO_TEST_CASE(park_second_mpcc) {
   BOOST_TEST_CHECK(result.cost <= 12.);
 }
 
-// this should be a very good initial guess for parallel park -> almost time
-// optimal "paralle_second_free_time_feasible.yaml"
+// BOOST_AUTO_TEST_CASE(step_with_se2) {
+//
+//   Eigen::Vector3d x(0, 0, 0);
+//   Eigen::Vector2d u(1, 1);
+//   Eigen::Vector3d xnext;
+//   double dt = .1;
+//
+//   std::cout << " x " << x.format(FMT) << std::endl;
+//
+//   {
+//     Model_unicycle1_se2 model_se2;
+//
+//     model_se2.step(xnext, x, u, dt);
+//     std::cout << xnext.format(FMT) << std::endl;
+//   }
+//
+//   {
+//     Model_unicycle1_R2SO2 model_se2;
+//     model_se2.step(xnext, x, u, dt);
+//     std::cout << xnext.format(FMT) << std::endl;
+//   }
+//   {
+//     Model_unicycle1 model;
+//     model.step(xnext, x, u, dt);
+//     std::cout << xnext.format(FMT) << std::endl;
+//   }
+//
+//   x << 0, 0, 3.14;
+//
+//   std::cout << " x " << x.format(FMT) << std::endl;
+//   {
+//     Model_unicycle1_se2 model_se2;
+//
+//     model_se2.step(xnext, x, u, dt);
+//     std::cout << xnext.format(FMT) << std::endl;
+//   }
+//
+//   {
+//     Model_unicycle1_R2SO2 model_se2;
+//     model_se2.step(xnext, x, u, dt);
+//     std::cout << xnext.format(FMT) << std::endl;
+//   }
+//   {
+//     Model_unicycle1 model;
+//     model.step(xnext, x, u, dt);
+//     std::cout << xnext.format(FMT) << std::endl;
+//   }
+// }
 
-BOOST_AUTO_TEST_CASE(park_second_contour) {
-  // ./main_croco --env
-  // ../benchmark/unicycle_second_order_0/parallelpark_0.yaml
-  // --waypoints
-  //  paralle_second_free_time.yaml   --out out.yaml --solver 10
-  //  --control_bounds 1 --use_warmstart 1 --step_move 5 --step_opt 40
-  //  --k_linear 20 --k_contour 10
-  // 0 --weight_goal 100 --smooth 0 --max_iter 50
+BOOST_AUTO_TEST_CASE(col_unicycle) {
+
+  const char *env = "../benchmark/unicycle_first_order_0/parallelpark_0.yaml";
+
+  auto unicycle = Model_unicycle1();
+  unicycle.load_env_quim(env);
+  Eigen::Vector3d x(.7, .8, 0);
+
+  CollisionOut col;
+
+  unicycle.collision_distance(x, col);
+
+  BOOST_CHECK(std::fabs(col.distance - .25) < 1e-7);
+
+  x = Eigen::Vector3d(1.9, .3, 0);
+  unicycle.collision_distance(x, col);
+
+  BOOST_CHECK(std::fabs(col.distance - .3) < 1e-7);
+
+  col.write(std::cout);
+
+  x = Eigen::Vector3d(1.5, .3, .1);
+  unicycle.collision_distance(x, col);
+  col.write(std::cout);
+
+  BOOST_CHECK(std::fabs(col.distance - (-0.11123)) < 1e-5);
 }
 
-BOOST_AUTO_TEST_CASE(park_second_contour_A) {
-  // (opti) ⋊> ~/s/w/k/build_debug on dev ⨯ make -j4 &&    ./main_croco --env
-  // ../benchmark/unicycle_second_order_0/parallelpark_0.yaml   --waypoints
-  // ../test/u nicycle_second_order_0/guess_parallelpark_0_sol0.yaml --out
-  // out.yaml --solver 8 --control_bounds 1 --use_warmstart 1 --step_move 10
-  // --step_opt 40 --k_lin ear 10 --k_contour 100 --weight_goal 200 --smooth 1
-  // --max_iter 30
+// derivatives?
+
+BOOST_AUTO_TEST_CASE(col_car_with_trailer) {
+
+  const char *env =
+      "../benchmark/car_first_order_with_1_trailers_0/bugtrap_0.yaml";
+  auto car = Model_car_with_trailers();
+  car.load_env_quim(env);
+
+  Eigen::Vector4d x(3.4, 3, 3.14, 3.14);
+  CollisionOut col;
+  car.collision_distance(x, col);
+  col.write(std::cout);
+
+  x = Eigen::Vector4d(5.2, 3, 1.55, 1.55);
+  car.collision_distance(x, col);
+  col.write(std::cout);
+
+  x = Eigen::Vector4d(3.6, 1, 1.55, 1.55);
+  car.collision_distance(x, col);
+  col.write(std::cout);
+
+  x = Eigen::Vector4d(5.2, 3, 1.55, .3);
+  car.collision_distance(x, col);
+  col.write(std::cout);
 }
 
-BOOST_AUTO_TEST_CASE(park_second_order_mpcA) {
-  // (opti) ⋊> ~/s/w/k/build_debug on dev ⨯ make -j4 && gdb --args
-  // ./main_croco
-  // --env ../benchmark/unicycle_second_order_0/parallelpark_0.yaml
-  // --waypoints
-  // ../test/unicycle_second_order_0/guess_parallelpark_0_sol0.yaml   --out
-  // out.yaml --solver 10 --control_bounds 1 --use_warmstart 1 --step_move 20
-  // --step_opt 4 0 --k_linear 20 --k_contour 10 --weight_goal 100 --smooth 0
-  // --max_iter 50
+BOOST_AUTO_TEST_CASE(col_quad3d) {
+
+  const char *env = "../benchmark/quadrotor_0/quad_one_obs.yaml";
+
+  Eigen::VectorXd x(13);
+  auto quad3d = Model_quad3d();
+  quad3d.load_env_quim(env);
+  CollisionOut col;
+
+  x << 1., 1., 1., 0, 0, 0, 1, 0, 0, 0, 0, 0, 0;
+  quad3d.collision_distance(x, col);
+  col.write(std::cout);
+
+  BOOST_TEST(std::fabs(col.distance - 0.30713) < 1e-5);
+
+  x << 1.2, 1.5, 2., 0, 0, 0, 1, 0, 0, 0, 0, 0, 0;
+  quad3d.collision_distance(x, col);
+  col.write(std::cout);
+
+  BOOST_TEST(std::fabs(col.distance - (-0.0999999)) < 1e-5);
+  x << 5., 5., 1., 0, 0, 0, 1, 0, 0, 0, 0, 0, 0;
+  quad3d.collision_distance(x, col);
+  col.write(std::cout);
+  BOOST_TEST(std::fabs(col.distance - (0.307206)) < 1e-5);
 }
 
-// continue here:
+BOOST_AUTO_TEST_CASE(col_acrobot) {
 
-// check how can i traverse this trajectory faster.
-// linear_mpcc_parallel_slow.yaml
+  const char *env = "../benchmark/acrobot/swing_up_obs.yaml";
 
-// this is bad
-// (opti) ⋊> ~/s/w/k/build_debug on dev ⨯ make -j4 &&   ./test_croco
-// --run_test=quim --  --env
-// ../benchmark/unicycle_first_order_0/parallelpark_0.yaml  --wa ypoints
-// ../test/unicycle_first_order_0/guess_parallelpark_0_sol0.yaml  --out
-// out.yaml
-// --solver 8 --control_bounds 1 --use_warmstart 1 --step_move 10 --st ep_opt
-// 35
-// --alpha_rate 1. --use_fdif 0 --k_linear 20.  --k_contour 10. --weight_goal
-// 200.
+  Eigen::Vector4d x;
+  auto acrobot = Model_acrobot();
+  acrobot.load_env_quim(env);
 
-// this is good
-// (opti) ⋊> ~/s/w/k/build_debug on dev ⨯ make -j4 &&   ./test_croco
-// --run_test=quim --  --env
-// ../benchmark/unicycle_first_order_0/parallelpark_0.yaml  --wa ypoints
-// ../test/unicycle_first_order_0/guess_parallelpark_0_sol0.yaml  --out
-// out.yaml
-// --solver 8 --control_bounds 1 --use_warmstart 1 --step_move 35 --st ep_opt
-// 35
-// --alpha_rate 1. --use_fdif 0 --k_linear 20.  --k_contour 10. --weight_goal
-// 200.
+  CollisionOut col;
+  x << 0, 0, 0, 0;
+  acrobot.collision_distance(x, col);
+  col.write(std::cout);
+  double tol = 1e-5;
 
-// what can I do when I now I can get to the goal?
+  BOOST_TEST(std::fabs(col.distance - 1.59138) < tol);
 
-// Strategy:
-// We optimize with the MPC controller without bounds, using the time with the
-// deltas. We optimize with the path tracking formulation with alpha_rate = 1.
-// We optimize with the path tracking formulation with alpha = 1.5.
+  x << 3.14159, 0, 0, 0;
+  acrobot.collision_distance(x, col);
+  col.write(std::cout);
+  BOOST_TEST(std::fabs(col.distance - 1.1) < tol);
 
-// Next steps: lets get a solution from db-astar with deltas.
-// and lets check for the full pipeline.
-// Should it be in python?
-//
-//
-//
+  x << M_PI / 2., M_PI / 2., 0, 0;
+  acrobot.collision_distance(x, col);
+  col.write(std::cout);
+  BOOST_TEST(std::fabs(col.distance - 0.180278) < tol);
+}
 
-// this works.
-// (opti) ⋊> ~/s/w/k/build_debug on dev ⨯ make &&   ./test_croco
-// --run_test=quim
-// --  --env ../benchmark/unicycle_first_order_0/parallelpark_0.yaml --w
-// aypoints ../build_debug/qdbg/result_dbastar_newresult.yaml   --reg 1 --out
-// out.yaml --new_format true --control_bounds 0  --solver 3
+BOOST_AUTO_TEST_CASE(check_gradient_of_col) { // TODO
+}
+
+BOOST_AUTO_TEST_CASE(check_traj) {
+
+  // const char *env;
+  const char *result = "../data_welf_yaml/result_obstacle_flight_SCVX.yaml";
+  const char *robot_params = "../models/quad3d_v1.yaml";
+
+  std::cout << "loading file: " << result << std::endl;
+  YAML::Node node = YAML::LoadFile(result);
+
+  std::vector<Eigen::VectorXd> xs;
+  std::vector<Eigen::VectorXd> us;
+  std::vector<Eigen::VectorXd> __xs =
+      yaml_node_to_xs(node["result"][0]["states"]);
+  std::vector<Eigen::VectorXd> __us =
+      yaml_node_to_xs(node["result"][0]["actions"]);
+
+  Quad3d_params quad_params;
+
+  std::cout << "quad parameters -- default " << std::endl;
+  quad_params.write(std::cout);
+
+  quad_params.read_from_yaml(robot_params);
+
+  std::cout << "quad parameters " << std::endl;
+  quad_params.write(std::cout);
+
+  auto model_robot = mks<Model_quad3d>(quad_params);
+
+  model_robot->u_nominal = 1;
+
+  auto dynamics = mk<Dynamics>(model_robot);
+
+  xs.resize(__xs.size());
+  us.resize(__us.size());
+
+  assert(__xs.size() == __us.size() + 1);
+
+  assert(__xs.size());
+  Eigen::VectorXd tmp(__xs.front().size());
+
+  std::transform(__xs.begin(), __xs.end(), xs.begin(), [&](auto &x) {
+    from_welf_format(x, tmp);
+    tmp.segment(3, 4).normalize();
+    return tmp;
+  });
+
+  assert(__us.size());
+  Eigen::VectorXd u_tmp(__us.front().size());
+  std::transform(__us.begin(), __us.end(), us.begin(), [&](auto &x) {
+    u_tmp = x / model_robot->u_nominal;
+    return u_tmp;
+  });
+
+  Eigen::VectorXd dts(us.size());
+  dts.setConstant(model_robot->ref_dt);
+
+  bool flag = check_trajectory(xs, us, dts, model_robot, 1e-2);
+
+  std::cout << "flag is " << flag << std::endl;
+  BOOST_TEST(flag);
+
+  // check
+}

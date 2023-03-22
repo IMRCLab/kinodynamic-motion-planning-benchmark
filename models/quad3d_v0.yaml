@@ -1,0 +1,13 @@
+distance_weights: [1. , 1., .1, .1 ] 
+max_vel : 4
+max_angular_vel : 8
+max_acc : 25
+max_angular_acc : 20
+motor_control : true # True = controls are forces in the motors
+m:  0.034
+max_f:  1.3
+arm_length:  0.046
+t2t:  0.006 # thrust-to-torque ratio
+J_v:  [ 16.571710e-6, 16.655602e-6, 29.261652e-6]
+dt: .01
+dynamics: quad3d
