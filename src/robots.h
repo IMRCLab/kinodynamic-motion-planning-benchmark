@@ -1,72 +1,164 @@
 #pragma once
 
 // OMPL headers
+#include "croco_macros.hpp"
+#include "robot_models.hpp"
 #include <ompl/control/SpaceInformation.h>
 #include <ompl/control/spaces/RealVectorControlSpace.h>
 
 // FCL
 #include <fcl/fcl.h>
+#include <yaml-cpp/node/node.h>
 
-class Robot {
+struct Model_robot;
 
-public:
-  Robot() {}
+ompl::base::State *
+_allocAndFillState(std::shared_ptr<ompl::control::SpaceInformation> si,
+                   const std::vector<double> &reals);
 
-  virtual void propagate(const ompl::base::State *start,
-                         const ompl::control::Control *control,
-                         const double duration, ompl::base::State *result) = 0;
+ompl::base::State *
+allocAndFillState(std::shared_ptr<ompl::control::SpaceInformation> si,
+                  const YAML::Node &node);
+
+void copyFromRealsControl(std::shared_ptr<ompl::control::SpaceInformation> si,
+                          ompl::control::Control *out,
+                          const std::vector<double> &reals);
+
+ompl::control::Control *
+allocAndFillControl(std::shared_ptr<ompl::control::SpaceInformation> si,
+                    const YAML::Node &node);
+
+void copyToRealsControl(std::shared_ptr<ompl::control::SpaceInformation> si,
+                        ompl::control::Control *action,
+                        std::vector<double> &reals);
+
+void state_to_stream(std::ostream &out,
+                     std::shared_ptr<ompl::control::SpaceInformation> si,
+                     const ompl::base::State *state);
+
+void state_to_eigen(Eigen::VectorXd &out,
+                    std::shared_ptr<ompl::control::SpaceInformation> si,
+                    const ompl::base::State *state);
+
+void control_to_eigen(Eigen::VectorXd &out,
+                      std::shared_ptr<ompl::control::SpaceInformation> si,
+                      ompl::control::Control *control);
+
+struct RobotOmpl {
+
+  std::shared_ptr<Model_robot> diff_model;
+  RobotOmpl(std::shared_ptr<Model_robot> diff_model);
+
+  virtual ~RobotOmpl() {
+    // TODO: erase state and goal!
+  }
+
+  // Eigen wrappers...
+
+  size_t nx; // dim state
+  size_t nu; // dim control
+
+  Eigen::VectorXd xx; // data
+  Eigen::VectorXd zz; // data
+  Eigen::VectorXd yy; // data
+  Eigen::VectorXd uu; // data
 
   virtual void geometric_interpolation(const ompl::base::State *from,
                                        const ompl::base::State *to, double t,
-                                       ompl::base::State *out) {
+                                       ompl::base::State *out);
 
-    throw std::runtime_error("not implemented");
+  virtual void propagate(const ompl::base::State *start,
+                         const ompl::control::Control *control,
+                         const double duration, ompl::base::State *result);
+
+  virtual double cost_lower_bound(const ompl::base::State *x,
+                                  const ompl::base::State *y);
+
+  virtual void toEigen(const ompl::base::State *x_ompl,
+                       Eigen::Ref<Eigen::VectorXd> x_eigen) {
+    (void)x_ompl;
+    (void)x_eigen;
+    ERROR_WITH_INFO("not implemented");
   }
 
-  virtual fcl::Transform3f getTransform(const ompl::base::State *state,
+  virtual void toEigenU(const ompl::control::Control *control,
+                        Eigen::Ref<Eigen::VectorXd> u_eigen) {
+    (void)control;
+    (void)u_eigen;
+    ERROR_WITH_INFO("not implemented");
+  }
+
+  virtual void fromEigen(ompl::base::State *x_ompl,
+                         const Eigen::Ref<const Eigen::VectorXd> &x_eigen) {
+    (void)x_ompl;
+    (void)x_eigen;
+    ERROR_WITH_INFO("not implemented");
+  }
+
+  virtual fcl::Transform3d getTransform(const ompl::base::State *state,
                                         size_t part = 0) = 0;
 
   virtual void setPosition(ompl::base::State *state,
-                           const fcl::Vector3f position) = 0;
+                           const fcl::Vector3d position) = 0;
 
   virtual size_t numParts() { return 1; }
-
-  std::shared_ptr<fcl::CollisionGeometryf>
-  getCollisionGeometry(size_t part = 0) {
-    return geom_[part];
-  }
 
   std::shared_ptr<ompl::control::SpaceInformation> getSpaceInformation() {
     return si_;
   }
 
-  virtual double cost_lower_bound(const ompl::base::State *a,
-                                  const ompl::base::State *b) const {
-    throw std::runtime_error("not implemented");
+  virtual void enforceBounds(ompl::base::State *) const {
+    ERROR_WITH_INFO(" not implemented ");
   }
 
-  float dt() const { return dt_; }
+  double dt() const;
 
-  float is2D() const { return is2D_; }
+  bool is2D() const;
 
-  float maxSpeed() const { return max_speed_; }
+  bool isTranslationInvariant() const { return translation_invariant_; }
 
-protected:
-  std::vector<std::shared_ptr<fcl::CollisionGeometryf>> geom_;
-  std::shared_ptr<ompl::control::SpaceInformation> si_;
-  float dt_;
-  bool is2D_;
-  float max_speed_;
+  std::string getName() const;
 
 public:
-  Eigen::VectorXd u_zero; // a default control
-  Eigen::VectorXd x_ub;
+  std::shared_ptr<ompl::control::SpaceInformation> si_;
+  bool translation_invariant_ = true;
+  std::string name_;
+  Eigen::VectorXd u_zero;
   Eigen::VectorXd x_lb;
-  Eigen::VectorXd u_ub;
-  Eigen::VectorXd u_lb;
+  Eigen::VectorXd x_ub;
+  ompl::base::State *startState;
+  ompl::base::State *goalState;
+
+  // TODO: fix memory leaks!!!
 };
 
 // Factory Method
-std::shared_ptr<Robot>
-create_robot(const std::string &robotType,
-             const ompl::base::RealVectorBounds &positionBounds);
+std::shared_ptr<RobotOmpl>
+create_robot_ompl(const std::string &robotType,
+                  const ompl::base::RealVectorBounds &positionBounds);
+
+struct RobotStateValidityChecker : public ompl::base::StateValidityChecker {
+  std::shared_ptr<RobotOmpl> robot;
+  mutable Eigen::VectorXd x_eigen;
+  RobotStateValidityChecker(std::shared_ptr<RobotOmpl> robot);
+
+  bool virtual isValid(const ompl::base::State *state) const override;
+};
+
+std::shared_ptr<RobotOmpl> robot_factory_ompl(const Problem &problem);
+
+// this is the good one
+std::vector<size_t> sortMotions3(const std::vector<std::vector<double>> &x0s,
+                                 const std::vector<std::vector<double>> &xfs,
+                                 size_t top_k,
+                                 std::shared_ptr<RobotOmpl> robot_);
+
+std::vector<size_t> sortMotions(std::shared_ptr<RobotOmpl> robot_,
+                                const std::vector<std::vector<double>> &x0s,
+                                const std::vector<std::vector<double>> &xfs,
+                                size_t top_k);
+
+std::vector<size_t> sortMotions2(const std::vector<std::vector<double>> &x0s,
+                                 const std::vector<std::vector<double>> &xfs,
+                                 size_t top_k,
+                                 std::shared_ptr<RobotOmpl> robot_);

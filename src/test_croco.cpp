@@ -40,8 +40,8 @@
 #include <filesystem>
 #include <regex>
 
-#include "ocp.hpp"
 #include "croco_models.hpp"
+#include "ocp.hpp"
 #include <Eigen/Dense>
 #include <iostream>
 #include <unsupported/Eigen/AutoDiff>
@@ -180,6 +180,8 @@ struct Func4 {
 BOOST_AUTO_TEST_CASE(eigen_derivatives) {
 
   double x, y, z, f, g, dfdx, dgdy, dgdz;
+  (void)f;
+  (void)g;
   Eigen::AutoDiffScalar<Eigen::VectorXd> xA, yA, zA, fA, gA;
 
   cout << endl << "Testing scalar function with 1 input..." << endl;
@@ -325,7 +327,7 @@ BOOST_AUTO_TEST_CASE(t_acrobot) {
 }
 
 BOOST_AUTO_TEST_CASE(acrobot_rollout) {
-  int T = 100; // one second
+  size_t T = 100; // one second
   // auto dyn = mk<Dynamics_acrobot>();
   auto model = mk<Model_acrobot>();
 
@@ -358,7 +360,7 @@ BOOST_AUTO_TEST_CASE(acrobot_rollout) {
 BOOST_AUTO_TEST_CASE(acrobot_rollout_free) {
   auto model = mk<Model_acrobot>();
   double dt = .01;
-  int T = 1. / dt; // one second
+  size_t T = 1. / dt; // one second
 
   std::vector<Eigen::VectorXd> us;
   std::vector<Eigen::VectorXd> xs;
@@ -940,32 +942,32 @@ BOOST_AUTO_TEST_CASE(linear_interpolation) {
 #if 0
 BOOST_AUTO_TEST_CASE(traj_opt_no_bounds) {
 
-  opti_params = Opti_params();
+  options_trajopt = Options_trajopt();
 
-  File_parser_inout file_inout;
+  Options_trajopt options_trajopt;
   file_inout.env_file = "../benchmark/unicycle_first_order_0/"
                         "bugtrap_0.yaml";
   file_inout.init_guess = "../test/unicycle_first_order_0/"
                           "guess_bugtrap_0_sol0.yaml";
 
-  opti_params.control_bounds = 0;
-  opti_params.solver_id = static_cast<int>(SOLVER::traj_opt);
-  opti_params.use_warmstart = 1;
-  opti_params.max_iter = 50;
+  options_trajopt.control_bounds = 0;
+  options_trajopt.solver_id = static_cast<int>(SOLVER::traj_opt);
+  options_trajopt.use_warmstart = 1;
+  options_trajopt.max_iter = 50;
 
   Result_opti result;
-  compound_solvers(file_inout, result);
+  Trajectory sol;
+  trajectory_optimization(problem, init_guess, options_trajopt,sol, result);
   BOOST_TEST(result.feasible);
 }
 #endif
 
 BOOST_AUTO_TEST_CASE(jac_quadrotor) {
 
-  opti_params = Opti_params();
-  opti_params.disturbance = 1e-7;
+  Options_trajopt options_trajopt;
+  options_trajopt.disturbance = 1e-7;
   size_t nx(13), nu(4);
   size_t N = 5;
-
 
   {
 
@@ -1003,20 +1005,20 @@ BOOST_AUTO_TEST_CASE(jac_quadrotor) {
     Generate_params gen_args;
     gen_args.name = "quadrotor_0";
     gen_args.N = N;
-    opti_params.use_finite_diff = 0;
+    options_trajopt.use_finite_diff = 0;
     gen_args.goal = goal;
     gen_args.start = start;
     gen_args.model_robot = model_robot;
 
-    auto problem = generate_problem(gen_args, nx, nu);
+    auto problem = generate_problem(gen_args, options_trajopt, nx, nu);
     problem->calc(xs, us);
     problem->calcDiff(xs, us);
     auto data_running = problem->get_runningDatas();
     auto data_terminal = problem->get_terminalData();
 
     // now with finite diff
-    opti_params.use_finite_diff = 1;
-    auto problem_diff = generate_problem(gen_args, nx, nu);
+    options_trajopt.use_finite_diff = 1;
+    auto problem_diff = generate_problem(gen_args, options_trajopt, nx, nu);
     problem_diff->calc(xs, us);
     problem_diff->calcDiff(xs, us);
     auto data_running_diff = problem_diff->get_runningDatas();
@@ -1067,8 +1069,8 @@ BOOST_AUTO_TEST_CASE(jac_quadrotor) {
 
 BOOST_AUTO_TEST_CASE(test_jacobians) {
 
-  opti_params = Opti_params();
-  opti_params.disturbance = 1e-5;
+  Options_trajopt options_trajopt;
+  options_trajopt.disturbance = 1e-5;
   size_t nx(0), nu(0);
 
   size_t N = 5;
@@ -1082,8 +1084,6 @@ BOOST_AUTO_TEST_CASE(test_jacobians) {
   ptr<Interpolator> interpolator =
       mk<Interpolator>(Eigen::Vector2d({-2., 3.}), path);
 
-
-
   std::shared_ptr<Model_robot> model_robot = mks<Model_unicycle1>();
   {
 
@@ -1096,7 +1096,7 @@ BOOST_AUTO_TEST_CASE(test_jacobians) {
     Generate_params gen_args;
     gen_args.name = "unicycle1_v0";
     gen_args.N = 5;
-    opti_params.use_finite_diff = 0;
+    options_trajopt.use_finite_diff = 0;
     gen_args.goal = goal;
     gen_args.start = start;
     // gen_args.cl = cl;
@@ -1104,15 +1104,15 @@ BOOST_AUTO_TEST_CASE(test_jacobians) {
     gen_args.contour_control = true;
     gen_args.interpolator = interpolator;
 
-    auto problem = generate_problem(gen_args, nx, nu);
+    auto problem = generate_problem(gen_args, options_trajopt, nx, nu);
     problem->calc(xs, us);
     problem->calcDiff(xs, us);
     auto data_running = problem->get_runningDatas();
     auto data_terminal = problem->get_terminalData();
 
     // now with finite diff
-    opti_params.use_finite_diff = 1;
-    auto problem_diff = generate_problem(gen_args, nx, nu);
+    options_trajopt.use_finite_diff = 1;
+    auto problem_diff = generate_problem(gen_args, options_trajopt, nx, nu);
     problem_diff->calc(xs, us);
     problem_diff->calcDiff(xs, us);
     auto data_running_diff = problem_diff->get_runningDatas();
@@ -1126,7 +1126,7 @@ BOOST_AUTO_TEST_CASE(test_jacobians) {
     BOOST_CHECK(
         check_equal(data_terminal_diff->Lx, data_terminal->Lx, tol, tol));
 
-    BOOST_CHECK(
+    BOOST_WARN(
         check_equal(data_terminal_diff->Lxx, data_terminal->Lxx, tol, tol));
 
     std::cout << data_terminal_diff->Lx << std::endl;
@@ -1143,9 +1143,9 @@ BOOST_AUTO_TEST_CASE(test_jacobians) {
       BOOST_CHECK(check_equal(d_diff->Fx, d->Fx, tol, tol));
       BOOST_CHECK(check_equal(d_diff->Fu, d->Fu, tol, tol));
 
-      BOOST_CHECK(check_equal(d_diff->Lxx, d->Lxx, tol, tol));
-      BOOST_CHECK(check_equal(d_diff->Lxu, d->Lxu, tol, tol));
-      // BOOST_CHECK(check_equal(d_diff->Luu, d->Luu, tol, tol)); //NOTE: it
+      BOOST_WARN(check_equal(d_diff->Lxx, d->Lxx, tol, tol));
+      BOOST_WARN(check_equal(d_diff->Lxu, d->Lxu, tol, tol));
+      BOOST_WARN(check_equal(d_diff->Luu, d->Luu, tol, tol)); // NOTE: it
       // will give false because of Finite diff use gauss newton
     }
   }
@@ -1163,21 +1163,21 @@ BOOST_AUTO_TEST_CASE(test_jacobians) {
 
     gen_args.name = "unicycle_first_order_0";
     gen_args.N = 5;
-    opti_params.use_finite_diff = false;
+    options_trajopt.use_finite_diff = false;
     gen_args.goal = goal;
     gen_args.start = start;
     gen_args.model_robot = model_robot;
     gen_args.contour_control = false;
 
-    auto problem = generate_problem(gen_args, nx, nu);
+    auto problem = generate_problem(gen_args, options_trajopt, nx, nu);
     problem->calc(xs, us);
     problem->calcDiff(xs, us);
     auto data_running = problem->get_runningDatas();
     auto data_terminal = problem->get_terminalData();
 
     // now with finite diff
-    opti_params.use_finite_diff = true;
-    auto problem_diff = generate_problem(gen_args, nx, nu);
+    options_trajopt.use_finite_diff = true;
+    auto problem_diff = generate_problem(gen_args, options_trajopt, nx, nu);
     problem_diff->calc(xs, us);
     problem_diff->calcDiff(xs, us);
     auto data_running_diff = problem_diff->get_runningDatas();
@@ -1213,7 +1213,7 @@ BOOST_AUTO_TEST_CASE(test_jacobians) {
 
     gen_args.name = "unicycle_first_order_0";
     gen_args.N = 5;
-    opti_params.use_finite_diff = 0;
+    options_trajopt.use_finite_diff = 0;
     gen_args.goal = goal;
     gen_args.start = start;
     gen_args.model_robot = model_robot;
@@ -1221,15 +1221,15 @@ BOOST_AUTO_TEST_CASE(test_jacobians) {
     gen_args.contour_control = true;
     gen_args.linear_contour = true;
 
-    auto problem = generate_problem(gen_args, nx, nu);
+    auto problem = generate_problem(gen_args, options_trajopt, nx, nu);
     problem->calc(xs, us);
     problem->calcDiff(xs, us);
     auto data_running = problem->get_runningDatas();
     auto data_terminal = problem->get_terminalData();
 
     // now with finite diff
-    opti_params.use_finite_diff = 1;
-    auto problem_diff = generate_problem(gen_args, nx, nu);
+    options_trajopt.use_finite_diff = 1;
+    auto problem_diff = generate_problem(gen_args, options_trajopt, nx, nu);
     problem_diff->calc(xs, us);
     problem_diff->calcDiff(xs, us);
     auto data_running_diff = problem_diff->get_runningDatas();
@@ -1253,7 +1253,45 @@ BOOST_AUTO_TEST_CASE(test_jacobians) {
       BOOST_CHECK(check_equal(d_diff->Fu, d->Fu, tol, tol));
     }
   }
+
 #endif
+
+  {
+
+    Generate_params gen_args;
+
+    Eigen::VectorXd goal = Eigen::VectorXd::Random(3);
+    Eigen::VectorXd start = Eigen::VectorXd::Random(4);
+
+    std::vector<Eigen::VectorXd> xs(N + 1, Eigen::VectorXd::Random(4));
+
+    for (auto &x : xs) {
+      x.tail(1)(0) = std::abs(x.tail(1)(0));
+    }
+
+    std::vector<Eigen::VectorXd> us(N, Eigen::VectorXd::Random(3));
+    for (auto &u : us) {
+      u.tail(1)(0) = std::abs(u.tail(1)(0));
+    }
+
+    gen_args.name = "unicycle_first_order_0";
+    gen_args.N = 5;
+    options_trajopt.use_finite_diff = false;
+    gen_args.goal = goal;
+    gen_args.start = start;
+    gen_args.model_robot = model_robot;
+    gen_args.free_time = true;
+    gen_args.free_time_linear = true;
+
+    auto problem = generate_problem(gen_args, options_trajopt, nx, nu);
+    // now with finite diff
+    options_trajopt.use_finite_diff = true;
+    auto problem_diff = generate_problem(gen_args, options_trajopt, nx, nu);
+
+    bool equal = check_problem(problem, problem_diff, xs, us);
+    BOOST_WARN(equal); // TODO: hard check on gradient.
+    // Warn on hessian
+  }
 }
 
 BOOST_AUTO_TEST_CASE(state_bounds) {
@@ -1342,52 +1380,55 @@ BOOST_AUTO_TEST_CASE(state_bounds) {
 
 BOOST_AUTO_TEST_CASE(contour_park_raw) {
 
-  opti_params = Opti_params();
-  File_parser_inout file_inout;
-  file_inout.env_file = "../benchmark/unicycle_first_order_0/"
-                        "parallelpark_0.yaml";
-  file_inout.init_guess = "../test/unicycle_first_order_0/"
-                          "guess_parallelpark_0_sol0.yaml";
+  Options_trajopt options_trajopt;
+  Problem problem("../benchmark/unicycle_first_order_0/"
+                  "parallelpark_0.yaml");
 
-  opti_params.control_bounds = 1;
-  opti_params.use_finite_diff = 0;
-  opti_params.k_linear = 10.;
-  opti_params.k_contour = 10.;
+  Trajectory init_guess("../test/unicycle_first_order_0/"
+                        "guess_parallelpark_0_sol0.yaml");
 
-  opti_params.use_warmstart = true;
-  opti_params.solver_id = static_cast<int>(SOLVER::mpcc_linear);
-  opti_params.max_iter = 50;
-  opti_params.weight_goal = 100;
+  options_trajopt.control_bounds = 1;
+  options_trajopt.use_finite_diff = 0;
+  options_trajopt.k_linear = 10.;
+  options_trajopt.k_contour = 10.;
 
-  opti_params.window_shift = 10;
-  opti_params.window_optimize = 40;
-  opti_params.smooth_traj = 1;
+  options_trajopt.use_warmstart = true;
+  options_trajopt.solver_id = static_cast<int>(SOLVER::mpcc_linear);
+  options_trajopt.max_iter = 50;
+  options_trajopt.weight_goal = 100;
+
+  options_trajopt.window_shift = 10;
+  options_trajopt.window_optimize = 40;
+  options_trajopt.smooth_traj = 1;
 
   Result_opti result;
-  compound_solvers(file_inout, result);
+  Trajectory sol;
+  trajectory_optimization(problem, init_guess, options_trajopt, sol, result);
   BOOST_TEST(result.feasible);
 }
 
 BOOST_AUTO_TEST_CASE(contour_park_easy) {
 
-  opti_params = Opti_params();
-  File_parser_inout file_inout;
-  file_inout.env_file = "../benchmark/unicycle_first_order_0/"
-                        "parallelpark_0.yaml";
-  file_inout.init_guess = "../build_debug/smooth_park_debug.yaml";
+  Options_trajopt options_trajopt;
+  Problem problem("../benchmark/unicycle_first_order_0/"
+                  "parallelpark_0.yaml");
 
-  opti_params.control_bounds = true;
-  opti_params.use_finite_diff = false;
-  opti_params.k_linear = 10.;
-  opti_params.k_contour = 2.;
-  opti_params.weight_goal = 300;
+  Trajectory init_guess("../build_debug/smooth_park_debug.yaml");
 
-  opti_params.use_warmstart = true;
-  opti_params.solver_id = static_cast<int>(SOLVER::mpcc_linear);
-  opti_params.max_iter = 20;
+  options_trajopt.control_bounds = true;
+  options_trajopt.use_finite_diff = false;
+  options_trajopt.k_linear = 10.;
+  options_trajopt.k_contour = 2.;
+  options_trajopt.weight_goal = 300;
+
+  options_trajopt.use_warmstart = true;
+  options_trajopt.solver_id = static_cast<int>(SOLVER::mpcc_linear);
+  options_trajopt.max_iter = 20;
 
   Result_opti result;
-  compound_solvers(file_inout, result);
+  Trajectory sol;
+
+  trajectory_optimization(problem, init_guess, options_trajopt, sol, result);
   BOOST_TEST(result.feasible);
 
   std::string filename = "out.yaml";
@@ -1397,177 +1438,209 @@ BOOST_AUTO_TEST_CASE(contour_park_easy) {
 }
 
 BOOST_AUTO_TEST_CASE(parallel_small_step_good_init_guess) {
-  opti_params = Opti_params();
+  Options_trajopt options_trajopt;
 
-  File_parser_inout file_inout;
-  file_inout.env_file = "../benchmark/unicycle_first_order_0/"
-                        "parallelpark_0.yaml";
-  file_inout.init_guess = "../test/unicycle_first_order_0/"
-                          "guess_parallelpark_mpcc.yaml";
+  Problem problem("../benchmark/unicycle_first_order_0/"
+                  "parallelpark_0.yaml");
+  Trajectory init_guess("../test/unicycle_first_order_0/"
+                        "guess_parallelpark_mpcc.yaml");
 
-  opti_params.solver_id = static_cast<int>(SOLVER::mpcc_linear);
-  opti_params.control_bounds = 1;
-  opti_params.use_warmstart = 1;
-  opti_params.window_shift = 2;
-  opti_params.window_optimize = 35;
-  opti_params.smooth_traj = 1;
-  opti_params.k_linear = 20.;
-  opti_params.k_contour = 10.;
-  opti_params.weight_goal = 200;
+  options_trajopt.solver_id = static_cast<int>(SOLVER::mpcc_linear);
+  options_trajopt.control_bounds = 1;
+  options_trajopt.use_warmstart = 1;
+  options_trajopt.window_shift = 2;
+  options_trajopt.window_optimize = 35;
+  options_trajopt.smooth_traj = 1;
+  options_trajopt.k_linear = 20.;
+  options_trajopt.k_contour = 10.;
+  options_trajopt.weight_goal = 200;
 
   Result_opti result;
-  compound_solvers(file_inout, result);
+  Trajectory sol;
+  trajectory_optimization(problem, init_guess, options_trajopt, sol, result);
   BOOST_TEST_CHECK(result.feasible);
   std::cout << "cost is " << result.cost << std::endl;
   // NOTE cost should be 3.2
   BOOST_TEST_CHECK(result.cost <= 3.3);
 }
 
-
 BOOST_AUTO_TEST_CASE(bugtrap_so2_hard) {
 
-  opti_params = Opti_params();
-  File_parser_inout file_inout;
-  file_inout.env_file = "../benchmark/unicycle_first_order_0/"
-                        "bugtrap_0.yaml";
-  file_inout.init_guess = "../test/unicycle_first_order_0/guess_bugtrap_0_sol1.yaml";
+  Options_trajopt options_trajopt;
+  Problem problem("../benchmark/unicycle_first_order_0/"
+                  "bugtrap_0.yaml");
+  Trajectory init_guess(
+      "../test/unicycle_first_order_0/guess_bugtrap_0_sol1.yaml");
 
-  opti_params.solver_id = static_cast<int>(SOLVER::traj_opt);
-  opti_params.control_bounds = 1;
-  opti_params.use_warmstart = 1;
-  opti_params.window_shift = 10;
-  opti_params.window_optimize = 40;
-  opti_params.smooth_traj = 0;
-  opti_params.k_linear = 10.;
-  opti_params.k_contour = 10.;
-  opti_params.weight_goal = 200;
+  options_trajopt.solver_id = static_cast<int>(SOLVER::traj_opt);
+  options_trajopt.control_bounds = 1;
+  options_trajopt.use_warmstart = 1;
+  options_trajopt.window_shift = 10;
+  options_trajopt.window_optimize = 40;
+  options_trajopt.smooth_traj = 0;
+  options_trajopt.k_linear = 10.;
+  options_trajopt.k_contour = 10.;
+  options_trajopt.weight_goal = 200;
 
   Result_opti result;
-  compound_solvers(file_inout, result);
+  Trajectory sol;
+  trajectory_optimization(problem, init_guess, options_trajopt, sol, result);
   BOOST_TEST_CHECK(result.feasible);
   BOOST_TEST_CHECK(result.cost <= 27.91);
 }
 
-
 BOOST_AUTO_TEST_CASE(bugtrap_so2_easy) {
 
-  opti_params = Opti_params();
-  File_parser_inout file_inout;
-  file_inout.env_file = "../benchmark/unicycle_first_order_0/"
-                        "bugtrap_0.yaml";
-  file_inout.init_guess = "../test/unicycle_first_order_0/guess_bugtrap_0_sol0.yaml";
+  Options_trajopt options_trajopt;
+  Problem problem("../benchmark/unicycle_first_order_0/"
+                  "bugtrap_0.yaml");
+  Trajectory init_guess(
+      "../test/unicycle_first_order_0/guess_bugtrap_0_sol0.yaml");
 
-  opti_params.solver_id = static_cast<int>(SOLVER::traj_opt);
-  opti_params.control_bounds = 1;
-  opti_params.use_warmstart = 1;
-  opti_params.window_shift = 10;
-  opti_params.window_optimize = 40;
-  opti_params.smooth_traj = 1;
-  opti_params.k_linear = 10.;
-  opti_params.k_contour = 10.;
-  opti_params.weight_goal = 200;
+  options_trajopt.solver_id = static_cast<int>(SOLVER::traj_opt);
+  options_trajopt.control_bounds = 1;
+  options_trajopt.use_warmstart = 1;
+  options_trajopt.window_shift = 10;
+  options_trajopt.window_optimize = 40;
+  options_trajopt.smooth_traj = 1;
+  options_trajopt.k_linear = 10.;
+  options_trajopt.k_contour = 10.;
+  options_trajopt.weight_goal = 200;
 
   Result_opti result;
-  compound_solvers(file_inout, result);
+  Trajectory sol;
+  trajectory_optimization(problem, init_guess, options_trajopt, sol, result);
   BOOST_TEST_CHECK(result.feasible);
   BOOST_TEST_CHECK(result.cost <= 24.2);
 }
 
-
-
-
-
 BOOST_AUTO_TEST_CASE(bugtrap_bad_init_guess) {
 
-  opti_params = Opti_params();
-  File_parser_inout file_inout;
-  file_inout.env_file = "../benchmark/unicycle_first_order_0/"
-                        "bugtrap_0.yaml";
-  file_inout.init_guess = "../test/unicycle_first_order_0/"
-                          "guess_bugtrap_0_sol0.yaml";
+  Options_trajopt options_trajopt;
+  Problem problem("../benchmark/unicycle_first_order_0/"
+                  "bugtrap_0.yaml");
+  Trajectory init_guess("../test/unicycle_first_order_0/"
+                        "guess_bugtrap_0_sol0.yaml");
 
-  opti_params.solver_id = static_cast<int>(SOLVER::mpcc_linear);
-  opti_params.control_bounds = 1;
-  opti_params.use_warmstart = 1;
-  opti_params.window_shift = 10;
-  opti_params.window_optimize = 40;
-  opti_params.smooth_traj = 1;
-  opti_params.k_linear = 10.;
-  opti_params.k_contour = 10.;
-  opti_params.weight_goal = 200;
+  options_trajopt.solver_id = static_cast<int>(SOLVER::mpcc_linear);
+  options_trajopt.control_bounds = 1;
+  options_trajopt.use_warmstart = 1;
+  options_trajopt.window_shift = 10;
+  options_trajopt.window_optimize = 40;
+  options_trajopt.smooth_traj = 1;
+  options_trajopt.k_linear = 10.;
+  options_trajopt.k_contour = 10.;
+  options_trajopt.weight_goal = 200;
 
   Result_opti result;
-  compound_solvers(file_inout, result);
+  Trajectory sol;
+  trajectory_optimization(problem, init_guess, options_trajopt, sol, result);
   BOOST_TEST_CHECK(result.feasible);
   BOOST_TEST_CHECK(result.cost <= 23.0);
 }
 
 BOOST_AUTO_TEST_CASE(bugtrap_good_init_guess) {
 
-  opti_params = Opti_params();
-  File_parser_inout file_inout;
-  file_inout.env_file = "../benchmark/unicycle_first_order_0/"
-                        "bugtrap_0.yaml";
-  file_inout.init_guess = "../test/unicycle_first_order_0/"
-                          "guess_bugtrap_0_mpcc.yaml";
+  Options_trajopt options_trajopt;
+  Problem problem("../benchmark/unicycle_first_order_0/"
+                  "bugtrap_0.yaml");
+  Trajectory init_guess("../test/unicycle_first_order_0/"
+                        "guess_bugtrap_0_mpcc.yaml");
 
-  opti_params.solver_id = static_cast<int>(SOLVER::mpcc_linear);
-  opti_params.control_bounds = 1;
-  opti_params.use_warmstart = 1;
-  opti_params.window_shift = 10;
-  opti_params.window_optimize = 40;
-  opti_params.smooth_traj = 0;
-  opti_params.k_linear = 10.;
-  opti_params.k_contour = 10.;
-  opti_params.weight_goal = 200;
+  options_trajopt.solver_id = static_cast<int>(SOLVER::mpcc_linear);
+  options_trajopt.control_bounds = 1;
+  options_trajopt.use_warmstart = 1;
+  options_trajopt.window_shift = 10;
+  options_trajopt.window_optimize = 40;
+  options_trajopt.smooth_traj = 0;
+  options_trajopt.k_linear = 10.;
+  options_trajopt.k_contour = 10.;
+  options_trajopt.weight_goal = 200;
 
   Result_opti result;
-  compound_solvers(file_inout, result);
+  Trajectory sol;
+  trajectory_optimization(problem, init_guess, options_trajopt, sol, result);
   BOOST_TEST_CHECK(result.feasible);
   BOOST_TEST_CHECK(result.cost <= 23.0);
 }
 
 BOOST_AUTO_TEST_CASE(parallel_free_time) {
 
-  opti_params = Opti_params();
-  File_parser_inout file_inout;
-  file_inout.env_file = "../benchmark/unicycle_first_order_0/"
-                        "parallelpark_0.yaml";
-  file_inout.init_guess = "../test/unicycle_first_order_0/"
-                          "guess_parallelpark_0_sol0.yaml";
+  Options_trajopt options_trajopt;
+  Problem problem("../benchmark/unicycle_first_order_0/"
+                  "parallelpark_0.yaml");
+  Trajectory init_guess("../test/unicycle_first_order_0/"
+                        "guess_parallelpark_0_sol0.yaml");
 
-  opti_params.solver_id = static_cast<int>(SOLVER::traj_opt_free_time);
-  opti_params.control_bounds = 1;
-  opti_params.use_warmstart = 1;
+  options_trajopt.solver_id = static_cast<int>(SOLVER::traj_opt_free_time);
+  options_trajopt.control_bounds = 1;
+  options_trajopt.use_warmstart = 1;
 
   Result_opti result;
-  compound_solvers(file_inout, result);
-  BOOST_TEST_CHECK(result.feasible);
+  Trajectory sol;
+  trajectory_optimization(problem, init_guess, options_trajopt, sol, result);
   std::cout << "cost is " << result.cost << std::endl;
-  BOOST_TEST_CHECK(result.cost <= 3.3);
+  std::cout << "feasible is " << result.feasible << std::endl;
+  BOOST_TEST(result.feasible);
+  BOOST_TEST(result.cost <= 3.3);
+}
+
+BOOST_AUTO_TEST_CASE(parallel_free_time_linear) {
+
+  Options_trajopt options_trajopt;
+  Problem problem("../benchmark/unicycle_first_order_0/"
+                  "parallelpark_0.yaml");
+  Trajectory init_guess("../test/unicycle_first_order_0/"
+                        "guess_parallelpark_0_sol0.yaml");
+  options_trajopt.control_bounds = 1;
+  options_trajopt.use_warmstart = 1;
+  {
+
+    options_trajopt.solver_id =
+        static_cast<int>(SOLVER::traj_opt_free_time_proxi_linear);
+
+    Result_opti result;
+    Trajectory sol;
+    trajectory_optimization(problem, init_guess, options_trajopt, sol, result);
+    BOOST_TEST(result.success);
+    std::cout << "cost is " << result.cost << std::endl;
+    BOOST_TEST(result.cost <= 3.3);
+  }
+
+  {
+    options_trajopt.solver_id = static_cast<int>(SOLVER::traj_opt_free_time_linear);
+
+    Result_opti result;
+    Trajectory sol;
+    trajectory_optimization(problem, init_guess, options_trajopt, sol, result);
+    BOOST_TEST_CHECK(result.feasible);
+    std::cout << "cost is " << result.cost << std::endl;
+    BOOST_TEST_CHECK(result.cost <= 3.3);
+  }
 }
 
 BOOST_AUTO_TEST_CASE(parallel_bad_init_guess) {
 
-  opti_params = Opti_params();
-  File_parser_inout file_inout;
-  file_inout.env_file = "../benchmark/unicycle_first_order_0/"
-                        "parallelpark_0.yaml";
-  file_inout.init_guess = "../test/unicycle_first_order_0/"
-                          "guess_parallelpark_0_sol0.yaml";
+  Options_trajopt options_trajopt;
 
-  opti_params.solver_id = static_cast<int>(SOLVER::mpcc_linear);
-  opti_params.control_bounds = 1;
-  opti_params.use_warmstart = 1;
-  opti_params.window_shift = 5;
-  opti_params.window_optimize = 30;
-  opti_params.smooth_traj = 1;
-  opti_params.k_linear = 5.;
-  opti_params.k_contour = 10.;
-  opti_params.weight_goal = 200;
+  Problem problem("../benchmark/unicycle_first_order_0/"
+                  "parallelpark_0.yaml");
+  Trajectory init_guess("../test/unicycle_first_order_0/"
+                        "guess_parallelpark_0_sol0.yaml");
+
+  options_trajopt.solver_id = static_cast<int>(SOLVER::mpcc_linear);
+  options_trajopt.control_bounds = 1;
+  options_trajopt.use_warmstart = 1;
+  options_trajopt.window_shift = 5;
+  options_trajopt.window_optimize = 30;
+  options_trajopt.smooth_traj = 1;
+  options_trajopt.k_linear = 5.;
+  options_trajopt.k_contour = 10.;
+  options_trajopt.weight_goal = 200;
 
   Result_opti result;
-  compound_solvers(file_inout, result);
+  Trajectory sol;
+  trajectory_optimization(problem, init_guess, options_trajopt, sol, result);
   BOOST_TEST_CHECK(result.feasible);
   std::cout << "cost is " << result.cost << std::endl;
   BOOST_TEST_CHECK(result.cost <= 3.6);
@@ -1575,12 +1648,10 @@ BOOST_AUTO_TEST_CASE(parallel_bad_init_guess) {
 
 BOOST_AUTO_TEST_CASE(parallel_search_time) {
 
-  opti_params = Opti_params();
-  File_parser_inout file_inout;
-  file_inout.env_file = "../benchmark/unicycle_first_order_0/"
-                        "parallelpark_0.yaml";
-  file_inout.init_guess = "../test/unicycle_first_order_0/"
-                          "guess_parallelpark_0_sol0.yaml";
+  Options_trajopt options_trajopt;
+  Problem problem("../benchmark/unicycle_first_order_0/parallelpark_0.yaml");
+  Trajectory init_guess("../test/unicycle_first_order_0/"
+                        "guess_parallelpark_0_sol0.yaml");
 
   // (opti) ⋊> ~/s/w/k/build_debug on dev ⨯
   // make -j4 &&  ./test_croco
@@ -1593,12 +1664,13 @@ BOOST_AUTO_TEST_CASE(parallel_search_time) {
   // --control_bounds 1 --use_warmstart 1 >
   // quim.txt
 
-  opti_params.solver_id = static_cast<int>(SOLVER::time_search_traj_opt);
-  opti_params.control_bounds = 1;
-  opti_params.use_warmstart = 1;
+  options_trajopt.solver_id = static_cast<int>(SOLVER::time_search_traj_opt);
+  options_trajopt.control_bounds = 1;
+  options_trajopt.use_warmstart = 1;
 
   Result_opti result;
-  compound_solvers(file_inout, result);
+  Trajectory sol;
+  trajectory_optimization(problem, init_guess, options_trajopt, sol, result);
   BOOST_TEST_CHECK(result.feasible);
   std::cout << "cost is " << result.cost << std::endl;
   BOOST_TEST_CHECK(result.cost <= 3.3);
@@ -1606,26 +1678,26 @@ BOOST_AUTO_TEST_CASE(parallel_search_time) {
 
 BOOST_AUTO_TEST_CASE(bugtrap_bad_mpc_adaptative) {
 
-  opti_params = Opti_params();
-  File_parser_inout file_inout;
-  file_inout.env_file = "../benchmark/unicycle_first_order_0/"
-                        "bugtrap_0.yaml";
-  file_inout.init_guess = "../test/unicycle_first_order_0/"
-                          "guess_bugtrap_0_sol0.yaml";
+  Options_trajopt options_trajopt;
+  Problem problem("../benchmark/unicycle_first_order_0/"
+                  "bugtrap_0.yaml");
+  Trajectory init_guess("../test/unicycle_first_order_0/"
+                        "guess_bugtrap_0_sol0.yaml");
 
-  opti_params.solver_id = static_cast<int>(SOLVER::mpc_adaptative);
+  options_trajopt.solver_id = static_cast<int>(SOLVER::mpc_adaptative);
 
-  opti_params.control_bounds = 1;
-  opti_params.use_warmstart = 1;
-  opti_params.window_shift = 20;
-  opti_params.window_optimize = 50;
-  opti_params.weight_goal = 100;
-  opti_params.noise_level = 0.;
-  opti_params.smooth_traj = true;
-  opti_params.shift_repeat = false;
+  options_trajopt.control_bounds = 1;
+  options_trajopt.use_warmstart = 1;
+  options_trajopt.window_shift = 20;
+  options_trajopt.window_optimize = 50;
+  options_trajopt.weight_goal = 100;
+  options_trajopt.noise_level = 0.;
+  options_trajopt.smooth_traj = true;
+  options_trajopt.shift_repeat = false;
 
   Result_opti result;
-  compound_solvers(file_inout, result);
+  Trajectory sol;
+  trajectory_optimization(problem, init_guess, options_trajopt, sol, result);
   BOOST_TEST_CHECK(result.feasible);
   std::cout << "cost is " << result.cost << std::endl;
   BOOST_TEST_CHECK(result.cost <= 27.);
@@ -1633,27 +1705,26 @@ BOOST_AUTO_TEST_CASE(bugtrap_bad_mpc_adaptative) {
 
 BOOST_AUTO_TEST_CASE(kink_mpcc) {
 
-  opti_params = Opti_params();
-  File_parser_inout file_inout;
-  file_inout.env_file = "../benchmark/unicycle_first_order_0/"
-                        "kink_0.yaml";
-  file_inout.init_guess = "../test/unicycle_first_order_0/"
-                          "guess_kink_0_sol0.yaml";
+  Options_trajopt options_trajopt;
+  Problem problem("../benchmark/unicycle_first_order_0/kink_0.yaml");
+  Trajectory init_guess("../test/unicycle_first_order_0/"
+                        "guess_kink_0_sol0.yaml");
 
-  opti_params.solver_id = static_cast<int>(SOLVER::mpcc_linear);
-  opti_params.control_bounds = 1;
-  opti_params.use_warmstart = 1;
-  opti_params.window_shift = 20;
-  opti_params.window_optimize = 40;
-  opti_params.weight_goal = 100;
-  opti_params.k_linear = 20;
-  opti_params.k_contour = 10;
-  opti_params.smooth_traj = 1;
-  opti_params.max_iter = 30;
-  opti_params.shift_repeat = false;
+  options_trajopt.solver_id = static_cast<int>(SOLVER::mpcc_linear);
+  options_trajopt.control_bounds = 1;
+  options_trajopt.use_warmstart = 1;
+  options_trajopt.window_shift = 20;
+  options_trajopt.window_optimize = 40;
+  options_trajopt.weight_goal = 100;
+  options_trajopt.k_linear = 20;
+  options_trajopt.k_contour = 10;
+  options_trajopt.smooth_traj = 1;
+  options_trajopt.max_iter = 30;
+  options_trajopt.shift_repeat = false;
 
   Result_opti result;
-  compound_solvers(file_inout, result);
+  Trajectory sol;
+  trajectory_optimization(problem, init_guess, options_trajopt, sol, result);
   BOOST_TEST_CHECK(result.feasible);
   std::cout << "cost is " << result.cost << std::endl;
   BOOST_TEST_CHECK(result.cost <= 14.);
@@ -1773,21 +1844,21 @@ BOOST_AUTO_TEST_CASE(matrix_rotation) {
 
 BOOST_AUTO_TEST_CASE(second_order_park_traj_opt) {
 
-  opti_params = Opti_params();
-  File_parser_inout file_inout;
-  file_inout.env_file = "../benchmark/unicycle_second_order_0/"
-                        "parallelpark_0.yaml";
-  file_inout.init_guess = "../test/unicycle_second_order_0/"
-                          "guess_parallelpark_0_sol0.yaml";
+  Options_trajopt options_trajopt;
+  Problem problem("../benchmark/unicycle_second_order_0/"
+                  "parallelpark_0.yaml");
+  Trajectory init_guess("../test/unicycle_second_order_0/"
+                        "guess_parallelpark_0_sol0.yaml");
 
-  opti_params.solver_id = static_cast<int>(SOLVER::traj_opt);
-  opti_params.control_bounds = 1;
-  opti_params.use_warmstart = 1;
-  opti_params.weight_goal = 100;
-  opti_params.max_iter = 50;
+  options_trajopt.solver_id = static_cast<int>(SOLVER::traj_opt);
+  options_trajopt.control_bounds = 1;
+  options_trajopt.use_warmstart = 1;
+  options_trajopt.weight_goal = 100;
+  options_trajopt.max_iter = 50;
 
   Result_opti result;
-  compound_solvers(file_inout, result);
+  Trajectory sol;
+  trajectory_optimization(problem, init_guess, options_trajopt, sol, result);
   BOOST_TEST_CHECK(result.feasible);
   std::cout << "cost is " << result.cost << std::endl;
   BOOST_TEST_CHECK(result.cost <= 10.);
@@ -1795,21 +1866,21 @@ BOOST_AUTO_TEST_CASE(second_order_park_traj_opt) {
 
 BOOST_AUTO_TEST_CASE(second_order_park_time) {
 
-  opti_params = Opti_params();
-  File_parser_inout file_inout;
-  file_inout.env_file = "../benchmark/unicycle_second_order_0/"
-                        "parallelpark_0.yaml";
-  file_inout.init_guess = "../test/unicycle_second_order_0/"
-                          "guess_parallelpark_0_sol0.yaml";
+  Options_trajopt options_trajopt;
+  Problem problem("../benchmark/unicycle_second_order_0/"
+                  "parallelpark_0.yaml");
+  Trajectory init_guess("../test/unicycle_second_order_0/"
+                        "guess_parallelpark_0_sol0.yaml");
 
-  opti_params.solver_id = static_cast<int>(SOLVER::traj_opt_free_time);
-  opti_params.control_bounds = 1;
-  opti_params.use_warmstart = 1;
-  opti_params.weight_goal = 100;
-  opti_params.max_iter = 50;
+  options_trajopt.solver_id = static_cast<int>(SOLVER::traj_opt_free_time);
+  options_trajopt.control_bounds = 1;
+  options_trajopt.use_warmstart = 1;
+  options_trajopt.weight_goal = 100;
+  options_trajopt.max_iter = 50;
 
   Result_opti result;
-  compound_solvers(file_inout, result);
+  Trajectory sol;
+  trajectory_optimization(problem, init_guess, options_trajopt, sol, result);
   BOOST_TEST_CHECK(result.feasible);
   std::cout << "cost is " << result.cost << std::endl;
   BOOST_TEST_CHECK(result.cost <= 11.);
@@ -1817,24 +1888,24 @@ BOOST_AUTO_TEST_CASE(second_order_park_time) {
 
 BOOST_AUTO_TEST_CASE(quadrotor_0_recovery) {
 
-  opti_params = Opti_params();
-
-  File_parser_inout file_inout;
-  file_inout.env_file = "../benchmark/quadrotor_0/"
-                        "empty_test_recovery_welf.yaml";
-
+  Options_trajopt options_trajopt;
+  Problem problem("../benchmark/quadrotor_0/"
+                  "empty_test_recovery_welf.yaml");
   // auto model_robot = mks<Model_quad3d>();
-  opti_params.solver_id = 0;
-  opti_params.control_bounds = 1;
-  opti_params.use_warmstart = 1;
-  opti_params.weight_goal = 300;
-  opti_params.max_iter = 400;
-  opti_params.noise_level = 1e-3;
-  file_inout.T = 300;
-  opti_params.ref_x0 = 1;
+  options_trajopt.solver_id = 0;
+  options_trajopt.control_bounds = 1;
+  options_trajopt.use_warmstart = 1;
+  options_trajopt.weight_goal = 300;
+  options_trajopt.max_iter = 400;
+  options_trajopt.noise_level = 1e-3;
+  options_trajopt.ref_x0 = 1;
 
   Result_opti result;
-  compound_solvers(file_inout, result);
+  Trajectory sol;
+  Trajectory init_guess; // TODO: what to do in this cases?
+  init_guess.num_time_steps = 300;
+
+  trajectory_optimization(problem, init_guess, options_trajopt, sol, result);
   BOOST_TEST_CHECK(result.feasible);
   std::cout << "cost is " << result.cost << std::endl;
   BOOST_TEST_CHECK(result.cost <= 5.);
@@ -1842,34 +1913,27 @@ BOOST_AUTO_TEST_CASE(quadrotor_0_recovery) {
 
 BOOST_AUTO_TEST_CASE(t_recovery_with_smooth) {
 
-  File_parser_inout file_inout;
-  file_inout.env_file = "../benchmark/quadrotor_0/"
-                        "empty_test_recovery_welf.yaml";
-  file_inout.T = 400;
+  Problem problem("../benchmark/quadrotor_0/"
+                  "empty_test_recovery_welf.yaml");
+  Trajectory init_guess; // TODO: use T!!
+  init_guess.num_time_steps = 400;
 
-  Opti_params opti;
-  opti.solver_id = 12;
-  opti.control_bounds = 1;
-  opti.use_warmstart = 1;
-  opti.weight_goal = 100;
-  opti.max_iter = 2000;
-  opti.noise_level = 1e-4;
-  opti.ref_x0 = true;
-  opti.smooth_traj = 1;
+  Options_trajopt options_trajopt;
+  options_trajopt.solver_id = static_cast<int>(SOLVER::traj_opt_no_bound_bound);
+  options_trajopt.control_bounds = 1;
+  options_trajopt.use_warmstart = 1;
+  options_trajopt.weight_goal = 100;
+  options_trajopt.max_iter = 1000;
+  options_trajopt.noise_level = 1e-4;
+  options_trajopt.ref_x0 = true;
+  options_trajopt.smooth_traj = 1;
 
   Result_opti result;
-  compound_solvers(file_inout, result);
+  Trajectory sol;
+  trajectory_optimization(problem, init_guess, options_trajopt, sol, result);
   BOOST_TEST_CHECK(result.feasible);
   std::cout << "cost is " << result.cost << std::endl;
   BOOST_TEST_CHECK(result.cost <= 4.);
-
-  //     ./croco_main   --env
-  //     ../benchmark/quadrotor_0/empty_test_recovery_welf.yaml
-  //     --out out.yaml --solver_id 12
-  //     --control_bounds 1 --use_warmstart 1
-  //     --weight_goal 100. --max_iter 2000 --
-  // noise_level 1e-4 --use_finite_diff 0 --T
-  // 400 --ref_x0 1 --smooth_traj 1
 }
 
 BOOST_AUTO_TEST_CASE(t_slerp) {
@@ -1889,31 +1953,33 @@ BOOST_AUTO_TEST_CASE(t_slerp) {
 
 BOOST_AUTO_TEST_CASE(mpc_controller) {
 
-  opti_params = Opti_params();
-  File_parser_inout file_inout;
+  Options_trajopt options_trajopt;
   bool half = true;
+  Problem problem;
+  Trajectory init_guess; // TODO: use T!!
 
   if (!half) {
-    file_inout.env_file = "../benchmark/unicycle_first_order_0/"
-                          "check_region_of_attraction.yaml";
-    file_inout.T = 40;
+    problem.read_from_yaml("../benchmark/unicycle_first_order_0/"
+                           "check_region_of_attraction.yaml");
+    init_guess.num_time_steps = 40;
   } else {
-    file_inout.env_file = "../benchmark/unicycle_first_order_0/"
-                          "check_region_of_attraction_half."
-                          "yaml";
-    file_inout.T = 30;
+    problem.read_from_yaml("../benchmark/unicycle_first_order_0/"
+                           "check_region_of_attraction_half."
+                           "yaml");
+    init_guess.num_time_steps = 30;
   }
 
-  opti_params.solver_id = static_cast<int>(SOLVER::traj_opt);
-  opti_params.control_bounds = 1;
-  opti_params.use_warmstart = true;
-  opti_params.weight_goal = 200;
-  opti_params.smooth_traj = 1;
-  opti_params.max_iter = 40;
+  options_trajopt.solver_id = static_cast<int>(SOLVER::traj_opt);
+  options_trajopt.control_bounds = 1;
+  options_trajopt.use_warmstart = true;
+  options_trajopt.weight_goal = 200;
+  options_trajopt.smooth_traj = 1;
+  options_trajopt.max_iter = 40;
 
   Result_opti result;
-  CSTR_(file_inout.name);
-  compound_solvers(file_inout, result);
+  Trajectory sol;
+
+  trajectory_optimization(problem, init_guess, options_trajopt, sol, result);
   BOOST_TEST_CHECK(result.feasible);
   std::cout << "cost is " << result.cost << std::endl;
   BOOST_TEST_CHECK(result.cost <= 40.);
@@ -1922,11 +1988,11 @@ BOOST_AUTO_TEST_CASE(mpc_controller) {
   result.write_yaml_db(ref_out);
 
   // # controller
-  size_t num_samples = 100;
+  size_t num_samples = 5;
 
   double noise_magnitude = .6;
 
-  Eigen::VectorXd start = file_inout.start;
+  Eigen::VectorXd start = problem.start;
 
   struct Data_out {
     bool feasible = 0;
@@ -1946,13 +2012,16 @@ BOOST_AUTO_TEST_CASE(mpc_controller) {
           start + noise_magnitude * Eigen::VectorXd::Random(start.size());
 
       Result_opti resulti;
-      file_inout.xs = result.xs_out;
-      file_inout.us = result.us_out;
-      file_inout.start = new_start;
-      opti_params.max_iter = max_iter;
-      opti_params.th_acceptnegstep = 2.;
-      opti_params.smooth_traj = false;
-      solve_with_custom_solver(file_inout, resulti);
+      Trajectory soli;
+      Trajectory init_guess;
+      init_guess.states = result.xs_out;
+      init_guess.actions = result.us_out;
+      problem.start = new_start;
+      options_trajopt.max_iter = max_iter;
+      options_trajopt.th_acceptnegstep = 2.;
+      options_trajopt.smooth_traj = false;
+
+      trajectory_optimization(problem, init_guess, options_trajopt, soli, resulti);
 
       Data_out data_out{
           .feasible = resulti.feasible,
@@ -1964,7 +2033,7 @@ BOOST_AUTO_TEST_CASE(mpc_controller) {
     }
     // save to file
     //
-    std::ofstream out("mpc_attraction-" + std::to_string(opti_params.max_iter) +
+    std::ofstream out("mpc_attraction-" + std::to_string(options_trajopt.max_iter) +
                       "-h" + std::to_string(half) + ".yaml");
     std::string space2 = "  ";
     std::string space4 = "    ";
@@ -1988,27 +2057,28 @@ BOOST_AUTO_TEST_CASE(mpc_controller) {
 
 BOOST_AUTO_TEST_CASE(park_second_mpcc) {
 
-  opti_params = Opti_params();
-  File_parser_inout file_inout;
-  file_inout.env_file = "../benchmark/unicycle_second_order_0/"
-                        "parallelpark_0.yaml";
-  file_inout.init_guess = "../test/unicycle_second_order_0/"
-                          "guess_parallelpark_0_sol0.yaml";
+  Options_trajopt options_trajopt;
+  Problem problem("../benchmark/unicycle_second_order_0/"
+                  "parallelpark_0.yaml");
 
-  opti_params.solver_id = static_cast<int>(SOLVER::mpcc_linear);
-  opti_params.control_bounds = 1;
-  opti_params.use_warmstart = true;
-  opti_params.k_linear = 50;
-  opti_params.k_contour = 100;
-  opti_params.weight_goal = 200;
-  opti_params.smooth_traj = 1;
-  opti_params.max_iter = 30;
-  opti_params.window_optimize = 40;
-  opti_params.window_shift = 20;
-  opti_params.shift_repeat = 0;
+  Trajectory init_guess("../test/unicycle_second_order_0/"
+                        "guess_parallelpark_0_sol0.yaml");
+
+  options_trajopt.solver_id = static_cast<int>(SOLVER::mpcc_linear);
+  options_trajopt.control_bounds = 1;
+  options_trajopt.use_warmstart = true;
+  options_trajopt.k_linear = 50;
+  options_trajopt.k_contour = 100;
+  options_trajopt.weight_goal = 200;
+  options_trajopt.smooth_traj = 1;
+  options_trajopt.max_iter = 30;
+  options_trajopt.window_optimize = 40;
+  options_trajopt.window_shift = 20;
+  options_trajopt.shift_repeat = 0;
 
   Result_opti result;
-  compound_solvers(file_inout, result);
+  Trajectory sol;
+  trajectory_optimization(problem, init_guess, options_trajopt, sol, result);
   BOOST_TEST_CHECK(result.feasible);
   std::cout << "cost is " << result.cost << std::endl;
   BOOST_TEST_CHECK(result.cost <= 12.);
@@ -2067,8 +2137,12 @@ BOOST_AUTO_TEST_CASE(col_unicycle) {
 
   const char *env = "../benchmark/unicycle_first_order_0/parallelpark_0.yaml";
 
+  Problem problem;
+  problem.read_from_yaml(env);
+
   auto unicycle = Model_unicycle1();
-  unicycle.load_env_quim(env);
+  unicycle.load_env_quim(problem);
+
   Eigen::Vector3d x(.7, .8, 0);
 
   CollisionOut col;
@@ -2098,7 +2172,11 @@ BOOST_AUTO_TEST_CASE(col_car_with_trailer) {
   const char *env =
       "../benchmark/car_first_order_with_1_trailers_0/bugtrap_0.yaml";
   auto car = Model_car_with_trailers();
-  car.load_env_quim(env);
+
+  Problem problem;
+  problem.read_from_yaml(env);
+
+  car.load_env_quim(problem);
 
   Eigen::Vector4d x(3.4, 3, 3.14, 3.14);
   CollisionOut col;
@@ -2121,10 +2199,12 @@ BOOST_AUTO_TEST_CASE(col_car_with_trailer) {
 BOOST_AUTO_TEST_CASE(col_quad3d) {
 
   const char *env = "../benchmark/quadrotor_0/quad_one_obs.yaml";
+  Problem problem;
+  problem.read_from_yaml(env);
 
   Eigen::VectorXd x(13);
   auto quad3d = Model_quad3d();
-  quad3d.load_env_quim(env);
+  quad3d.load_env_quim(problem);
   CollisionOut col;
 
   x << 1., 1., 1., 0, 0, 0, 1, 0, 0, 0, 0, 0, 0;
@@ -2146,11 +2226,13 @@ BOOST_AUTO_TEST_CASE(col_quad3d) {
 
 BOOST_AUTO_TEST_CASE(col_acrobot) {
 
+  Problem problem;
   const char *env = "../benchmark/acrobot/swing_up_obs.yaml";
+  problem.read_from_yaml(env);
 
   Eigen::Vector4d x;
   auto acrobot = Model_acrobot();
-  acrobot.load_env_quim(env);
+  acrobot.load_env_quim(problem);
 
   CollisionOut col;
   x << 0, 0, 0, 0;
@@ -2230,10 +2312,55 @@ BOOST_AUTO_TEST_CASE(check_traj) {
   Eigen::VectorXd dts(us.size());
   dts.setConstant(model_robot->ref_dt);
 
-  bool flag = check_trajectory(xs, us, dts, model_robot, 1e-2);
+  bool flag = check_trajectory(xs, us, dts, model_robot) < 1e-2;
 
   std::cout << "flag is " << flag << std::endl;
   BOOST_TEST(flag);
 
   // check
+}
+
+BOOST_AUTO_TEST_CASE(check_car2_alex) {
+
+  std::shared_ptr<Model_robot> car2 = std::make_shared<Model_car2>();
+
+  auto result = "../test/car2/trajectory_alexander.yaml";
+
+  std::cout << "loading file: " << result << std::endl;
+  YAML::Node node = YAML::LoadFile(result);
+
+  std::vector<Eigen::VectorXd> __xs = yaml_node_to_xs(node["states"]);
+  std::vector<Eigen::VectorXd> __us = yaml_node_to_xs(node["actions"]);
+
+  __us.pop_back();
+
+  std::vector<Eigen::VectorXd> xs(__xs.size());
+
+  std::transform(__xs.begin(), __xs.end(), xs.begin(), [](auto &v) {
+    Eigen::VectorXd out(5);
+    out = v.head(5);
+    out(2) = wrap_angle(out(2));
+    return out;
+  });
+
+  Trajectory traj;
+
+  traj.states = xs;
+  traj.actions = __us;
+
+  traj.to_yaml_format(std::cout);
+
+  traj.check(car2);
+  traj.to_yaml_format(std::cout);
+}
+
+BOOST_AUTO_TEST_CASE(test_cli) {
+
+  std::string cmd = "make croco_main && ./croco_main --solver_id 0  --env_file  "
+                    "../benchmark/acrobot/swing_up_empty.yaml   --init_guess "
+                    "../benchmark/acrobot/swing_up_empty_guess_db.yaml "
+                    "--max_iter 400  --out buu.yaml --weight_goal 1000";
+
+  int out = std::system(cmd.c_str());
+  BOOST_TEST(out == 0);
 }

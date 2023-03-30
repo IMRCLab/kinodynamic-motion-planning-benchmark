@@ -20,14 +20,12 @@
 BOOST_AUTO_TEST_CASE(parallel_park_1) {
 
   Options_db options_db;
-  Inout_db inout_db;
-  options_db.max_motions = 2000;
 
-  inout_db.inputFile =
-      "../benchmark/unicycle_first_order_0/parallelpark_0.yaml";
-  inout_db.motionsFile =
+  Problem problem("../benchmark/unicycle_first_order_0/parallelpark_0.yaml");
+
+  options_db.motionsFile =
       "../cloud/motions/unicycle_first_order_0_sorted.msgpack";
-
+  options_db.max_motions = 2000;
   options_db.delta = 0.2;
   options_db.epsilon = 1.;
   options_db.alpha = 0.3;
@@ -38,39 +36,44 @@ BOOST_AUTO_TEST_CASE(parallel_park_1) {
   options_db.rebuild_every = 5000;
   options_db.cut_actions = false;
   options_db.use_landmarks = false;
+  options_db.num_sample_trials = 1000;
 
   {
 
-    options_db.new_heu = 0;
-    solve(options_db, inout_db);
+    options_db.heuristic = 0;
+    Trajectory traj;
+    Out_info_db out_db;
+    dbastar(problem, options_db, traj, out_db);
     std::cout << "***" << std::endl;
-    inout_db.print(std::cout);
     std::cout << "***" << std::endl;
-    BOOST_TEST(inout_db.solved);
-    BOOST_TEST(inout_db.cost < 3.5);
-    BOOST_TEST(inout_db.cost_with_delta_time < 3.5);
+    BOOST_TEST(out_db.solved);
+    BOOST_TEST(out_db.cost < 3.5);
+    BOOST_TEST(out_db.cost_with_delta_time < 3.5);
   }
+  // TODO: FIX this!!!
 
+  // very slow in debug mode!
   {
-    options_db.new_heu = 1;
-    solve(options_db, inout_db);
+    options_db.heuristic = 1;
+    Trajectory traj;
+    Out_info_db out_db;
+    dbastar(problem, options_db, traj, out_db);
     std::cout << "***" << std::endl;
-    inout_db.print(std::cout);
+    out_db.print(std::cout);
     std::cout << "***" << std::endl;
-    BOOST_TEST(inout_db.solved);
-    BOOST_TEST(inout_db.cost < 3.5);
-    BOOST_TEST(inout_db.cost_with_delta_time < 3.5);
+    BOOST_TEST(out_db.solved);
+    BOOST_TEST(out_db.cost < 3.5);
+    BOOST_TEST(out_db.cost_with_delta_time < 3.5);
   }
 }
 
 BOOST_AUTO_TEST_CASE(bugtrap_1) {
 
   Options_db options_db;
-  Inout_db inout_db;
   options_db.max_motions = 2000;
 
-  inout_db.inputFile = "../benchmark/unicycle_first_order_0/bugtrap_0.yaml";
-  inout_db.motionsFile =
+  Problem problem("../benchmark/unicycle_first_order_0/bugtrap_0.yaml");
+  options_db.motionsFile =
       "../cloud/motions/unicycle_first_order_0_sorted.msgpack";
 
   options_db.delta = 0.3;
@@ -86,38 +89,45 @@ BOOST_AUTO_TEST_CASE(bugtrap_1) {
 
   {
 
-    options_db.new_heu = 0;
-    solve(options_db, inout_db);
+    options_db.heuristic = 0;
+
+  Out_info_db out_db;
+    Trajectory traj;
+    dbastar(problem, options_db, traj, out_db);
+
     std::cout << "***" << std::endl;
-    inout_db.print(std::cout);
+    out_db.print(std::cout);
     std::cout << "***" << std::endl;
-    BOOST_TEST(inout_db.solved);
-    BOOST_TEST(inout_db.cost < 35);
-    BOOST_TEST(inout_db.cost_with_delta_time < 35);
+    BOOST_TEST(out_db.solved);
+    BOOST_TEST(out_db.cost < 35);
+    BOOST_TEST(out_db.cost_with_delta_time < 35);
   }
 
   {
-    options_db.new_heu = 1;
-    solve(options_db, inout_db);
+    options_db.heuristic = 1;
+
+  Out_info_db out_db;
+    Trajectory traj;
+    dbastar(problem, options_db, traj, out_db);
+
     std::cout << "***" << std::endl;
-    inout_db.print(std::cout);
+    out_db.print(std::cout);
     std::cout << "***" << std::endl;
-    BOOST_TEST(inout_db.solved);
-    BOOST_TEST(inout_db.cost < 35);
-    BOOST_TEST(inout_db.cost_with_delta_time < 35);
+    BOOST_TEST(out_db.solved);
+    BOOST_TEST(out_db.cost < 35);
+    BOOST_TEST(out_db.cost_with_delta_time < 35);
   }
 }
 
 BOOST_AUTO_TEST_CASE(t_kink) {
 
   Options_db options_db;
-  Inout_db inout_db;
   options_db.max_motions = 200;
 
-  inout_db.inputFile = "../benchmark/unicycle_first_order_0/kink_0.yaml";
-  inout_db.motionsFile =
-      "../cloud/motions/unicycle_first_order_0_sorted.msgpack";
+  Problem problem("../benchmark/unicycle_first_order_0/kink_0.yaml");
 
+  options_db.motionsFile =
+      "../cloud/motions/unicycle_first_order_0_sorted.msgpack";
   options_db.delta = 0.4;
   options_db.epsilon = 1.;
   options_db.alpha = 0.3;
@@ -131,37 +141,42 @@ BOOST_AUTO_TEST_CASE(t_kink) {
   options_db.num_sample_trials = 5000;
 
   {
-    options_db.new_heu = 0;
-    solve(options_db, inout_db);
+    options_db.heuristic = 0;
+    Out_info_db out_db;
+    Trajectory traj;
+    dbastar(problem, options_db, traj, out_db);
+
     std::cout << "***" << std::endl;
-    inout_db.print(std::cout);
+    out_db.print(std::cout);
     std::cout << "***" << std::endl;
-    BOOST_TEST(inout_db.solved);
-    BOOST_TEST(inout_db.cost < 25);
-    BOOST_TEST(inout_db.cost_with_delta_time < 25);
+    BOOST_TEST(out_db.solved);
+    BOOST_TEST(out_db.cost < 25);
+    BOOST_TEST(out_db.cost_with_delta_time < 25);
   }
 
   {
-    options_db.new_heu = 1;
-    solve(options_db, inout_db);
+    options_db.heuristic = 1;
+    Out_info_db out_db;
+
+    Trajectory traj;
+    dbastar(problem, options_db, traj, out_db);
+
     std::cout << "***" << std::endl;
-    inout_db.print(std::cout);
+    out_db.print(std::cout);
     std::cout << "***" << std::endl;
-    BOOST_TEST(inout_db.solved);
-    BOOST_TEST(inout_db.cost < 25);
-    BOOST_TEST(inout_db.cost_with_delta_time < 25);
+    BOOST_TEST(out_db.solved);
+    BOOST_TEST(out_db.cost < 25);
+    BOOST_TEST(out_db.cost_with_delta_time < 25);
   }
 }
 
 BOOST_AUTO_TEST_CASE(t_parallel2) {
 
   Options_db options_db;
-  Inout_db inout_db;
   options_db.max_motions = 5000;
 
-  inout_db.inputFile =
-      "../benchmark/unicycle_second_order_0/parallelpark_0.yaml";
-  inout_db.motionsFile =
+  Problem problem("../benchmark/unicycle_second_order_0/parallelpark_0.yaml");
+  options_db.motionsFile =
       "../cloud/motions/unicycle_second_order_0_sorted.msgpack";
 
   options_db.delta = 0.4;
@@ -177,36 +192,42 @@ BOOST_AUTO_TEST_CASE(t_parallel2) {
   options_db.num_sample_trials = 5000;
 
   {
-    options_db.new_heu = 0;
-    solve(options_db, inout_db);
+    options_db.heuristic = 0;
+    Out_info_db out_db;
+    Trajectory traj;
+    dbastar(problem, options_db, traj, out_db);
     std::cout << "***" << std::endl;
-    inout_db.print(std::cout);
+    out_db.print(std::cout);
     std::cout << "***" << std::endl;
-    BOOST_TEST(inout_db.solved);
-    BOOST_TEST(inout_db.cost < 7.5);
-    BOOST_TEST(inout_db.cost_with_delta_time < 7.5);
+    BOOST_TEST(out_db.solved);
+    BOOST_TEST(out_db.cost < 7.5);
+    BOOST_TEST(out_db.cost_with_delta_time < 7.5);
   }
 
   {
-    options_db.new_heu = 1;
-    solve(options_db, inout_db);
+    options_db.heuristic = 1;
+
+    Out_info_db out_db;
+    Trajectory traj;
+    dbastar(problem, options_db, traj, out_db);
+
     std::cout << "***" << std::endl;
-    inout_db.print(std::cout);
+    out_db.print(std::cout);
     std::cout << "***" << std::endl;
-    BOOST_TEST(inout_db.solved);
-    BOOST_TEST(inout_db.cost < 7.5);
-    BOOST_TEST(inout_db.cost_with_delta_time < 7.5);
+    BOOST_TEST(out_db.solved);
+    BOOST_TEST(out_db.cost < 7.5);
+    BOOST_TEST(out_db.cost_with_delta_time < 7.5);
   }
 }
 
 BOOST_AUTO_TEST_CASE(t_new_modes) {
 
   Options_db options_db;
-  Inout_db inout_db;
   options_db.max_motions = 200;
 
-  inout_db.inputFile = "../benchmark/unicycle_first_order_0/bugtrap_0.yaml";
-  inout_db.motionsFile =
+  Problem problem("../benchmark/unicycle_first_order_0/bugtrap_0.yaml");
+
+  options_db.motionsFile =
       "../cloud/motions/unicycle_first_order_0_sorted.msgpack";
 
   options_db.delta = 0.4;
@@ -216,32 +237,38 @@ BOOST_AUTO_TEST_CASE(t_new_modes) {
   options_db.cost_delta_factor = 1.;
   options_db.rebuild_every = 5000;
   options_db.num_sample_trials = 2000;
-  options_db.new_heu = 1;
+  options_db.heuristic = 1;
 
   {
     options_db.add_node_if_better = true;
 
-    solve(options_db, inout_db);
+    Out_info_db out_db;
+    Trajectory traj;
+    dbastar(problem, options_db, traj, out_db);
+
     std::cout << "***" << std::endl;
-    inout_db.print(std::cout);
+    out_db.print(std::cout);
     std::cout << "***" << std::endl;
 
-    BOOST_TEST(inout_db.solved);
-    BOOST_TEST(inout_db.cost < 30);
-    BOOST_TEST(inout_db.cost_with_delta_time < 30);
+    BOOST_TEST(out_db.solved);
+    BOOST_TEST(out_db.cost < 30);
+    BOOST_TEST(out_db.cost_with_delta_time < 30);
   }
   {
     options_db.add_node_if_better = false;
     options_db.add_after_expand = true;
 
-    solve(options_db, inout_db);
+    Out_info_db out_db;
+    Trajectory traj;
+    dbastar(problem, options_db, traj, out_db);
+
     std::cout << "***" << std::endl;
-    inout_db.print(std::cout);
+    out_db.print(std::cout);
     std::cout << "***" << std::endl;
 
-    BOOST_TEST(inout_db.solved);
-    BOOST_TEST(inout_db.cost < 30);
-    BOOST_TEST(inout_db.cost_with_delta_time < 30);
+    BOOST_TEST(out_db.solved);
+    BOOST_TEST(out_db.cost < 30);
+    BOOST_TEST(out_db.cost_with_delta_time < 30);
   }
 }
 
@@ -251,37 +278,59 @@ BOOST_AUTO_TEST_CASE(t_bug2) {
   //
 
   Options_db options_db;
-  Inout_db inout_db;
 
-  inout_db.inputFile = "../benchmark/unicycle_second_order_0/bugtrap_0.yaml";
-  inout_db.motionsFile =
+  Problem problem("../benchmark/unicycle_second_order_0/bugtrap_0.yaml");
+  options_db.motionsFile =
       "../cloud/motions/unicycle_second_order_0_sorted.msgpack";
-  inout_db.outFile = "out.yaml";
 
   options_db.max_motions = 1000;
   options_db.delta = .4;
   options_db.epsilon = 1.;
   options_db.alpha = .3;
-  options_db.new_heu=1;
+  options_db.heuristic = 1;
   options_db.cost_delta_factor = 1.;
   options_db.rebuild_every = 5000;
   options_db.num_sample_trials = 5000;
 
   {
-    solve(options_db, inout_db);
+    Out_info_db out_db;
+    Trajectory traj;
+    dbastar(problem, options_db, traj, out_db);
     std::cout << "***" << std::endl;
-    inout_db.print(std::cout);
+    out_db.print(std::cout);
     std::cout << "***" << std::endl;
 
-    BOOST_TEST(inout_db.solved);
-    BOOST_TEST(inout_db.cost < 70);
-    BOOST_TEST(inout_db.cost_with_delta_time < 70);
+    BOOST_TEST(out_db.solved);
+    BOOST_TEST(out_db.cost < 70);
+    BOOST_TEST(out_db.cost_with_delta_time < 70);
   }
-
-
-
-
 }
+
+// CONTINUE HERE -- visualization and primitives for 3d case!!
+
+// this works
+// (croco) ⋊> ~/s/w/k/build on dev ⨯ make && ./croco_main --yaml_solver_file
+// ../solvers_timeopt/mpcc_v0.yaml --env_file
+// ../benchmark/quad2d/quad_obs_column.yaml --out out.yaml --init_guess
+// ../test/quad2d/quad2d_obs_column_init_guess .yaml > quim.txt
+
+// (croco) ⋊> ~/s/w/k/build on dev ⨯ make &&   ./croco_main --yaml_solver_file
+// ../solvers_timeopt/mpcc_v0.yaml --env_file
+// ../benchmark/quad2d/quad_obs_column.yaml --out out.yaml --init_guess
+// ../test/quad2d/quad2d_obs_column_init_gue ss.yaml --new_format 1
+
+// (croco) ⋊> ~/s/w/k/build on dev ⨯ make &&  ./main_dbastar --inputFile
+// ../benchmark/quad2d/quad_obs_recovery.yaml  --motionsFile
+// ../cloud/motionsX/quad2d_sorted_2023-02-26--13-40-CONCAT.yaml.split_v0.msgpack
+// --outFile out.yaml  - -delta .8  --max_motions 1000 --maxCost 1100000.0
+// --cfg_file ../params_v0.yaml
+
+// quad 2d
+//  (croco) ⋊> ~/s/w/k/build on dev ⨯ make &&  ./main_dbastar --inputFile
+//  ../benchmark/quad2d/quad_obs_column.yaml  --motionsFile
+//  ../cloud/motionsX/quad2d_sorted_2023-02-26--13-40-CONCAT.yaml.split_v0.msgpack
+//  --outFile out.yaml  --d elta .8  --max_motions 1000 --maxCost 1100000.0
+//  --cfg_file ../params_v0.yaml
 
 BOOST_AUTO_TEST_CASE(t_kink2) {
 
@@ -290,7 +339,8 @@ BOOST_AUTO_TEST_CASE(t_kink2) {
   // ../cloud/motions/unicycle_second_order_0_sorted.msgpack --max_motions 1000
   // --outputFile
   //  qdbg/result_dbastar.yaml --delta 0.4  --epsilon 1.0 --alpha 0.3
-  //  --filterDuplicates False --maxCost 1000000.0 --new_heu 1 --resolution 0.1
+  //  --filterDuplicates False --maxCost 1000000.0 --heuristic 1 --resolution
+  //  0.1
   //  --cost_delta_factor 1.0  --rebuild_every 5000 --num_sample 5000
   //  --cut_actions false --max
   // _expands 100000 --use_landmarks 0

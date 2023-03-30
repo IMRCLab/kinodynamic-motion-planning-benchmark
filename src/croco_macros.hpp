@@ -12,19 +12,16 @@
 
 #define STR(x, sep) #x << sep << x
 
-
-
-
 #define STR_(x) #x << ": " << x
 
-
-
 #define CSTR_(x) std::cout << #x << ": " << x << std::endl;
+
+#define STRY(x, out, be, af)  out <<  be << #x << af << x << std::endl
 
 #define FMT_E                                                                  \
   Eigen::IOFormat(6, Eigen::DontAlignCols, ",", ",", "", "", "[", "]")
 
-#define STR_VV(x,af) #x << af << x.format(FMT_E) 
+#define STR_VV(x, af) #x << af << x.format(FMT_E)
 
 #define STR_V(x) #x << ": " << x.format(FMT_E)
 
@@ -50,15 +47,12 @@
     throw std::runtime_error(msg);                                             \
   }
 
-
-#define CHECK_NEQ(A, B, msg)                                                    \
-  if (A == B) {                                                             \
-    std::cout << "CHECK_NEQ failed: '" << #A << "'=" << A << " '" << #B         \
+#define CHECK_NEQ(A, B, msg)                                                   \
+  if (A == B) {                                                                \
+    std::cout << "CHECK_NEQ failed: '" << #A << "'=" << A << " '" << #B        \
               << "'=" << B << " -- " << msg << std::endl;                      \
     throw std::runtime_error(msg);                                             \
   }
-
-
 
 #define CHECK_GEQ(A, B, msg)                                                   \
   if (!(A >= B)) {                                                             \
@@ -67,18 +61,19 @@
     throw std::runtime_error(msg);                                             \
   }
 
-
-
-
-
-#define CHECK_GE(A, B, msg)                                                   \
-  if (!(A > B)) {                                                             \
-    std::cout << "CHECK_GE failed: '" << #A << "'=" << A << " '" << #B        \
+#define CHECK_LEQ(A, B, msg)                                                   \
+  if (!(A <= B)) {                                                             \
+    std::cout << "CHECK_LEQ failed: '" << #A << "'=" << A << " '" << #B        \
               << "'=" << B << " -- " << msg << std::endl;                      \
     throw std::runtime_error(msg);                                             \
   }
 
-
+#define CHECK_GE(A, B, msg)                                                    \
+  if (!(A > B)) {                                                              \
+    std::cout << "CHECK_GE failed: '" << #A << "'=" << A << " '" << #B         \
+              << "'=" << B << " -- " << msg << std::endl;                      \
+    throw std::runtime_error(msg);                                             \
+  }
 
 #define CHECK_SEQ(A, B, msg)                                                   \
   if (!(A <= B)) {                                                             \
@@ -88,9 +83,9 @@
   }
 
 #define ERROR_WITH_INFO(msg)                                                   \
-  throw std::runtime_error(std::string("--ERROR-- ") +  __FILE__ +              \
-  std::string(":") +  std::to_string(__LINE__) + " \"" +                    \
-                           std::string(msg) + "\"\n");
+  throw std::runtime_error(std::string("--ERROR-- ") + __FILE__ +              \
+                           std::string(":") + std::to_string(__LINE__) +       \
+                           " \"" + std::string(msg) + "\"\n");
 
 #define WARN_WITH_INFO(msg)                                                    \
   std::cout << __FILE__ + std::string(":") + std::to_string(__LINE__) + "\"" + \

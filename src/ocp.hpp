@@ -17,11 +17,15 @@
 #include "general_utils.hpp"
 #include "robot_models.hpp"
 
-
 #include "crocoddyl/core/action-base.hpp"
 
+inline std::string robot_type_to_path(const std::string &robot_type) {
+  std::string base_path = "../models/";
+  std::string suffix = ".yaml";
+  return base_path + robot_type + suffix;
+}
 
-struct Opti_params {
+struct Options_trajopt {
 
   bool CALLBACKS = true;
   std::string solver_name;
@@ -59,15 +63,11 @@ struct Opti_params {
   bool interp = false;
 
   void add_options(po::options_description &desc);
-  void print(std::ostream &out);
+  void print(std::ostream &out) const;
 
   void read_from_yaml(YAML::Node &node);
   void read_from_yaml(const char *file);
 };
-
-std::vector<Eigen::VectorXd> yaml_node_to_xs(const YAML::Node &node);
-
-extern Opti_params opti_params;
 
 using namespace crocoddyl;
 
@@ -89,7 +89,9 @@ enum class SOLVER {
   mpc_adaptative = 10,
   traj_opt_free_time_proxi = 11,
   traj_opt_no_bound_bound = 12,
-  none = 13
+  traj_opt_free_time_proxi_linear = 13,
+  traj_opt_free_time_linear = 14,
+  none = 15
 };
 
 void PrintVariableMap(const boost::program_options::variables_map &vm,
@@ -105,14 +107,15 @@ void print_data(boost::shared_ptr<ActionDataAbstractTpl<double>> data);
 
 struct Generate_params {
   bool free_time = false;
+  bool free_time_linear = false;
   std::string name;
   size_t N;
   Eigen::VectorXd goal;
   Eigen::VectorXd start;
   std::shared_ptr<Model_robot> model_robot;
-  std::vector<Eigen::VectorXd> states;
-  std::vector<Eigen::VectorXd> states_weights;
-  std::vector<Eigen::VectorXd> actions;
+  std::vector<Eigen::VectorXd> states = {};
+  std::vector<Eigen::VectorXd> states_weights = {};
+  std::vector<Eigen::VectorXd> actions = {};
   bool contour_control = false;
   ptr<Interpolator> interpolator = nullptr;
   double max_alpha = 100.;
@@ -123,10 +126,9 @@ struct Generate_params {
   void print(std::ostream &out) const;
 };
 
-
-
 ptr<crocoddyl::ShootingProblem>
-generate_problem(const Generate_params &gen_args, size_t &nx, size_t &nu);
+generate_problem(const Generate_params &gen_args,
+                 const Options_trajopt &options_trajopt, size_t &nx, size_t &nu);
 
 struct File_parser_inout {
   std::string problem_name;
@@ -138,6 +140,7 @@ struct File_parser_inout {
   double dt;
   std::vector<Eigen::VectorXd> xs;
   std::vector<Eigen::VectorXd> us;
+  Eigen::VectorXd ts; // times;
   Eigen::VectorXd start;
   Eigen::VectorXd goal;
   size_t T = 0; // number of time steps. If init_guess = "" , then initial guess
@@ -162,7 +165,13 @@ void convert_traj_with_variable_time(const std::vector<Eigen::VectorXd> &xs,
                                      const double &dt);
 
 struct Result_opti {
+  // Note: success is not the same as feasible.
+  // Feasible=1 means that the trajectory fulfil all the constraints.
+  // Success=1 means that the trajectory fulfil the constraints imposed by 
+  // the current formulation (e.g. some formulations will solve 
+  // first without bound constraints).
   bool feasible = false;
+  bool success = false;
   double cost = -1;
   std::string name;
   std::vector<Eigen::VectorXd> xs_out;
@@ -176,9 +185,20 @@ struct Result_opti {
 std::vector<Eigen::VectorXd>
 smooth_traj(const std::vector<Eigen::VectorXd> &us_init);
 
-void solve_with_custom_solver(File_parser_inout &file_inout,
-                              Result_opti &opti_out);
+void __trajectory_optimization(const Problem &problem,
+                               const Trajectory &init_guess,
+                               Options_trajopt &opti_parms, Trajectory &traj,
+                               Result_opti &opti_out);
 
-void compound_solvers(File_parser_inout &file_inout, Result_opti &opti_out);
+// void trajectory_optimization(Problem &problem, File_parser_inout &file_inout,
+//                              Result_opti &opti_out);
 
+void trajectory_optimization(const Problem &problem,
+                             const Trajectory &init_guess,
+                             Options_trajopt &opti_parms, Trajectory &traj,
+                             Result_opti &opti_out);
 
+bool check_problem(ptr<crocoddyl::ShootingProblem> problem,
+                   ptr<crocoddyl::ShootingProblem> problem2,
+                   const std::vector<Eigen::VectorXd> &xs,
+                   const std::vector<Eigen::VectorXd> &us);

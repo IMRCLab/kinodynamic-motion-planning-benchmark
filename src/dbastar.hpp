@@ -1,3 +1,4 @@
+#pragma once
 #include <algorithm>
 // // #include <boost/graph/graphviz.hpp>
 #include "Eigen/Core"
@@ -17,8 +18,8 @@
 //
 // // OMPL headers
 
-#include <ompl/base/spaces/RealVectorStateSpace.h>
-#include <ompl/control/SpaceInformation.h>
+// #include <ompl/base/spaces/RealVectorStateSpace.h>
+// #include <ompl/control/SpaceInformation.h>
 #include <ompl/control/spaces/RealVectorControlSpace.h>
 #include <ompl/datastructures/NearestNeighbors.h>
 // #include <ompl/datastructures/NearestNeighborsFLANN.h>
@@ -27,9 +28,10 @@
 //
 #include "fclHelper.hpp"
 #include "fclStateValidityChecker.hpp"
-// #include "ompl/base/ScopedState.h"
-// #include "robotStatePropagator.hpp"
-// #include "robots.h"
+#include "ompl/base/ScopedState.h"
+#include "robotStatePropagator.hpp"
+#include "robots.h"
+#include <fcl/fcl.h>
 
 namespace ob = ompl::base;
 namespace oc = ompl::control;
@@ -39,36 +41,6 @@ using Sample = std::vector<double>;
 using Sample_ = ob::State;
 
 #include "croco_macros.hpp"
-
-// boost stuff for the graph
-// #include <boost/graph/adjacency_list.hpp>
-// #include <boost/graph/dijkstra_shortest_paths.hpp>
-// #include <boost/graph/graph_traits.hpp>
-// #include <boost/graph/undirected_graph.hpp>
-// #include <boost/property_map/property_map.hpp>
-
-template <typename T>
-void set_from_yaml(YAML::Node &node, T &var, const char *name) {
-
-  if (YAML::Node parameter = node[name]) {
-    var = parameter.as<T>();
-  }
-}
-
-static inline double normalize_angle(double angle) {
-  const double result = fmod(angle + M_PI, 2.0 * M_PI);
-  if (result <= 0.0)
-    return result + M_PI;
-  return result - M_PI;
-}
-
-inline double norm_sq(double *x, size_t n) {
-  double out = 0;
-  for (size_t i = 0; i < n; i++) {
-    out += x[i] * x[i];
-  }
-  return out;
-}
 
 void copyToArray(const ompl::base::StateSpacePtr &space, double *reals,
                  const ompl::base::State *source);
@@ -104,6 +76,7 @@ template <class T> struct L2Q {
   template <typename Iterator1, typename Iterator2>
   ResultType operator()(Iterator1 a, Iterator2 b, size_t size,
                         ResultType worst_dist = -1) const {
+    (void)worst_dist;
     return fun(a, b, size);
   }
 
@@ -138,16 +111,6 @@ public:
 protected:
   const typename ompl::NearestNeighbors<_T>::DistanceFunction &distFun_;
 };
-
-void print_vec(const double *a, size_t n, bool eof = true);
-
-ob::State *
-_allocAndFillState(std::shared_ptr<ompl::control::SpaceInformation> si,
-                   const std::vector<double> &reals);
-
-ob::State *
-allocAndFillState(std::shared_ptr<ompl::control::SpaceInformation> si,
-                  const YAML::Node &node);
 
 std::ostream &printState(std::ostream &stream, const std::vector<double> &x);
 
@@ -187,11 +150,11 @@ public:
   std::vector<ob::State *> states;
   std::vector<oc::Control *> actions;
 
-  std::shared_ptr<ShiftableDynamicAABBTreeCollisionManager<float>>
+  std::shared_ptr<ShiftableDynamicAABBTreeCollisionManager<double>>
       collision_manager;
-  std::vector<fcl::CollisionObjectf *> collision_objects;
+  std::vector<fcl::CollisionObjectd *> collision_objects;
 
-  float cost;
+  double cost;
 
   size_t idx;
   // std::string name;
@@ -220,7 +183,7 @@ struct AStarNode {
   float hScore;
 
   const AStarNode *came_from;
-  fcl::Vector3f used_offset;
+  fcl::Vector3d used_offset;
   size_t used_motion;
 
   open_t::handle_type handle;
@@ -230,15 +193,6 @@ struct AStarNode {
 
 float heuristic(std::shared_ptr<RobotOmpl> robot, const ob::State *s,
                 const ob::State *g);
-
-template <typename Fun, typename... Args>
-auto timed_fun(Fun fun, Args &&...args) {
-  auto tic = std::chrono::high_resolution_clock::now();
-  auto out = fun(std::forward<Args>(args)...);
-  auto tac = std::chrono::high_resolution_clock::now();
-  return std::make_pair(
-      out, std::chrono::duration<double, std::milli>(tac - tic).count());
-}
 
 using Ei = std::pair<int, double>;
 using EdgeList = std::vector<std::pair<int, int>>;
@@ -381,39 +335,15 @@ enum class Terminate_status {
   UNKNOWN = 3,
 };
 
+struct Out_info_db {
 
-template <typename T>
-void set_from_boostop(po::options_description &desc, T &var, const char *name) {
-  desc.add_options()(name, po::value<T>(&var)->default_value(var));
-}
-
-
-
-
-struct Inout_db {
-
-  std::string inputFile;
-  std::string motionsFile;
-  std::string outFile;
-  std::string problem_name;
   double cost = -1;
   bool solved = 0;
   double cost_with_delta_time = -1;
-
-  // const Eigen::IOFormat FMT(6, Eigen::DontAlignCols, ",", ",", "", "", "[",
-  // "]");
-  // Eigen::VectorXd start;
-  // Eigen::VectorXd goal;
-  // std::vector<Eigen::VectorXd> xs;
-  // std::vector<Eigen::VectorXd> us;
-
   void print(std::ostream &out);
-
-  void add_options(po::options_description &desc);
-
-  void read_from_yaml(YAML::Node &node);
-
-  void read_from_yaml(const char *file);
+  // void add_options(po::options_description &desc);
+  // void read_from_yaml(YAML::Node &node);
+  // void read_from_yaml(const char *file);
 };
 
 struct Options_db {
@@ -421,9 +351,11 @@ struct Options_db {
   float delta = .3;
   float epsilon = 1.;
   float alpha = .5;
+  std::string motionsFile = "";
+  std::string outFile = "out.yaml";
   bool filterDuplicates = true;
   float maxCost = std::numeric_limits<float>::infinity();
-  int new_heu = 0;
+  int heuristic = 0;
   size_t max_motions = std::numeric_limits<int>::max();
   double resolution = .2;
   double delta_factor_goal = 1;
@@ -438,8 +370,10 @@ struct Options_db {
   double epsilon_soft_duplicate = 1.5;
   bool add_node_if_better = false;
   bool debug = false;
-  bool add_after_expand = false; // this does not improve cost of closed nodes. it is fine if heu is admissible
-  bool propagate_controls = false; // TODO: check what happens, in the style of Raul Shome
+  bool add_after_expand = false; // this does not improve cost of closed nodes.
+                                 // it is fine if heu is admissible
+  bool propagate_controls =
+      false; // TODO: check what happens, in the style of Raul Shome
 
   void add_options(po::options_description &desc);
 
@@ -482,13 +416,13 @@ struct Time_benchmark {
   void write(std::ostream &out);
 };
 
-void generate_env(YAML::Node &env,
-                  std::vector<fcl::CollisionObjectf *> &obstacles,
-                  fcl::BroadPhaseCollisionManagerf *bpcm_env);
+// void generate_env(YAML::Node &env,
+//                   std::vector<fcl::CollisionObjectf *> &obstacles,
+//                   fcl::BroadPhaseCollisionManagerf *bpcm_env);
 
 void load_motion_primitives(const std::string &motionsFile, RobotOmpl &robot,
                             std::vector<Motion> &motions, int max_motions,
-                            bool cut_actions);
+                            bool cut_actions, bool shuffle);
 
 double automatic_delta(double delta_in, double alpha, RobotOmpl &robot,
                        ompl::NearestNeighbors<Motion *> &T_m);
@@ -520,7 +454,10 @@ struct Heu_blind : Heu_fun {
 
   Heu_blind() {}
 
-  virtual double h(const ompl::base::State *x) override { return 0; }
+  virtual double h(const ompl::base::State *x) override {
+    (void)x;
+    return 0;
+  }
 
   virtual ~Heu_blind() override{};
 };
@@ -528,17 +465,26 @@ struct Heu_blind : Heu_fun {
 struct Heu_roadmap : Heu_fun {
 
   std::shared_ptr<RobotOmpl> robot;
-  ompl::NearestNeighbors<HeuNode *> *T_heu;
+  std::shared_ptr<ompl::NearestNeighbors<HeuNode *>> T_heu;
+  std::vector<SampleNode> heuristic_map;
+  std::vector<Sample_ *> batch_samples;
 
-  Heu_roadmap(std::shared_ptr<RobotOmpl> robot,
-              ompl::NearestNeighbors<HeuNode *> *T_heu)
-      : robot(robot), T_heu(T_heu) {}
+  Heu_roadmap(std::shared_ptr<RobotOmpl> robot, size_t num_sample_trials,
+              ob::State *startState, ob::State *goalState,
+              double resolution = .1);
 
   virtual double h(const ompl::base::State *x) override {
-    return heuristicCollisionsTree(T_heu, x, robot);
+    CHECK(T_heu, AT);
+    return heuristicCollisionsTree(T_heu.get(), x, robot);
   }
 
-  virtual ~Heu_roadmap() override{};
+  virtual ~Heu_roadmap() override{
+
+      // I have to delete stuff!!!
+      // TODO: memory leak
+
+  };
 };
 
-int solve(Options_db &options_db, Inout_db &result);
+void dbastar(const Problem &problem, Options_db &options_db,
+             Trajectory &traj_out, Out_info_db &out_info_db);

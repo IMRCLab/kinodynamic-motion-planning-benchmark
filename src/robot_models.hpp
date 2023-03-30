@@ -2,6 +2,7 @@
 #include "Eigen/Core"
 #include "croco_macros.hpp"
 #include "fcl/broadphase/broadphase_collision_manager.h"
+#include "general_utils.hpp"
 #include "math_utils.hpp"
 #include <algorithm>
 #include <cmath>
@@ -13,6 +14,49 @@
 #include <regex>
 #include <type_traits>
 #include <yaml-cpp/node/node.h>
+
+struct Obstacle {
+  std::string type;
+  Eigen::VectorXd size;
+  Eigen::VectorXd center;
+};
+
+struct Model_robot;
+
+double check_u_bounds(const std::vector<Eigen::VectorXd> &us_out,
+                      std::shared_ptr<Model_robot> model);
+
+double check_x_bounds(const std::vector<Eigen::VectorXd> &xs_out,
+                      std::shared_ptr<Model_robot> model);
+
+void get_states_and_actions(const YAML::Node &data,
+                            std::vector<Eigen::VectorXd> &states,
+                            std::vector<Eigen::VectorXd> &actions);
+
+struct Problem {
+  using Vxd = Eigen::VectorXd;
+
+  Problem(const char *file) { read_from_yaml(file); }
+  Problem() = default;
+
+
+  std::string name; // name of the proble: E.g. bugtrap-car1
+
+  Eigen::VectorXd goal;
+  Eigen::VectorXd start;
+
+  Eigen::VectorXd p_lb; // position bounds
+  Eigen::VectorXd p_ub; // position bounds
+
+  std::vector<Obstacle> obstacles;
+  std::string robotType;
+
+  void read_from_yaml(const YAML::Node &env);
+
+  void read_from_yaml(const char *file);
+
+  void write_to_yaml(const char *file);
+};
 
 using Transform3d = Eigen::Transform<double, 3, Eigen::Isometry>;
 
@@ -29,6 +73,9 @@ struct CollisionOut {
     out << STR_V(p2) << std::endl;
   }
 };
+
+static std::vector<Eigen::VectorXd> DEFAULT_V;
+static Eigen::VectorXd DEFAULT_E;
 
 // next: time optimal linear, use so2 space, generate motion primitives
 struct StateQ {
@@ -201,7 +248,8 @@ struct Model_robot {
   std::string name;
   double ref_dt;
 
-  Eigen::VectorXd u_ref;
+  Eigen::VectorXd u_ref; // used for cost
+  Eigen::VectorXd u_0;   // used for init guess
   Eigen::VectorXd u_lb;
   Eigen::VectorXd u_ub;
 
@@ -233,12 +281,17 @@ struct Model_robot {
   Model_robot() = default;
   Model_robot(std::shared_ptr<StateQ> state, size_t nu);
 
-  void set_position_ub(const Eigen::Ref<Eigen::VectorXd> p_ub) {
+  // Returns x_0 for optimization. Can depend on a reference point. Default:
+  // return the ref point. Reasoning: in some systems, it is better to set the
+  // orientation/velocities of x0 to zero
+  virtual Eigen::VectorXd get_x0(const Eigen::VectorXd &x) { return x; }
+
+  void set_position_ub(const Eigen::Ref<const Eigen::VectorXd> &p_ub) {
     CHECK_EQ(static_cast<size_t>(p_ub.size()), translation_invariance, AT);
     x_ub.head(translation_invariance) = p_ub;
   }
 
-  void set_position_lb(const Eigen::Ref<Eigen::VectorXd> p_lb) {
+  void set_position_lb(const Eigen::Ref<const Eigen::VectorXd> &p_lb) {
     CHECK_EQ(static_cast<size_t>(p_lb.size()), translation_invariance, AT);
     x_lb.head(translation_invariance) = p_lb;
   }
@@ -288,11 +341,24 @@ struct Model_robot {
                         const Eigen::Ref<const Eigen::VectorXd> &x,
                         const Eigen::Ref<const Eigen::VectorXd> &u, double dt);
 
-  virtual void stepDiffdt(Eigen::Ref<Eigen::MatrixXd> Fx,
-                          Eigen::Ref<Eigen::MatrixXd> Fu,
-                          const Eigen::Ref<const Eigen::VectorXd> &x,
-                          const Eigen::Ref<const Eigen::VectorXd> &u,
-                          double dt);
+  // virtual void stepDiffdt(Eigen::Ref<Eigen::MatrixXd> Fx,
+  //                         Eigen::Ref<Eigen::MatrixXd> Fu,
+  //                         const Eigen::Ref<const Eigen::VectorXd> &x,
+  //                         const Eigen::Ref<const Eigen::VectorXd> &u,
+  //                         double dt);
+
+  virtual void stepDiff_with_v(Eigen::Ref<Eigen::MatrixXd> Fx,
+                               Eigen::Ref<Eigen::MatrixXd> Fu,
+                               Eigen::Ref<Eigen::VectorXd> __v,
+                               const Eigen::Ref<const Eigen::VectorXd> &x,
+                               const Eigen::Ref<const Eigen::VectorXd> &u,
+                               double dt);
+
+  // virtual void stepDiffdtX(Eigen::Ref<Eigen::MatrixXd> Fx,
+  //                          Eigen::Ref<Eigen::MatrixXd> Fu,
+  //                          const Eigen::Ref<const Eigen::VectorXd> &x,
+  //                          const Eigen::Ref<const Eigen::VectorXd> &u,
+  //                          double dt);
 
   virtual void calcDiffV(Eigen::Ref<Eigen::MatrixXd> Jv_x,
                          Eigen::Ref<Eigen::MatrixXd> Jv_u,
@@ -344,6 +410,10 @@ struct Model_robot {
   virtual void collision_distance(const Eigen::Ref<const Eigen::VectorXd> &x,
                                   CollisionOut &cout);
 
+  // 1: No collision
+  // 0: collision
+  virtual bool collision_check(const Eigen::Ref<const Eigen::VectorXd> &x);
+
   // compute the Jacobians/Gradient using finite diff!
   // TODO: use Point-Point distance approximation to compute the gradient!
 
@@ -354,7 +424,7 @@ struct Model_robot {
   virtual void transformation_collision_geometries(
       const Eigen::Ref<const Eigen::VectorXd> &x, std::vector<Transform3d> &ts);
 
-  void load_env_quim(const std::string &filename);
+  virtual void load_env_quim(const Problem &problem);
 
   virtual ~Model_robot() = default;
 };
@@ -414,12 +484,125 @@ struct Car_params {
   }
 };
 
+inline Eigen::Matrix<double, 5, 1> mk_v5(double x0, double x1, double x2,
+                                         double x3, double x4) {
+
+  Eigen::Matrix<double, 5, 1> out;
+
+  out << x0, x1, x2, x3, x4;
+
+  return out;
+}
+
+struct Car2_params {
+
+  Car2_params(const char *file) { read_from_yaml(file); }
+  Car2_params() = default;
+  using Vector5d = Eigen::Matrix<double, 5, 1>;
+
+  double dt = .1;
+  double l = .25;
+  double max_vel = .5;
+  double min_vel = -.1;
+  double max_steering_abs = M_PI / 3.;
+  double max_angular_vel = 10;
+  double max_acc_abs = .1;
+  double max_steer_vel_abs = M_PI;
+
+  std::string shape = "box";
+  std::string shape_trailer = "box";
+  std::string filename = "";
+
+  Eigen::Vector2d size = Eigen::Vector2d(.5, .25);
+  Eigen::VectorXd distance_weights = Eigen::Vector4d(1, .5, .2, .2);
+
+  void read_from_yaml(YAML::Node &node);
+  void read_from_yaml(const char *file);
+
+  void inline write(std::ostream &out) const {
+
+    const std::string be = "";
+    const std::string af = ": ";
+
+    out << be << STR(dt, af) << std::endl;
+    out << be << STR(l, af) << std::endl;
+    out << be << STR(max_vel, af) << std::endl;
+    out << be << STR(min_vel, af) << std::endl;
+    out << be << STR(max_steering_abs, af) << std::endl;
+    out << be << STR(max_angular_vel, af) << std::endl;
+    out << be << STR(shape, af) << std::endl;
+    out << be << STR(shape_trailer, af) << std::endl;
+    out << be << STR(filename, af) << std::endl;
+    out << be << STR(max_acc_abs, af) << std::endl;
+    out << be << STR(max_steer_vel_abs, af) << std::endl;
+    out << be << STR_VV(size, af) << std::endl;
+    out << be << STR_VV(distance_weights, af) << std::endl;
+  }
+};
+
+struct Model_car2 : Model_robot {
+  virtual ~Model_car2() = default;
+
+  Car2_params params;
+
+  // Model_car_with_trailers(const char *file)
+  //     : Model_car_with_trailers(Car_params(file)) {}
+
+  Model_car2(const Car2_params &params = Car2_params(),
+             const Eigen::VectorXd &p_lb = Eigen::VectorXd(),
+             const Eigen::VectorXd &p_ub = Eigen::VectorXd());
+
+  virtual void sample_uniform(Eigen::Ref<Eigen::VectorXd> x) override {
+    (void)x;
+
+    ERROR_WITH_INFO("not implemented");
+  };
+
+  virtual void calcV(Eigen::Ref<Eigen::VectorXd> f,
+                     const Eigen::Ref<const Eigen::VectorXd> &x,
+                     const Eigen::Ref<const Eigen::VectorXd> &u) override;
+
+  virtual void calcDiffV(Eigen::Ref<Eigen::MatrixXd> Jv_x,
+                         Eigen::Ref<Eigen::MatrixXd> Jv_u,
+                         const Eigen::Ref<const Eigen::VectorXd> &x,
+                         const Eigen::Ref<const Eigen::VectorXd> &u) override;
+
+  virtual double distance(const Eigen::Ref<const Eigen::VectorXd> &x,
+                          const Eigen::Ref<const Eigen::VectorXd> &y) override;
+
+  virtual void interpolate(Eigen::Ref<Eigen::VectorXd> xt,
+                           const Eigen::Ref<const Eigen::VectorXd> &from,
+                           const Eigen::Ref<const Eigen::VectorXd> &to,
+                           double dt) override {
+
+    (void)xt;
+    (void)from;
+    (void)to;
+    (void)dt;
+    ERROR_WITH_INFO("not implemented");
+  }
+
+  virtual double
+  lower_bound_time(const Eigen::Ref<const Eigen::VectorXd> &x,
+                   const Eigen::Ref<const Eigen::VectorXd> &y) override {
+    (void)x;
+    (void)y;
+
+    ERROR_WITH_INFO("not implemented");
+  }
+};
+
 struct Model_car_with_trailers : Model_robot {
   virtual ~Model_car_with_trailers() = default;
 
   Car_params params;
 
-  Model_car_with_trailers(const Car_params &params = Car_params());
+  // Model_car_with_trailers(const char *file)
+  //     : Model_car_with_trailers(Car_params(file)) {}
+
+  Model_car_with_trailers(const Car_params &params = Car_params(),
+                          const Eigen::VectorXd &p_lb = Eigen::VectorXd(),
+                          const Eigen::VectorXd &p_ub = Eigen::VectorXd());
 
   virtual void sample_uniform(Eigen::Ref<Eigen::VectorXd> x) override;
 
@@ -506,7 +689,14 @@ struct Model_acrobot : Model_robot {
   Acrobot_params params;
   double g = 9.81;
 
-  Model_acrobot(const Acrobot_params &acrobot_params = Acrobot_params());
+  Model_acrobot(const char *file,
+                const Eigen::VectorXd &p_lb = Eigen::VectorXd(),
+                const Eigen::VectorXd &p_ub = Eigen::VectorXd())
+      : Model_acrobot(Acrobot_params(file), p_lb, p_ub) {}
+
+  Model_acrobot(const Acrobot_params &acrobot_params = Acrobot_params(),
+                const Eigen::VectorXd &p_lb = Eigen::VectorXd(),
+                const Eigen::VectorXd &p_ub = Eigen::VectorXd());
 
   virtual void sample_uniform(Eigen::Ref<Eigen::VectorXd> x) override;
 
@@ -606,9 +796,14 @@ struct Model_unicycle1 : Model_robot {
 
   Unicycle1_params params;
 
-  Model_unicycle1(const char *file) : Model_unicycle1(Unicycle1_params(file)) {}
+  Model_unicycle1(const char *file,
+                  const Eigen::VectorXd &p_lb = Eigen::VectorXd(),
+                  const Eigen::VectorXd &p_ub = Eigen::VectorXd())
+      : Model_unicycle1(Unicycle1_params(file), p_lb, p_ub) {}
 
-  Model_unicycle1(const Unicycle1_params &params = Unicycle1_params());
+  Model_unicycle1(const Unicycle1_params &params = Unicycle1_params(),
+                  const Eigen::VectorXd &p_lb = Eigen::VectorXd(),
+                  const Eigen::VectorXd &p_ub = Eigen::VectorXd());
 
   virtual void sample_uniform(Eigen::Ref<Eigen::VectorXd> x) override;
 
@@ -728,9 +923,23 @@ struct Model_quad3d : Model_robot {
   Matrix34 Fu_selection_B0;
   Matrix34 Ftau_selection_B0;
 
-  Model_quad3d(const char *file) : Model_quad3d(Quad3d_params(file)) {}
+  Model_quad3d(const char *file,
+               const Eigen::VectorXd &p_lb = Eigen::VectorXd(),
+               const Eigen::VectorXd &p_ub = Eigen::VectorXd())
+      : Model_quad3d(Quad3d_params(file), p_lb, p_ub) {}
 
-  Model_quad3d(const Quad3d_params &params = Quad3d_params());
+  Model_quad3d(const Quad3d_params &params = Quad3d_params(),
+               const Eigen::VectorXd &p_lb = Eigen::VectorXd(),
+               const Eigen::VectorXd &p_ub = Eigen::VectorXd());
+
+  virtual Eigen::VectorXd get_x0(const Eigen::VectorXd &x) override {
+    CHECK_EQ(static_cast<size_t>(x.size()), nx, AT);
+    Eigen::VectorXd out(nx);
+    out.setZero();
+    out.head(3) = x.head(3);
+    out(6) = 1.;
+    return out;
+  }
 
   virtual void step(Eigen::Ref<Eigen::VectorXd> xnext,
                     const Eigen::Ref<const Eigen::VectorXd> &x,
@@ -745,6 +954,8 @@ struct Model_quad3d : Model_robot {
 
   virtual double distance(const Eigen::Ref<const Eigen::VectorXd> &x,
                           const Eigen::Ref<const Eigen::VectorXd> &y) override;
+
+  virtual void sample_uniform(Eigen::Ref<Eigen::VectorXd> x) override;
 
   virtual void interpolate(Eigen::Ref<Eigen::VectorXd> xt,
                            const Eigen::Ref<const Eigen::VectorXd> &from,
@@ -838,8 +1049,22 @@ struct Model_quad2d : Model_robot {
   const double g = 9.81;
   double u_nominal;
 
-  Model_quad2d(const char *file) : Model_quad2d(Quad2d_params(file)) {}
-  Model_quad2d(const Quad2d_params &params = Quad2d_params());
+  Model_quad2d(const char *file,
+               const Eigen::VectorXd &p_lb = Eigen::VectorXd(),
+               const Eigen::VectorXd &p_ub = Eigen::VectorXd())
+      : Model_quad2d(Quad2d_params(file), p_lb, p_ub) {}
+
+  Model_quad2d(const Quad2d_params &params = Quad2d_params(),
+               const Eigen::VectorXd &p_lb = Eigen::VectorXd(),
+               const Eigen::VectorXd &p_ub = Eigen::VectorXd());
+
+  virtual Eigen::VectorXd get_x0(const Eigen::VectorXd &x) override {
+    CHECK_EQ(static_cast<size_t>(x.size()), nx, AT);
+    Eigen::VectorXd out(nx);
+    out.setZero();
+    out.head(2) = x.head(2);
+    return out;
+  }
 
   virtual void sample_uniform(Eigen::Ref<Eigen::VectorXd> x) override;
 
@@ -920,7 +1145,16 @@ struct Model_unicycle2 : Model_robot {
   virtual ~Model_unicycle2() = default;
   Unicycle2_params params;
 
-  Model_unicycle2(const Unicycle2_params &params = Unicycle2_params());
+  Model_unicycle2(const char *file,
+                  const Eigen::VectorXd &p_lb = Eigen::VectorXd(),
+                  const Eigen::VectorXd &p_ub = Eigen::VectorXd())
+      : Model_unicycle2(Unicycle2_params(file), p_lb, p_ub) {}
+
+  Model_unicycle2(const Unicycle2_params &params = Unicycle2_params(),
+                  const Eigen::VectorXd &p_lb = Eigen::VectorXd(),
+                  const Eigen::VectorXd &p_ub = Eigen::VectorXd()
+
+  );
 
   virtual void sample_uniform(Eigen::Ref<Eigen::VectorXd> x) override;
 
@@ -948,10 +1182,63 @@ struct Model_unicycle2 : Model_robot {
 
 std::unique_ptr<Model_robot> robot_factory(const char *file);
 
-bool check_trajectory(const std::vector<Eigen::VectorXd> &xs_out,
-                      const std::vector<Eigen::VectorXd> &us_out,
-                      const Eigen::VectorXd &dt,
-                      std::shared_ptr<Model_robot> model, double tolerance=1e-4);
+double check_trajectory(const std::vector<Eigen::VectorXd> &xs_out,
+                        const std::vector<Eigen::VectorXd> &us_out,
+                        const Eigen::VectorXd &dt,
+                        std::shared_ptr<Model_robot> model);
 
-bool check_cols(std::shared_ptr<Model_robot> model_robot,
-                const std::vector<Eigen::VectorXd> &xs, double tol);
+double check_cols(std::shared_ptr<Model_robot> model_robot,
+                  const std::vector<Eigen::VectorXd> &xs);
+
+struct Trajectory {
+
+  double time_stamp; // when it was generated?
+  double cost;
+  bool feasible = 0;
+
+  bool traj_feas = 0;
+  bool goal_feas = 0;
+  bool start_feas = 0;
+  bool col_feas = 0;
+  bool x_bounds_feas = 0;
+  bool u_bounds_feas = 0;
+
+  double max_jump = 0.;
+  double max_collision = 0.;
+  double goal_distance = 0.;
+  double start_distance = 0.;
+  double x_bound_distance = 0.;
+  double u_bound_distance = 0.;
+
+  Trajectory() = default;
+  Trajectory(const char *file) { read_from_yaml(file); }
+
+  Eigen::VectorXd start;
+  Eigen::VectorXd goal;
+  std::vector<Eigen::VectorXd> states;
+  std::vector<Eigen::VectorXd> actions;
+  size_t num_time_steps = 0; // use this if we want default init guess.
+  Eigen::VectorXd times;
+
+  void to_yaml_format(std::ostream &out, std::string prefix = "");
+
+  void read_from_yaml(const YAML::Node &node);
+
+  void read_from_yaml(const char *file);
+
+  void check(std::shared_ptr<Model_robot> &robot);
+
+  void update_feasibility(double traj_tol = 1e-2, double goal_tol = 1e-2,
+                          double col_tol = 1e-2, double x_bound_tol = 1e-2,
+                          double u_bound_tol = 1e-2);
+};
+
+double max_rollout_error(std::shared_ptr<Model_robot> robot,
+                         const std::vector<Eigen::VectorXd> &xs,
+                         const std::vector<Eigen::VectorXd> &us);
+
+void resample_trajectory(std::vector<Eigen::VectorXd> &xs_out,
+                         std::vector<Eigen::VectorXd> &us_out,
+                         const std::vector<Eigen::VectorXd> &xs,
+                         const std::vector<Eigen::VectorXd> &us,
+                         const Eigen::VectorXd &ts, double ref_dt);

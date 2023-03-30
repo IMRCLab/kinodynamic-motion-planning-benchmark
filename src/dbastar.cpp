@@ -25,14 +25,8 @@
 #include "fclStateValidityChecker.hpp"
 #include "ompl/base/ScopedState.h"
 #include "robotStatePropagator.hpp"
+#include "robot_models.hpp"
 #include "robots.h"
-
-namespace ob = ompl::base;
-namespace oc = ompl::control;
-namespace po = boost::program_options;
-
-using Sample = std::vector<double>;
-using Sample_ = ob::State;
 
 // boost stuff for the graph
 #include <boost/graph/adjacency_list.hpp>
@@ -40,6 +34,15 @@ using Sample_ = ob::State;
 #include <boost/graph/graph_traits.hpp>
 #include <boost/graph/undirected_graph.hpp>
 #include <boost/property_map/property_map.hpp>
+
+#include "general_utils.hpp"
+
+namespace ob = ompl::base;
+namespace oc = ompl::control;
+namespace po = boost::program_options;
+
+using Sample = std::vector<double>;
+using Sample_ = ob::State;
 
 const char *duplicate_detection_str[] = {"NO", "HARD", "SOFT"};
 
@@ -49,6 +52,62 @@ const char *terminate_status_str[] = {
     "EMPTY_QUEUE",
     "UNKNOWN",
 };
+
+Heu_roadmap::Heu_roadmap(std::shared_ptr<RobotOmpl> robot,
+                         size_t num_sample_trials, ob::State *startState,
+                         ob::State *goalState, double resolution)
+    : robot(robot) {
+
+  auto si = robot->getSpaceInformation();
+  auto &stateValidityChecker = si->getStateValidityChecker();
+  size_t dim = robot->diff_model->nx;
+
+  auto check_fun = [&](Sample_ *x) { return stateValidityChecker->isValid(x); };
+
+  auto sample_fun = [&](double *x, size_t n) {
+    for (size_t i = 0; i < n; i++) {
+      Eigen::Map<Eigen::VectorXd> s(x, n);
+      robot->diff_model->sample_uniform(s);
+    };
+  };
+
+  generate_batch(sample_fun, check_fun, num_sample_trials, dim, si,
+                 batch_samples);
+  batch_samples.push_back(startState);
+  batch_samples.push_back(goalState);
+
+  {
+    std::ofstream file_out("batch_out.txt");
+    for (auto &x : batch_samples) {
+      printState(file_out, si, x);
+      file_out << std::endl;
+    }
+  }
+
+  double distance_threshold = 1.;
+  build_heuristic_distance(batch_samples /* goal should be last */, robot,
+                           heuristic_map, distance_threshold, resolution);
+
+  write_heuristic_map(heuristic_map, si);
+
+  if (si->getStateSpace()->isMetricSpace()) {
+    T_heu =
+        std::make_shared<ompl::NearestNeighborsGNATNoThreadSafety<HeuNode *>>();
+  } else {
+    T_heu = std::make_shared<ompl::NearestNeighborsSqrtApprox<HeuNode *>>();
+  }
+
+  T_heu->setDistanceFunction([this](const HeuNode *a, const HeuNode *b) {
+    return this->robot->getSpaceInformation()->distance(a->state, b->state);
+  });
+
+  for (size_t i = 0; i < heuristic_map.size(); i++) {
+    HeuNode *ptr = new HeuNode; // memory leak, stop bad code
+    ptr->state = heuristic_map[i].x;
+    ptr->dist = heuristic_map[i].dist;
+    T_heu->add(ptr);
+  }
+}
 
 void copyToArray(const ompl::base::StateSpacePtr &space, double *reals,
                  const ompl::base::State *source) {
@@ -89,34 +148,6 @@ void add2(const double *a, const double *b, const double *c, size_t n,
   }
 }
 
-void print_vec(const double *a, size_t n, bool eof) {
-  for (size_t i = 0; i < n; i++) {
-    std::cout << a[i] << " ";
-  }
-  if (eof)
-    std::cout << std::endl;
-}
-
-ob::State *
-_allocAndFillState(std::shared_ptr<ompl::control::SpaceInformation> si,
-                   const std::vector<double> &reals) {
-  ob::State *state = si->allocState();
-  si->getStateSpace()->copyFromReals(state, reals);
-  return state;
-}
-
-ob::State *
-allocAndFillState(std::shared_ptr<ompl::control::SpaceInformation> si,
-                  const YAML::Node &node) {
-  ob::State *state = si->allocState();
-  std::vector<double> reals;
-  for (const auto &value : node) {
-    reals.push_back(value.as<double>());
-  }
-  si->getStateSpace()->copyFromReals(state, reals);
-  return state;
-}
-
 std::ostream &printState(std::ostream &stream, const std::vector<double> &x) {
   // continue here
   stream << "[";
@@ -149,38 +180,6 @@ std::ostream &printState(std::ostream &stream,
   if (add_brackets_comma)
     stream << "]";
   return stream;
-}
-
-void ompl::base::StateSpace::copyFromReals(
-    State *destination, const std::vector<double> &reals) const {
-  const auto &locations = getValueLocations();
-  assert(reals.size() == locations.size());
-  for (std::size_t i = 0; i < reals.size(); ++i)
-    *getValueAddressAtLocation(destination, locations[i]) = reals[i];
-}
-
-void copyFromRealsControl(std::shared_ptr<ompl::control::SpaceInformation> si,
-                          oc::Control *out, const std::vector<double> &reals) {
-  for (size_t idx = 0; idx < reals.size(); ++idx) {
-    double *address = si->getControlSpace()->getValueAddressAtIndex(out, idx);
-    if (address) {
-      *address = reals[idx];
-    }
-  }
-}
-
-oc::Control *
-allocAndFillControl(std::shared_ptr<ompl::control::SpaceInformation> si,
-                    const YAML::Node &node) {
-  oc::Control *control = si->allocControl();
-  for (size_t idx = 0; idx < node.size(); ++idx) {
-    double *address =
-        si->getControlSpace()->getValueAddressAtIndex(control, idx);
-    if (address) {
-      *address = node[idx].as<double>();
-    }
-  }
-  return control;
 }
 
 std::ostream &printAction(std::ostream &stream,
@@ -265,12 +264,12 @@ void get_distance_all_vertices(const EdgeList &edge_list,
 }
 
 using Edge = std::pair<int, int>;
-void backward_tree_with_dynamics(
-    const std::vector<std::vector<double>> &data,
-    std::vector<Motion> &primitives, std::vector<Edge> &edge_list,
-    std::vector<double> &distance_list,
-    std::shared_ptr<fcl::BroadPhaseCollisionManagerf> bpcm_env,
-    double delta_sq) {
+void backward_tree_with_dynamics(const std::vector<std::vector<double>> &data,
+                                 std::vector<Motion> &primitives,
+                                 std::vector<Edge> &edge_list,
+                                 std::vector<double> &distance_list,
+                                 std::shared_ptr<RobotOmpl> robot,
+                                 double delta_sq) {
 
   std::cout << "check with motions" << std::endl;
 
@@ -382,16 +381,16 @@ void backward_tree_with_dynamics(
           // firstTyped->getY() , firstTyped->getYaw()   };  //
           //
           //
-          fcl::Vector3f offset(point_out.at(0), point_out.at(1), 0);
+          fcl::Vector3d offset(point_out.at(0), point_out.at(1), 0);
           if (debug)
             file << "i " << i << " m " << j << " "
                  << "offset " << offset(0) << offset(1) << offset(2) << " ";
           auto out = timed_fun([&] {
             motion->collision_manager->shift(offset);
-            fcl::DefaultCollisionData<float> collision_data;
+            fcl::DefaultCollisionData<double> collision_data;
             motion->collision_manager->collide(
-                bpcm_env.get(), &collision_data,
-                fcl::DefaultCollisionFunction<float>);
+                robot->diff_model->env.get(), &collision_data,
+                fcl::DefaultCollisionFunction<double>);
             bool motionValid = !collision_data.result.isCollision();
             motion->collision_manager->shift(-offset);
             return motionValid;
@@ -552,7 +551,7 @@ bool check_edge_at_resolution(const Sample_ *start, const Sample_ *goal,
   auto state = robot->getSpaceInformation()->allocState();
 
   double distance = robot->getSpaceInformation()->distance(start, goal);
-  int ratio = distance / resolution;
+  size_t ratio = distance / resolution;
 
   // distance = 3.3, resolution =  1.
   // ratio = 3
@@ -596,6 +595,7 @@ void build_heuristic_distance(const std::vector<Sample_ *> &batch_samples,
   if (mode == Linear) {
     timed_fun([&] {
       for (size_t i = 0; i < batch_samples.size(); i++) {
+        std::cout << "i " << i << std::endl;
         for (size_t j = i + 1; j < batch_samples.size(); j++) {
           auto p1 = batch_samples.at(i);
           auto p2 = batch_samples.at(j);
@@ -644,7 +644,7 @@ void build_heuristic_distance(const std::vector<Sample_ *> &batch_samples,
       std::vector<HeuNodeWithIndex *> out;
       T_heu->nearestR(&ptr, distance_threshold, out);
       for (auto &s : out) {
-        if (i < s->index) {
+        if (i < static_cast<size_t>(s->index)) {
           auto p1 = batch_samples.at(i);
           auto p2 = batch_samples.at(s->index);
           if (check_edge_at_resolution(p1, p2, robot, resolution)) {
@@ -799,6 +799,7 @@ double heuristicCollisionsTree(ompl::NearestNeighbors<HeuNode *> *T_heu,
   std::vector<HeuNode *> neighbors;
   double max_distance = 0.5;
   double min = 1e8;
+  CHECK(T_heu, AT);
   T_heu->nearestR(&node, max_distance, neighbors);
   for (const auto &p : neighbors) {
     double d = p->dist + robot->cost_lower_bound(p->state, s);
@@ -819,7 +820,6 @@ double heuristicCollisionsTree(ompl::NearestNeighbors<HeuNode *> *T_heu,
 
 // I need the same for the goal.
 
-
 #define NAMEOF(variable) #variable
 #define VAR_WITH_NAME(variable) variable, #variable
 
@@ -829,7 +829,7 @@ void Options_db::add_options(po::options_description &desc) {
   set_from_boostop(desc, VAR_WITH_NAME(alpha));
   set_from_boostop(desc, VAR_WITH_NAME(filterDuplicates));
   set_from_boostop(desc, VAR_WITH_NAME(maxCost));
-  set_from_boostop(desc, VAR_WITH_NAME(new_heu));
+  set_from_boostop(desc, VAR_WITH_NAME(heuristic));
   set_from_boostop(desc, VAR_WITH_NAME(max_motions));
   set_from_boostop(desc, VAR_WITH_NAME(resolution));
   set_from_boostop(desc, VAR_WITH_NAME(delta_factor_goal));
@@ -845,6 +845,8 @@ void Options_db::add_options(po::options_description &desc) {
   set_from_boostop(desc, VAR_WITH_NAME(add_node_if_better));
   set_from_boostop(desc, VAR_WITH_NAME(debug));
   set_from_boostop(desc, VAR_WITH_NAME(add_after_expand));
+  set_from_boostop(desc, VAR_WITH_NAME(motionsFile));
+  set_from_boostop(desc, VAR_WITH_NAME(outFile));
 }
 
 void Options_db::print(std::ostream &out) {
@@ -857,7 +859,7 @@ void Options_db::print(std::ostream &out) {
   out << be << STR(alpha, af) << std::endl;
   out << be << STR(filterDuplicates, af) << std::endl;
   out << be << STR(maxCost, af) << std::endl;
-  out << be << STR(new_heu, af) << std::endl;
+  out << be << STR(heuristic, af) << std::endl;
   out << be << STR(max_motions, af) << std::endl;
   out << be << STR(resolution, af) << std::endl;
   out << be << STR(delta_factor_goal, af) << std::endl;
@@ -873,6 +875,8 @@ void Options_db::print(std::ostream &out) {
   out << be << STR(add_node_if_better, af) << std::endl;
   out << be << STR(debug, af) << std::endl;
   out << be << STR(add_after_expand, af) << std::endl;
+  out << be << STR(motionsFile, af) << std::endl;
+  out << be << STR(outFile, af) << std::endl;
 }
 
 void Options_db::read_from_yaml(const char *file) {
@@ -888,7 +892,7 @@ void Options_db::read_from_yaml(YAML::Node &node) {
   set_from_yaml(node, VAR_WITH_NAME(alpha));
   set_from_yaml(node, VAR_WITH_NAME(filterDuplicates));
   set_from_yaml(node, VAR_WITH_NAME(maxCost));
-  set_from_yaml(node, VAR_WITH_NAME(new_heu));
+  set_from_yaml(node, VAR_WITH_NAME(heuristic));
   set_from_yaml(node, VAR_WITH_NAME(max_motions));
   set_from_yaml(node, VAR_WITH_NAME(resolution));
   set_from_yaml(node, VAR_WITH_NAME(delta_factor_goal));
@@ -904,6 +908,8 @@ void Options_db::read_from_yaml(YAML::Node &node) {
   set_from_yaml(node, VAR_WITH_NAME(add_node_if_better));
   set_from_yaml(node, VAR_WITH_NAME(debug));
   set_from_yaml(node, VAR_WITH_NAME(add_after_expand));
+  set_from_yaml(node, VAR_WITH_NAME(motionsFile));
+  set_from_yaml(node, VAR_WITH_NAME(outFile));
 }
 
 void Time_benchmark::write(std::ostream &out) {
@@ -926,50 +932,51 @@ void Time_benchmark::write(std::ostream &out) {
   out << be << STR(states_tree_size, af) << std::endl;
 };
 
-void generate_env(YAML::Node &env,
-                  std::vector<fcl::CollisionObjectf *> &obstacles,
-                  fcl::BroadPhaseCollisionManagerf *bpcm_env) {
-
-  for (const auto &obs : env["environment"]["obstacles"]) {
-    double default_size = 1;
-    double default_pose = 0;
-
-    if (obs["type"].as<std::string>() == "box") {
-      const auto &size = obs["size"];
-      std::shared_ptr<fcl::CollisionGeometryf> geom;
-
-      if (size.size() == 2)
-        geom.reset(new fcl::Boxf(size[0].as<float>(), size[1].as<float>(),
-                                 default_size));
-      else
-        geom.reset(new fcl::Boxf(size[0].as<float>(), size[1].as<float>(),
-                                 size[2].as<float>()));
-
-      const auto &center = obs["center"];
-      auto co = new fcl::CollisionObjectf(geom);
-
-      if (size.size() == 2)
-        co->setTranslation(fcl::Vector3f(center[0].as<float>(),
-                                         center[1].as<float>(), default_pose));
-      else
-        co->setTranslation(fcl::Vector3f(center[0].as<float>(),
-                                         center[1].as<float>(),
-                                         center[2].as<float>()));
-
-      co->computeAABB();
-      obstacles.push_back(co);
-    } else {
-      throw std::runtime_error("Unknown obstacle type!");
-    }
-  }
-
-  bpcm_env->registerObjects(obstacles);
-  bpcm_env->setup();
-}
+// void generate_env(YAML::Node &env,
+//                   std::vector<fcl::CollisionObjectf *> &obstacles,
+//                   fcl::BroadPhaseCollisionManagerf *bpcm_env) {
+//
+//   for (const auto &obs : env["environment"]["obstacles"]) {
+//     double default_size = 1;
+//     double default_pose = 0;
+//
+//     if (obs["type"].as<std::string>() == "box") {
+//       const auto &size = obs["size"];
+//       std::shared_ptr<fcl::CollisionGeometryf> geom;
+//
+//       if (size.size() == 2)
+//         geom.reset(new fcl::Boxf(size[0].as<float>(), size[1].as<float>(),
+//                                  default_size));
+//       else
+//         geom.reset(new fcl::Boxf(size[0].as<float>(), size[1].as<float>(),
+//                                  size[2].as<float>()));
+//
+//       const auto &center = obs["center"];
+//       auto co = new fcl::CollisionObjectf(geom);
+//
+//       if (size.size() == 2)
+//         co->setTranslation(fcl::Vector3f(center[0].as<float>(),
+//                                          center[1].as<float>(),
+//                                          default_pose));
+//       else
+//         co->setTranslation(fcl::Vector3f(center[0].as<float>(),
+//                                          center[1].as<float>(),
+//                                          center[2].as<float>()));
+//
+//       co->computeAABB();
+//       obstacles.push_back(co);
+//     } else {
+//       throw std::runtime_error("Unknown obstacle type!");
+//     }
+//   }
+//
+//   bpcm_env->registerObjects(obstacles);
+//   bpcm_env->setup();
+// }
 
 void load_motion_primitives(const std::string &motionsFile, RobotOmpl &robot,
                             std::vector<Motion> &motions, int max_motions,
-                            bool cut_actions) {
+                            bool cut_actions, bool shuffle) {
 
   auto si = robot.getSpaceInformation();
   // load motions primitives
@@ -1043,14 +1050,18 @@ void load_motion_primitives(const std::string &motionsFile, RobotOmpl &robot,
 
           si->getStateSpace()->copyFromReals(state, reals);
           m.states.push_back(state);
-          if (!robot.getSpaceInformation()->satisfiesBounds(m.states.back())) {
-            std::cout << "Warning invalid state" << std::endl;
-            si->printState(m.states.back());
-            good = false;
-            si->enforceBounds(m.states.back());
-            si->printState(m.states.back());
-            break;
-          }
+          // TODO: add and code check the primitive!! -- then skip the position
+          // bounds
+          //
+          //
+          // if (!robot.getSpaceInformation()->satisfiesBounds(m.states.back()))
+          // {
+          //   std::cout << "Warning invalid state" << std::endl;
+          //   si->printState(m.states.back());
+          //   good = false;
+          //   si->enforceBounds(m.states.back());
+          //   si->printState(m.states.back());
+          //   break;
           // }
         }
         break;
@@ -1082,22 +1093,25 @@ void load_motion_primitives(const std::string &motionsFile, RobotOmpl &robot,
     m.idx = motions.size();
     // m.name = motion["name"].as<std::string>();
 
-    // generate collision objects and collision manager
-    if (robot.getName() != "Acrobot") {
-      for (const auto &state : m.states) {
-        for (size_t part = 0; part < robot.numParts(); ++part) {
-          const auto &transform = robot.getTransform(state, part);
+    Eigen::VectorXd x(robot.diff_model->nx);
+    for (auto &state : m.states) {
+      robot.toEigen(state, x);
+      auto &ts_data = robot.diff_model->ts_data;
+      auto &col_geo = robot.diff_model->collision_geometries;
+      robot.diff_model->transformation_collision_geometries(x, ts_data);
 
-          auto co = new fcl::CollisionObjectf(robot.getCollisionGeometry(part));
-          co->setTranslation(transform.translation());
-          co->setRotation(transform.rotation());
-          co->computeAABB();
-          m.collision_objects.push_back(co);
-        }
+      for (size_t i = 0; i < ts_data.size(); i++) {
+        auto &transform = ts_data.at(i);
+        auto co = new fcl::CollisionObjectd(col_geo.at(i));
+        co->setTranslation(transform.translation());
+        co->setRotation(transform.rotation());
+        co->computeAABB();
+        m.collision_objects.push_back(co);
       }
     }
+
     m.collision_manager.reset(
-        new ShiftableDynamicAABBTreeCollisionManager<float>());
+        new ShiftableDynamicAABBTreeCollisionManager<double>());
     m.collision_manager->registerObjects(m.collision_objects);
 
     m.disabled = false;
@@ -1127,25 +1141,43 @@ void load_motion_primitives(const std::string &motionsFile, RobotOmpl &robot,
       m.cost = m.actions.size() * robot.dt(); // time in seconds
       m.idx = im + motions.size();
 
-      for (const auto &state : m.states) {
-        for (size_t part = 0; part < robot.numParts(); ++part) {
-          const auto &transform = robot.getTransform(state, part);
+      Eigen::VectorXd x(robot.diff_model->nx);
+      for (auto &state : m.states) {
+        robot.toEigen(state, x);
+        auto &ts_data = robot.diff_model->ts_data;
+        auto &col_geo = robot.diff_model->collision_geometries;
+        robot.diff_model->transformation_collision_geometries(x, ts_data);
 
-          auto co = new fcl::CollisionObjectf(robot.getCollisionGeometry(part));
+        for (size_t i = 0; i < ts_data.size(); i++) {
+          auto &transform = ts_data.at(i);
+          auto co = new fcl::CollisionObjectd(col_geo.at(i));
           co->setTranslation(transform.translation());
           co->setRotation(transform.rotation());
           co->computeAABB();
           m.collision_objects.push_back(co);
         }
       }
+
       m.collision_manager.reset(
-          new ShiftableDynamicAABBTreeCollisionManager<float>());
+          new ShiftableDynamicAABBTreeCollisionManager<double>());
       m.collision_manager->registerObjects(m.collision_objects);
 
       new_motions.push_back(m);
     }
 
     motions.insert(motions.end(), new_motions.begin(), new_motions.end());
+  }
+
+  std::cout << "Motions loaded" << std::endl;
+  std::cout << STR_(motions.size()) << std::endl;
+
+  if (shuffle) {
+    std::shuffle(std::begin(motions), std::end(motions),
+                 std::default_random_engine{});
+  }
+
+  for (size_t idx = 0; idx < motions.size(); ++idx) {
+    motions[idx].idx = idx;
   }
 }
 
@@ -1160,20 +1192,20 @@ double automatic_delta(double delta_in, double alpha, RobotOmpl &robot,
   size_t num_samples = std::min<size_t>(1000, T_m.size());
 
   auto state_sampler = si->allocStateSampler();
-  float sum_delta = 0.0;
+  double sum_delta = 0.0;
   for (size_t k = 0; k < num_samples; ++k) {
     do {
       state_sampler->sampleUniform(fakeMotion.states[0]);
     } while (!si->isValid(fakeMotion.states[0]));
-    robot.setPosition(fakeMotion.states[0], fcl::Vector3f(0, 0, 0));
+    robot.setPosition(fakeMotion.states[0], fcl::Vector3d(0, 0, 0));
 
     T_m.nearestK(&fakeMotion, num_desired_neighbors + 1, neighbors_m);
 
-    float max_delta =
+    double max_delta =
         si->distance(fakeMotion.states[0], neighbors_m.back()->states.front());
     sum_delta += max_delta;
   }
-  float adjusted_delta = (sum_delta / num_samples) / alpha;
+  double adjusted_delta = (sum_delta / num_samples) / alpha;
   std::cout << "Automatically adjusting delta to: " << adjusted_delta
             << std::endl;
 
@@ -1203,7 +1235,7 @@ void filte_duplicates(std::vector<Motion> &motions, double delta, double alpha,
       if (nm == &m || nm->disabled) {
         continue;
       }
-      float goal_delta = si->distance(m.states.back(), nm->states.back());
+      double goal_delta = si->distance(m.states.back(), nm->states.back());
       if (goal_delta < delta * (1 - alpha)) {
         nm->disabled = true;
         ++num_duplicates;
@@ -1214,15 +1246,56 @@ void filte_duplicates(std::vector<Motion> &motions, double delta, double alpha,
             << std::endl;
 }
 
-// continue here: cost lower bound for the quadcopter
-int solve(Options_db &options_db, Inout_db &inout_db) {
+void add_landmarks(ompl::NearestNeighbors<AStarNode *> *T_landmarks,
+                   std::vector<AStarNode *> landmark_nodes,
+                   std::shared_ptr<RobotOmpl> robot, size_t num_sample_trials) {
 
-  std::cout << "inside solve: " << __FILE__ << ":" << __LINE__ << std::endl;
+  CHECK(T_landmarks, AT);
+  auto si = robot->getSpaceInformation();
+  T_landmarks->setDistanceFunction([&](const AStarNode *a, const AStarNode *b) {
+    return si->distance(a->state, b->state);
+  });
+
+  auto check_fun = [&](Sample_ *x) {
+    return si->getStateValidityChecker()->isValid(x);
+  };
+
+  auto sample_fun = [&](double *x, size_t n) {
+    for (size_t i = 0; i < n; i++) {
+      Eigen::Map<Eigen::VectorXd> s(x, n);
+      robot->diff_model->sample_uniform(s);
+    };
+  };
+
+  std::vector<Sample_ *> landmark_samples;
+
+  generate_batch(sample_fun, check_fun, num_sample_trials, robot->nx, si,
+                 landmark_samples);
+  landmark_samples.push_back(robot->startState);
+  landmark_samples.push_back(robot->goalState);
+
+  landmark_nodes.resize(landmark_samples.size());
+
+  double BIG_NUM = 1e8;
+  for (size_t i = 0; i < landmark_samples.size(); i++) {
+    auto ptr = new AStarNode;
+    ptr->state = landmark_samples.at(i);
+    ptr->gScore = BIG_NUM;
+    ptr->hScore = BIG_NUM;
+    ptr->fScore = BIG_NUM;
+    landmark_nodes.at(i) = ptr;
+  }
+  T_landmarks->add(landmark_nodes);
+}
+
+// continue here: cost lower bound for the quadcopter
+void dbastar(const Problem &problem, Options_db &options_db, Trajectory &traj_out,
+           Out_info_db &out_info_db) {
+
   std::cout << "*** options_db ***" << std::endl;
   options_db.print(std::cout);
   std::cout << "***" << std::endl;
   std::cout << "*** inout_db ***" << std::endl;
-  inout_db.print(std::cout);
   std::cout << "***" << std::endl;
 
   const std::string space6 = "      ";
@@ -1236,97 +1309,20 @@ int solve(Options_db &options_db, Inout_db &inout_db) {
   Duplicate_detection duplicate_detection =
       static_cast<Duplicate_detection>(options_db.duplicate_detection_int);
 
-  YAML::Node env = YAML::LoadFile(inout_db.inputFile);
+  std::shared_ptr<RobotOmpl> robot = robot_factory_ompl(problem);
 
-  std::vector<fcl::CollisionObjectf *> obstacles;
-  std::shared_ptr<fcl::BroadPhaseCollisionManagerf> bpcm_env(
-      new fcl::DynamicAABBTreeCollisionManagerf());
-  generate_env(env, obstacles, bpcm_env.get());
-
-  const auto &robot_node = env["robots"][0];
-  auto robotType = robot_node["type"].as<std::string>();
-  const auto &env_min = env["environment"]["min"];
-  const auto &env_max = env["environment"]["max"];
-  const auto &st = robot_node["start"];
-
-  ob::RealVectorBounds position_bounds(env_min.size());
-  for (size_t i = 0; i < env_min.size(); ++i) {
-    position_bounds.setLow(i, env_min[i].as<double>());
-    position_bounds.setHigh(i, env_max[i].as<double>());
-  }
-  std::shared_ptr<RobotOmpl> robot =
-      create_robot_ompl(robotType, position_bounds);
   auto si = robot->getSpaceInformation();
+  std::cout << "Space info" << std::endl;
+  si->printSettings(std::cout);
+  std::cout << "***" << std::endl;
 
-  si->setPropagationStepSize(1);
-  si->setMinMaxControlDuration(1, 1);
-  auto stateValidityChecker(
-      std::make_shared<fclStateValidityChecker>(si, bpcm_env, robot));
-  si->setStateValidityChecker(stateValidityChecker);
-
-  std::shared_ptr<oc::StatePropagator> statePropagator(
-      new RobotOmplStatePropagator(si, robot));
-  si->setStatePropagator(statePropagator);
-
-  si->setup();
-
-  int dim = si->getStateDimension();
-
-  std::cout << "dim: " << dim << std::endl;
-  std::cout << "bounds: " << std::endl;
-  // std::cout << robot->x_lb.transpose() << std::endl;
-  // std::cout << robot->x_ub.transpose() << std::endl;
-  // std::cout << robot->u_lb.transpose() << std::endl;
-  // std::cout << robot->u_ub.transpose() << std::endl;
-
-  auto startState = allocAndFillState(si, robot_node["start"]);
-  auto goalState = allocAndFillState(si, robot_node["goal"]);
-  // i have to enforce bounds
-
-  robot->enforceBounds(goalState);
-  robot->enforceBounds(startState);
+  auto startState = robot->startState;
+  auto goalState = robot->goalState;
 
   std::vector<Motion> motions;
-
-  {
-
-    ob::RealVectorBounds _position_bounds(env_min.size());
-    for (size_t i = 0; i < env_min.size(); ++i) {
-      _position_bounds.setLow(i, -10.);
-      _position_bounds.setHigh(i, 10.);
-      // _position_bounds.setLow(i, std::numeric_limits<double>::lowest());
-      // _position_bounds.setHigh(i, std::numeric_limits<double>::max());
-    }
-
-    std::shared_ptr<RobotOmpl> robot_no_pos_bound =
-        create_robot_ompl(robotType, _position_bounds);
-
-    auto _si = robot_no_pos_bound->getSpaceInformation();
-    _si->setPropagationStepSize(1);
-    _si->setMinMaxControlDuration(1, 1);
-    auto stateValidityChecker(
-        std::make_shared<fclStateValidityChecker>(si, bpcm_env, robot));
-    _si->setStateValidityChecker(stateValidityChecker);
-
-    std::shared_ptr<oc::StatePropagator> statePropagator(
-        new RobotOmplStatePropagator(si, robot));
-    _si->setStatePropagator(statePropagator);
-
-    _si->setup();
-    _si->printSettings(std::cout);
-
-    load_motion_primitives(inout_db.motionsFile, *robot_no_pos_bound, motions,
-                           options_db.max_motions, options_db.cut_actions);
-  }
-
-  std::cout << "Motions loaded" << std::endl;
-  std::cout << STR_(motions.size()) << std::endl;
-
-  std::shuffle(std::begin(motions), std::end(motions),
-               std::default_random_engine{});
-  for (size_t idx = 0; idx < motions.size(); ++idx) {
-    motions[idx].idx = idx;
-  }
+  load_motion_primitives(options_db.motionsFile, *robot, motions,
+                         options_db.max_motions, options_db.cut_actions, true);
+  std::cout << "There are " << motions.size() << " motions!" << std::endl;
 
   // build kd-tree for motion primitives
   ompl::NearestNeighbors<Motion *> *T_m;
@@ -1343,40 +1339,16 @@ int solve(Options_db &options_db, Inout_db &inout_db) {
   std::transform(motions.begin(), motions.end(), motions_ptr.begin(),
                  [](auto &s) { return &s; });
 
-  // {
-  //   auto out = timed_fun([&] {
-  //     // print motion
-  //     T_m->add(motions_ptr);
-  //     return 0;
-  //   });
-  //   time_bench.time_nearestMotion += out.second;
-  // }
-
   {
-
-    // robot->getSpaceInformation()->getStateSpace->setp
-    // si->getStateSpace()->setPositionBounds(position_bounds);
-
     auto out = timed_fun([&] {
-      // print motion
-      size_t index = 0;
-      for (auto &ptr : motions_ptr) {
-        // std::cout << STR_(index) << std::endl;
-        if (!si->satisfiesBounds(ptr->states.front())) {
-          ERROR_WITH_INFO("fails here");
-        }
-        T_m->add(ptr);
-      }
+      T_m->add(motions_ptr);
       return 0;
     });
     time_bench.time_nearestMotion += out.second;
   }
 
-  std::cout << "There are " << motions.size() << " motions!" << std::endl;
-
   if (options_db.alpha <= 0 || options_db.alpha >= 1) {
-    std::cerr << "Alpha needs to be between 0 and 1!" << std::endl;
-    return 1;
+    ERROR_WITH_INFO("Alpha needs to be between 0 and 1!");
   }
 
   if (options_db.delta < 0) {
@@ -1386,6 +1358,25 @@ int solve(Options_db &options_db, Inout_db &inout_db) {
 
   if (options_db.filterDuplicates) {
     filte_duplicates(motions, options_db.delta, options_db.alpha, *robot, *T_m);
+  }
+
+  std::shared_ptr<Heu_fun> h_fun;
+
+  switch (options_db.heuristic) {
+  case 0: {
+    h_fun = std::make_shared<Heu_euclidean>(robot, robot->goalState);
+  } break;
+  case 1: {
+    h_fun = std::make_shared<Heu_roadmap>(robot, options_db.num_sample_trials,
+                                          robot->startState, robot->goalState,
+                                          options_db.resolution);
+  } break;
+  case -1: {
+    h_fun = std::make_shared<Heu_blind>();
+  } break;
+  default: {
+    ERROR_WITH_INFO("not implemented");
+  }
   }
 
   ompl::NearestNeighbors<AStarNode *> *T_n;
@@ -1402,138 +1393,16 @@ int solve(Options_db &options_db, Inout_db &inout_db) {
     return si->distance(a->state, b->state);
   });
 
-  HeuristicMap heuristic_map;
-  std::vector<Sample_ *> batch_samples;
   std::vector<const Sample_ *> expanded;
   std::vector<std::vector<double>> found_nn;
-
-  std::default_random_engine re;
-
-  if (options_db.use_landmarks || options_db.new_heu == 1 ||
-      options_db.new_heu == 2) {
-
-    auto check_fun = [&](Sample_ *x) {
-      return stateValidityChecker->isValid(x);
-    };
-
-    auto sample_fun = [&](double *x, size_t n) {
-      for (size_t i = 0; i < n; i++) {
-        std::uniform_real_distribution<double> uniform(robot->x_lb[i],
-                                                       robot->x_ub[i]);
-        x[i] = uniform(re);
-      };
-    };
-
-    generate_batch(sample_fun, check_fun, options_db.num_sample_trials, dim, si,
-                   batch_samples);
-    batch_samples.push_back(startState);
-    batch_samples.push_back(goalState);
-
-    {
-      std::ofstream file_out("batch_out.txt");
-      for (auto &x : batch_samples) {
-        printState(file_out, si, x);
-        file_out << std::endl;
-      }
-    }
-  }
-  if (options_db.new_heu == 1 || options_db.new_heu == 2 ||
-      options_db.use_landmarks) {
-
-    if (options_db.new_heu == 1) {
-      double distance_threshold = 1.;
-
-      build_heuristic_distance(batch_samples /* goal should be last */, robot,
-                               heuristic_map, distance_threshold,
-                               options_db.resolution);
-
-    } else if (options_db.new_heu == 2) {
-      // double backward_delta = std::min(2. * delta, .45);
-      double backward_delta = options_db.delta;
-      std::cout << "backward delta " << backward_delta << std::endl;
-      throw std::runtime_error("I have to fix implementation of new heu 2");
-      // build_heuristic_motions(batch_samples /* goal should be last */,
-      //                         heuristic_map, motions, bpcm_env,
-      //                         backward_delta * backward_delta);
-    }
-
-    write_heuristic_map(heuristic_map, si);
-  }
-
-  ompl::NearestNeighbors<HeuNode *> *T_heu;
   ompl::NearestNeighbors<AStarNode *> *T_landmarks;
-  std::vector<AStarNode> landmarks;
-  std::vector<AStarNode *> ptrs;
-
-  if (options_db.use_landmarks) {
-
-    T_landmarks = new ompl::NearestNeighborsGNATNoThreadSafety<AStarNode *>();
-
-    T_landmarks->setDistanceFunction(
-        [&](const AStarNode *a, const AStarNode *b) {
-          return si->distance(a->state, b->state);
-        });
-
-    landmarks = std::vector<AStarNode>(batch_samples.size());
-
-    for (size_t i = 0; i < batch_samples.size(); i++) {
-      auto ptr = &landmarks.at(i);
-      ptr->state = batch_samples.at(i);
-      ptrs.push_back(ptr);
-    }
-
-    double BIG_NUM = 1e8;
-
-    for (auto &p : ptrs) {
-      p->gScore = BIG_NUM;
-      p->hScore = BIG_NUM;
-      p->fScore = BIG_NUM;
-    }
-
-    T_landmarks->add(ptrs);
-  }
-
-  if (options_db.new_heu == 1 || options_db.new_heu == 2) {
-    if (si->getStateSpace()->isMetricSpace()) {
-      T_heu = new ompl::NearestNeighborsGNATNoThreadSafety<HeuNode *>();
-    } else {
-      T_heu = new ompl::NearestNeighborsSqrtApprox<HeuNode *>();
-    }
-
-    T_heu->setDistanceFunction([&](const HeuNode *a, const HeuNode *b) {
-      return si->distance(a->state, b->state);
-    });
-
-    for (size_t i = 0; i < heuristic_map.size(); i++) {
-      HeuNode *ptr = new HeuNode; // memory leak, stop bad code
-      ptr->state = heuristic_map[i].x;
-      ptr->dist = heuristic_map[i].dist;
-      T_heu->add(ptr);
-    }
-  }
+  std::vector<AStarNode *> ptrs; // TODO: i should clean memory
 
   auto start_node = new AStarNode;
   start_node->gScore = 0;
-  start_node->state = startState;
+  start_node->state = robot->startState;
 
-  std::shared_ptr<Heu_fun> h_fun;
-
-  switch (options_db.new_heu) {
-  case 0: {
-    h_fun = std::make_shared<Heu_euclidean>(robot, goalState);
-  } break;
-  case 1: {
-    h_fun = std::make_shared<Heu_roadmap>(robot, T_heu);
-  } break;
-  case -1: {
-    h_fun = std::make_shared<Heu_blind>();
-  } break;
-  default: {
-    ERROR_WITH_INFO("not implemented");
-  }
-  }
-
-  double hstart = h_fun->h(startState);
+  double hstart = h_fun->h(robot->startState);
 
   start_node->fScore = options_db.epsilon * hstart;
   start_node->hScore = start_node->fScore;
@@ -1543,7 +1412,7 @@ int solve(Options_db &options_db, Inout_db &inout_db) {
             << std::endl;
 
   start_node->came_from = nullptr;
-  start_node->used_offset = fcl::Vector3f(0, 0, 0);
+  start_node->used_offset = fcl::Vector3d(0, 0, 0);
   start_node->used_motion = -1;
 
   // db-A* search
@@ -1568,28 +1437,25 @@ int solve(Options_db &options_db, Inout_db &inout_db) {
   std::vector<Motion *> neighbors_m;
   std::vector<AStarNode *> neighbors_n;
 
-  float last_f_score = start_node->fScore;
-  size_t expands = 0;
+  double last_f_score = start_node->fScore;
+  // size_t expands = 0;
   // clock start
 
-  auto tac = std::chrono::high_resolution_clock::now();
-  time_bench.prepare_time =
-      std::chrono::duration<double, std::milli>(tac - tic).count();
+  if (options_db.use_landmarks) {
 
-  static_cast<ompl::NearestNeighborsGNATNoThreadSafety<AStarNode *> *>(T_n)
-      ->rebuildSize_ = 1e8;
-
-  if (options_db.use_landmarks)
+    T_landmarks = new ompl::NearestNeighborsGNATNoThreadSafety<AStarNode *>();
+    add_landmarks(T_landmarks, ptrs, robot, options_db.num_sample_trials);
     T_n = T_landmarks;
+  }
 
-  int counter_nn = 0;
+  // int counter_nn = 0;
 
   AStarNode *solution = nullptr;
 
+  bool check_average_min_d = true;
   double total_d = 0;
   int counter = 0;
   double average_min_d = 0;
-  bool check_average_min_d = true;
   if (check_average_min_d) {
     for (auto &p : ptrs) {
       std::vector<AStarNode *> neighbors;
@@ -1644,9 +1510,10 @@ int solve(Options_db &options_db, Inout_db &inout_db) {
                                    bool &motionValid) {
     auto out = timed_fun([&] {
       motion->collision_manager->shift(offset);
-      fcl::DefaultCollisionData<float> collision_data;
-      motion->collision_manager->collide(bpcm_env.get(), &collision_data,
-                                         fcl::DefaultCollisionFunction<float>);
+      fcl::DefaultCollisionData<double> collision_data;
+      motion->collision_manager->collide(robot->diff_model->env.get(),
+                                         &collision_data,
+                                         fcl::DefaultCollisionFunction<double>);
       bool motionValid = !collision_data.result.isCollision();
       motion->collision_manager->shift(-offset);
       return motionValid;
@@ -1687,9 +1554,15 @@ int solve(Options_db &options_db, Inout_db &inout_db) {
   // }
   // std::cout << "END MOTIONS" << std::endl;
 
+  auto tac = std::chrono::high_resolution_clock::now();
+  time_bench.prepare_time =
+      std::chrono::duration<double, std::milli>(tac - tic).count();
+
+  static_cast<ompl::NearestNeighborsGNATNoThreadSafety<AStarNode *> *>(T_n)
+      ->rebuildSize_ = 1e8;
   while (true) {
 
-    if (time_bench.expands >= options_db.max_expands) {
+    if (static_cast<size_t>(time_bench.expands) >= options_db.max_expands) {
       status = Terminate_status::MAX_EXPANDS;
       break;
     }
@@ -1757,7 +1630,7 @@ int solve(Options_db &options_db, Inout_db &inout_db) {
       time_bench.time_nearestNode_add += out.second;
     }
 
-    if (options_db.new_heu == 0) {
+    if (options_db.heuristic == 0) {
 
       if (current->fScore < last_f_score) {
         std::cout << "expand: " << time_bench.expands << " state: ";
@@ -1768,8 +1641,8 @@ int solve(Options_db &options_db, Inout_db &inout_db) {
       }
     }
     last_f_score = current->fScore;
-    si->printState(current->state);
-    si->printState(goalState);
+    // si->printState(current->state);
+    // si->printState(goalState);
     if (si->distance(current->state, goalState) <=
         options_db.delta_factor_goal * options_db.delta) {
       solution = current;
@@ -1786,7 +1659,7 @@ int solve(Options_db &options_db, Inout_db &inout_db) {
     si->copyState(fakeMotion.states[0], current->state);
 
     if (robot->isTranslationInvariant())
-      robot->setPosition(fakeMotion.states[0], fcl::Vector3f(0, 0, 0));
+      robot->setPosition(fakeMotion.states[0], fcl::Vector3d(0, 0, 0));
 
     nearest_motion_timed(fakeMotion, neighbors_m);
 
@@ -1818,10 +1691,10 @@ int solve(Options_db &options_db, Inout_db &inout_db) {
         continue;
       }
 
-      fcl::Vector3f offset(0., 0., 0.);
-      fcl::Vector3f computed_offset(0., 0., 0.);
-      fcl::Vector3f current_pos(0., 0., 0.);
-      float tentative_gScore = current->gScore + motion->cost;
+      fcl::Vector3d offset(0., 0., 0.);
+      fcl::Vector3d computed_offset(0., 0., 0.);
+      fcl::Vector3d current_pos(0., 0., 0.);
+      double tentative_gScore = current->gScore + motion->cost;
       si->copyState(tmpState, motion->states.back());
 
       if (robot->isTranslationInvariant()) {
@@ -1841,9 +1714,9 @@ int solve(Options_db &options_db, Inout_db &inout_db) {
       }
       tentative_gScore += options_db.cost_delta_factor *
                           robot->cost_lower_bound(tmpState2, current->state);
-      float tentative_hScore = h_fun->h(tmpState);
+      double tentative_hScore = h_fun->h(tmpState);
 
-      float tentative_fScore =
+      double tentative_fScore =
           tentative_gScore + options_db.epsilon * tentative_hScore;
 
       if (tentative_fScore > options_db.maxCost) {
@@ -1872,7 +1745,7 @@ int solve(Options_db &options_db, Inout_db &inout_db) {
           const auto state = motion->states[k];
           si->copyState(tmpState_debug, state);
           if (robot->isTranslationInvariant()) {
-            const fcl::Vector3f relative_pos =
+            const fcl::Vector3d relative_pos =
                 robot->getTransform(state).translation();
             robot->setPosition(tmpState_debug, current_pos + relative_pos);
           }
@@ -1955,8 +1828,8 @@ int solve(Options_db &options_db, Inout_db &inout_db) {
                 options_db.cost_delta_factor *
                 robot->cost_lower_bound(entry->state, tmpState);
             double tentative_gScore_ = tentative_gScore + extra_time_to_reach;
-            float delta_score = entry->gScore - tentative_gScore_;
-            double old_fscore = entry->fScore;
+            double delta_score = entry->gScore - tentative_gScore_;
+            // double old_fscore = entry->fScore;
             // std::cout  << "time to reach " << time_to_reach << std::endl;
 
             if (delta_score > 0) {
@@ -2045,9 +1918,9 @@ int solve(Options_db &options_db, Inout_db &inout_db) {
   time_bench.motions_tree_size = T_m->size();
   time_bench.states_tree_size = T_n->size();
 
-  std::cout << "writing output to " << inout_db.outFile << std::endl;
+  std::cout << "writing output to " << options_db.outFile << std::endl;
 
-  std::ofstream out(inout_db.outFile);
+  std::ofstream out(options_db.outFile);
   out << "status: " << terminate_status_str[static_cast<int>(status)]
       << std::endl;
 
@@ -2063,11 +1936,15 @@ int solve(Options_db &options_db, Inout_db &inout_db) {
   time_bench.write(out);
 
   if (options_db.debug) {
-    out << "batch:" << std::endl;
-    for (auto &x : batch_samples) {
-      out << "      - ";
-      printState(out, si, x);
-      out << std::endl;
+
+    if (options_db.heuristic == 1) {
+      out << "batch:" << std::endl;
+      auto fun_d = static_cast<Heu_roadmap *>(h_fun.get());
+      for (auto &x : fun_d->batch_samples) {
+        out << "      - ";
+        printState(out, si, x);
+        out << std::endl;
+      }
     }
 
     out << "kdtree:" << std::endl;
@@ -2114,9 +1991,12 @@ int solve(Options_db &options_db, Inout_db &inout_db) {
   }
 
   double time_jumps = 0;
-  double time_counter = 0;
+  double cost_with_jumps = 0;
 
+  Trajectory traj;
   if (solution) {
+    state_to_eigen(traj_out.start, si, startState);
+    state_to_eigen(traj_out.goal, si, goalState);
 
     out << "cost: " << solution->gScore << std::endl;
 
@@ -2151,16 +2031,16 @@ int solve(Options_db &options_db, Inout_db &inout_db) {
     for (size_t i = 0; i < result.size() - 1; ++i) {
       // Compute intermediate states
       const auto node_state = result[i]->state;
-      fcl::Vector3f current_pos(0, 0, 0);
+      fcl::Vector3d current_pos(0, 0, 0);
 
       if (robot->isTranslationInvariant())
         current_pos = robot->getTransform(node_state).translation();
       const auto &motion = motions.at(result[i + 1]->used_motion);
       out << space6 + "# ";
-      printState(out, si, node_state);
+      printState(out, si, node_state); // debug
       out << std::endl;
       out << space6 + "# motion " << motion.idx << " with cost " << motion.cost
-          << std::endl;
+          << std::endl; // debug
       // skip last state each
 
       for (size_t k = 0; k < motion.states.size(); ++k) {
@@ -2168,7 +2048,7 @@ int solve(Options_db &options_db, Inout_db &inout_db) {
         si->copyState(tmpState, state);
 
         if (robot->isTranslationInvariant()) {
-          const fcl::Vector3f relative_pos =
+          const fcl::Vector3d relative_pos =
               robot->getTransform(state).translation();
           robot->setPosition(tmpState, current_pos +
                                            result[i + 1]->used_offset +
@@ -2178,23 +2058,28 @@ int solve(Options_db &options_db, Inout_db &inout_db) {
         if (k < motion.states.size() - 1) {
           if (k == 0) {
             out << space6 + "# jump from ";
-            printState(out, si, tmpStateq);
+            printState(out, si, tmpStateq); // debug
             out << " to ";
-            printState(out, si, tmpState);
-            out << " delta " << si->distance(tmpStateq, tmpState);
+            printState(out, si, tmpState);                         // debug
+            out << " delta " << si->distance(tmpStateq, tmpState); // debug
             double min_time = robot->cost_lower_bound(tmpStateq, tmpState);
             time_jumps += min_time;
-            out << " min time " << min_time;
+            out << " min time " << min_time; // debug
             out << std::endl;
           }
 
           out << space6 + "- ";
+          Eigen::VectorXd x;
+          state_to_eigen(x, si, state);
+          traj_out.states.push_back(x);
 
         } else {
-          out << space6 + "# ";
+          out << space6 + "# "; // debug
           si->copyState(tmpStateq, tmpState);
         }
+
         printState(out, si, tmpState);
+
         out << std::endl;
       }
       out << std::endl;
@@ -2212,16 +2097,20 @@ int solve(Options_db &options_db, Inout_db &inout_db) {
     for (size_t i = 0; i < result.size() - 1; ++i) {
       const auto &motion = motions[result[i + 1]->used_motion];
       out << space6 + "# motion " << motion.idx << " with cost " << motion.cost
-          << std::endl;
+          << std::endl; // debug
       for (size_t k = 0; k < motion.actions.size(); ++k) {
         const auto &action = motion.actions[k];
         out << space6 + "- ";
         action_counter += 1;
         printAction(out, si, action);
+        Eigen::VectorXd x;
+        control_to_eigen(x, si, action);
+        traj_out.actions.push_back(x);
         out << std::endl;
       }
       out << std::endl;
     }
+    // dts
 
     out << "result2:" << std::endl;
     out << "  - states:" << std::endl;
@@ -2259,7 +2148,7 @@ int solve(Options_db &options_db, Inout_db &inout_db) {
       if (i > 0) {
         // I also have to compute a distance
         double delta_time = robot->cost_lower_bound(node_state, tmpState);
-        time_counter += delta_time;
+        cost_with_jumps += delta_time;
         out << space6 + "# delta time " << delta_time << std::endl;
         double delta_i = si->distance(node_state, tmpState);
         out << space6 + "# delta " << delta_i << std::endl;
@@ -2267,11 +2156,11 @@ int solve(Options_db &options_db, Inout_db &inout_db) {
       }
 
       out << space6 + "# this is node " << std::endl;
-      out << space6 + "# time " << time_counter << std::endl;
+      out << space6 + "# time " << cost_with_jumps << std::endl;
       out << space6 + "- ";
       printState(out, si, node_state);
       out << std::endl;
-      times.push_back(time_counter);
+      times.push_back(cost_with_jumps);
 
       auto uu = si->allocControl();
       si->copyControl(uu, uzero);
@@ -2288,7 +2177,7 @@ int solve(Options_db &options_db, Inout_db &inout_db) {
       si->copyState(tmpState, node_state);
 
       if (i < result.size() - 1) {
-        fcl::Vector3f current_pos(0, 0, 0);
+        fcl::Vector3d current_pos(0, 0, 0);
         if (robot->isTranslationInvariant())
           current_pos = robot->getTransform(node_state).translation();
         const auto &motion = motions.at(result.at(i + 1)->used_motion);
@@ -2308,7 +2197,7 @@ int solve(Options_db &options_db, Inout_db &inout_db) {
           si->copyState(tmpState, state);
 
           if (robot->isTranslationInvariant()) {
-            const fcl::Vector3f relative_pos =
+            const fcl::Vector3d relative_pos =
                 robot->getTransform(state).translation();
             robot->setPosition(tmpState, current_pos +
                                              result[i + 1]->used_offset +
@@ -2317,15 +2206,15 @@ int solve(Options_db &options_db, Inout_db &inout_db) {
 
           if (k == 0) {
             double delta_time = robot->cost_lower_bound(node_state, tmpState);
-            time_counter += delta_time;
+            cost_with_jumps += delta_time;
             out << space6 + "# delta time " << delta_time << std::endl;
             double delta_i = si->distance(node_state, tmpState);
             out << space6 + "# delta " << delta_i << std::endl;
             assert(delta_i <= options_db.delta);
           } else {
-            time_counter += dt;
+            cost_with_jumps += dt;
           }
-          out << space6 + "# time " << time_counter << std::endl;
+          out << space6 + "# time " << cost_with_jumps << std::endl;
           out << space6 + "- ";
           printState(out, si, tmpState);
           out << std::endl;
@@ -2334,7 +2223,7 @@ int solve(Options_db &options_db, Inout_db &inout_db) {
           si->copyState(x_, tmpState);
           states2.push_back(x_);
 
-          times.push_back(time_counter);
+          times.push_back(cost_with_jumps);
           auto uu = si->allocControl();
           si->copyControl(uu, u);
           actions2.push_back(uu);
@@ -2347,14 +2236,14 @@ int solve(Options_db &options_db, Inout_db &inout_db) {
     }
     if (true) {
       double delta_time = robot->cost_lower_bound(tmpState, goalState);
-      time_counter += delta_time;
+      cost_with_jumps += delta_time;
       out << space6 + "# delta time " << delta_time << std::endl;
       double delta_i = si->distance(goalState, tmpState);
       std::cout << "delta_i " << delta_i << std::endl;
       assert(delta_i < options_db.delta);
       out << space6 + "# delta " << delta_i << std::endl;
       out << space6 + "# this is goal " << std::endl;
-      out << space6 + "# time " << time_counter << std::endl;
+      out << space6 + "# time " << cost_with_jumps << std::endl;
       out << space6 + "- ";
       printState(out, si, goalState);
       out << std::endl;
@@ -2362,7 +2251,7 @@ int solve(Options_db &options_db, Inout_db &inout_db) {
       auto x_ = si->allocState();
       si->copyState(x_, tmpState);
       states2.push_back(x_);
-      times.push_back(time_counter);
+      times.push_back(cost_with_jumps);
 
       // auto uu = si->allocControl();
       // si->copyControl(uu, uzero);
@@ -2420,50 +2309,27 @@ int solve(Options_db &options_db, Inout_db &inout_db) {
       out << std::endl;
     }
   }
+  std::cout << "WARNING: I am using cost with jumps!" << std::endl;
+  traj_out.cost = cost_with_jumps;
 
-  inout_db.solved = solution;
+  out_info_db.solved = solution;
 
-  if (inout_db.solved) {
-    inout_db.cost = solution->gScore;
-    inout_db.cost_with_delta_time = time_counter;
+  if (out_info_db.solved) {
+    out_info_db.cost = solution->gScore;
+    out_info_db.cost_with_delta_time = cost_with_jumps;
   } else {
 
-    inout_db.cost = -1;
-    inout_db.cost_with_delta_time = -1;
+    out_info_db.cost = -1;
+    out_info_db.cost_with_delta_time = -1;
   }
-
-  return 0;
 }
 
-void Inout_db::print(std::ostream &out) {
+void Out_info_db::print(std::ostream &out) {
 
   std::string be = "";
   std::string af = ": ";
 
-  out << be << STR(inputFile, af) << std::endl;
-  out << be << STR(motionsFile, af) << std::endl;
-  out << be << STR(outFile, af) << std::endl;
   out << be << STR(cost, af) << std::endl;
   out << be << STR(cost_with_delta_time, af) << std::endl;
   out << be << STR(solved, af) << std::endl;
-}
-
-void Inout_db::add_options(po::options_description &desc) {
-  set_from_boostop(desc, VAR_WITH_NAME(inputFile));
-  set_from_boostop(desc, VAR_WITH_NAME(motionsFile));
-  set_from_boostop(desc, VAR_WITH_NAME(outFile));
-  set_from_boostop(desc, VAR_WITH_NAME(problem_name));
-}
-
-void Inout_db::read_from_yaml(YAML::Node &node) {
-
-  set_from_yaml(node, VAR_WITH_NAME(inputFile));
-  set_from_yaml(node, VAR_WITH_NAME(motionsFile));
-  set_from_yaml(node, VAR_WITH_NAME(outFile));
-}
-
-void Inout_db::read_from_yaml(const char *file) {
-  std::cout << "loading file: " << file << std::endl;
-  YAML::Node node = YAML::LoadFile(file);
-  read_from_yaml(node);
 }

@@ -3,18 +3,18 @@
 #include "ompl/control/StatePropagator.h"
 #include "robots.h"
 
-class RobotStatePropagator : public ompl::control::StatePropagator
+class RobotOmplStatePropagator : public ompl::control::StatePropagator
 {
 public:
-    RobotStatePropagator(
+    RobotOmplStatePropagator(
         const ompl::control::SpaceInformationPtr& si,
-        std::shared_ptr<Robot> robot)
+        std::shared_ptr<RobotOmpl> robot)
         : ompl::control::StatePropagator(si)
         , robot_(robot)
     {
     }
 
-    ~RobotStatePropagator() override = default;
+    ~RobotOmplStatePropagator() override = default;
 
     void propagate(
         const ompl::base::State *state,
@@ -37,5 +37,5 @@ public:
     }
 
 protected:
-    std::shared_ptr<Robot> robot_;
+    std::shared_ptr<RobotOmpl> robot_;
 };

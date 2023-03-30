@@ -25,6 +25,27 @@ bool inline check_bounds(const Eigen::VectorXd &v, const Eigen::VectorXd &v_lb,
   return true;
 }
 
+double inline check_bounds_distance(const Eigen::VectorXd &v,
+                                    const Eigen::VectorXd &v_lb,
+                                    const Eigen::VectorXd &v_ub) {
+
+  CHECK_EQ(v.size(), v_lb.size(), AT);
+  CHECK_EQ(v.size(), v_lb.size(), AT);
+  size_t n = v.size();
+  double max_distance = 0;
+  for (size_t i = 0; i < n; i++) {
+    double d1 = std::max(v(i) - v_ub(i), 0.);
+    double d2 = std::max(v_lb(i) - v(i), 0.);
+    if (d1 > max_distance) {
+      max_distance = d1;
+    }
+    if (d2 > max_distance) {
+      max_distance = d2;
+    }
+  }
+  return max_distance;
+}
+
 Eigen::VectorXd inline enforce_bounds(const Eigen::VectorXd &us,
                                       const Eigen::VectorXd &lb,
                                       const Eigen::VectorXd &ub) {
@@ -79,8 +100,7 @@ bool inline is_diagonal(const Eigen::Ref<const Eigen::MatrixXd> &mat,
   return true;
 }
 
-template <class T> 
-T inside_bounds(const T &i, const T &lb, const T &ub) {
+template <class T> T inside_bounds(const T &i, const T &lb, const T &ub) {
   CHECK_GEQ(ub, lb, AT);
 
   if (i < lb)
@@ -380,7 +400,7 @@ void inline linearInterpolation(const Eigen::VectorXd &times,
 
   // double num_tolerance = 1e-8;
   // CHECK_GEQ(t_query + num_tolerance, times.head(1)(0), AT);
-  assert(times.size() == x.size());
+  assert(static_cast<size_t>(times.size()) == static_cast<size_t>(x.size()));
 
   size_t index = 0;
   if (t_query < times(0)) {
@@ -404,7 +424,7 @@ void inline linearInterpolation(const Eigen::VectorXd &times,
     const bool debug_bs = false;
     if (debug_bs) {
       size_t index2 = 0;
-      for (size_t i = 0; i < times.size(); i++) {
+      for (size_t i = 0; i < static_cast<size_t>(times.size()); i++) {
         if (t_query < times(i)) {
           index2 = i;
           break;
@@ -512,13 +532,13 @@ void inline euler_diff(Eigen::Ref<Eigen::MatrixXd> Jy_x,
                        const Eigen::Ref<const Eigen::MatrixXd> &Jv_u) {
 
   const size_t n = Jy_x.cols();
-  assert(Jy_x.cols() == n);
-  assert(Jy_x.rows() == n);
+  assert(static_cast<size_t>(Jy_x.cols()) == n);
+  assert(static_cast<size_t>(Jy_x.rows()) == n);
 
-  assert(Jv_x.cols() == n);
-  assert(Jv_x.rows() == n);
-  assert(Jv_u.rows() == n);
-  assert(Jy_u.rows() == n);
+  assert(static_cast<size_t>(Jv_x.cols()) == n);
+  assert(static_cast<size_t>(Jv_x.rows()) == n);
+  assert(static_cast<size_t>(Jv_u.rows()) == n);
+  assert(static_cast<size_t>(Jy_u.rows()) == n);
   assert(Jy_u.cols() == Jv_u.cols());
 
   Jy_x.noalias() = dt * Jv_x;
@@ -567,4 +587,19 @@ double inline so2_distance(double x, double y) {
   assert(x <= M_PI && x >= -M_PI);
   double d = std::fabs(x - y);
   return (d > M_PI) ? 2.0 * M_PI - d : d;
+}
+
+inline double normalize_angle(double angle) {
+  const double result = fmod(angle + M_PI, 2.0 * M_PI);
+  if (result <= 0.0)
+    return result + M_PI;
+  return result - M_PI;
+}
+
+inline double norm_sq(double *x, size_t n) {
+  double out = 0;
+  for (size_t i = 0; i < n; i++) {
+    out += x[i] * x[i];
+  }
+  return out;
 }

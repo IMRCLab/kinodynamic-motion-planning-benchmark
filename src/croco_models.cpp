@@ -1,5 +1,5 @@
-#include "croco_macros.hpp"
 #include "croco_models.hpp"
+#include "croco_macros.hpp"
 #include "math_utils.hpp"
 #include <Eigen/src/Core/Matrix.h>
 #include <filesystem>
@@ -14,6 +14,25 @@ using V1d = Eigen::Matrix<double, 1, 1>;
 ptr<Dynamics> create_dynamics(std::shared_ptr<Model_robot> model_robot,
                               const Control_Mode &control_mode) {
   return mk<Dynamics>(model_robot, control_mode);
+}
+
+void modify_x_bound_for_free_time_linear(const Vxd &__x_lb, const Vxd &__x_ub,
+                                         const Vxd &__xb__weight, Vxd &x_lb,
+                                         Vxd &x_ub, Vxd &xb_weight) {
+
+  CHECK_EQ(__x_lb.size(), __x_ub.size(), AT);
+  CHECK_EQ(__xb__weight.size(), __x_ub.size(), AT);
+
+  size_t nx = __x_lb.size() + 1;
+
+  xb_weight = Vxd(nx);
+  x_lb = Vxd(nx);
+  x_ub = Vxd(nx);
+
+  double max_time_rate = 2;
+  x_lb << __x_lb, 0.;
+  x_ub << __x_ub, max_time_rate;
+  xb_weight << __xb__weight, 200.;
 }
 
 void modify_x_bound_for_contour(const Vxd &__x_lb, const Vxd &__x_ub,
@@ -54,6 +73,30 @@ void modify_u_bound_for_contour(const Vxd &__u_lb, const Vxd &__u_ub,
   u_ub << __u_ub, 10.;
   u_ref << __u__ref, 0.;
   u_weight << __u__weight, .1;
+}
+
+void modify_u_for_free_time_linear(const Vxd &__u_lb, const Vxd &__u_ub,
+                                   const Vxd &__u__weight, const Vxd &__u__ref,
+                                   Vxd &u_lb, Vxd &u_ub, Vxd &u_weight,
+                                   Vxd &u_ref) {
+
+  CHECK_EQ(__u_lb.size(), __u_ub.size(), AT);
+  CHECK_EQ(__u__weight.size(), __u_ub.size(), AT);
+  CHECK_EQ(__u__ref.size(), __u_ub.size(), AT);
+
+  size_t nu = __u_lb.size() + 1;
+
+  u_weight = Vxd(nu);
+  u_lb = Vxd(nu);
+  u_ub = Vxd(nu);
+  u_ref = Vxd(nu);
+
+  double max_time_rate = 2;
+  u_lb << __u_lb, 0;
+  u_ub << __u_ub, max_time_rate;
+  u_ref << __u__ref, 0.;
+  u_weight << __u__weight, 0;
+  // TODO: then I have to add a linear term to the cost!
 }
 
 void modify_u_bound_for_free_time(const Vxd &__u_lb, const Vxd &__u_ub,
@@ -143,6 +186,57 @@ void check_input_calcdiff(Eigen::Ref<Eigen::MatrixXd> Fx,
                  << "Fu has wrong dimension (it should be " +
                         std::to_string(nx) + ")");
   }
+}
+
+// u - x
+Time_linear_reg::Time_linear_reg(size_t nx, size_t nu) : Cost(nx, nu, 1) {
+
+  name = "time_linear_reg";
+}
+
+void Time_linear_reg::calc(Eigen::Ref<Eigen::VectorXd> r,
+                           const Eigen::Ref<const Eigen::VectorXd> &x,
+                           const Eigen::Ref<const Eigen::VectorXd> &u) {
+
+  check_input_calc(r, x, u);
+  double d = x.tail(1)(0) - u.tail(1)(0);
+  r(0) = k * d;
+}
+
+void Time_linear_reg::calc(Eigen::Ref<Eigen::VectorXd> r,
+                           const Eigen::Ref<const Eigen::VectorXd> &x) {
+  (void) r;
+  (void) x;
+
+  ERROR_WITH_INFO("error here! -- we require u and x!");
+}
+
+void Time_linear_reg::calcDiff(Eigen::Ref<Eigen::VectorXd> Lx,
+                               Eigen::Ref<Eigen::VectorXd> Lu,
+                               Eigen::Ref<Eigen::MatrixXd> Lxx,
+                               Eigen::Ref<Eigen::MatrixXd> Luu,
+                               Eigen::Ref<Eigen::MatrixXd> Lxu,
+                               const Eigen::Ref<const Eigen::VectorXd> &x,
+                               const Eigen::Ref<const Eigen::VectorXd> &u) {
+
+  //  .5 * k^2 ( x - u )^2
+  check_input_calcDiff(Lx, Lu, Lxx, Luu, Lxu, x, u);
+  double d = x.tail(1)(0) - u.tail(1)(0);
+  Lx(nx - 1) += k * k * d;
+  Lu(nu - 1) += -k * k * d;
+  Lxx(nx - 1, nx - 1) += k * k;
+  Luu(nu - 1, nu - 1) += k * k;
+  Lxu(nx - 1, nu - 1) += -k * k;
+}
+
+void Time_linear_reg::calcDiff(Eigen::Ref<Eigen::VectorXd> Lx,
+                               Eigen::Ref<Eigen::MatrixXd> Lxx,
+                               const Eigen::Ref<const Eigen::VectorXd> &x) {
+  (void)Lx;
+  (void)Lxx;
+  (void)x;
+
+  ERROR_WITH_INFO("error here! -- we require u and x!");
 }
 
 Contour_cost_alpha_x::Contour_cost_alpha_x(size_t nx, size_t nu)
@@ -374,8 +468,8 @@ void Contour_cost::calcDiff(Eigen::Ref<Eigen::VectorXd> Lx,
 }
 
 Col_cost::Col_cost(size_t nx, size_t nu, size_t nr,
-                   std::shared_ptr<Model_robot> model , double weight)
-    : Cost(nx, nu, nr), model(model),  weight(weight) {
+                   std::shared_ptr<Model_robot> model, double weight)
+    : Cost(nx, nu, nr), model(model), weight(weight) {
   last_x = Vxd::Ones(nx);
   name = "collision";
   nx_effective = nx;
@@ -494,9 +588,9 @@ void Col_cost::calcDiff(Eigen::Ref<Eigen::VectorXd> Lx,
 //     raw_d = std::get<0>(out);
 //     last_x = x;
 //     last_raw_d = raw_d;
-//     d = opti_params.collision_weight * (raw_d - margin);
+//     d = options_trajopt.collision_weight * (raw_d - margin);
 //     auto grad = std::get<1>(out);
-//     v = opti_params.collision_weight * Vxd::Map(grad.data(), grad.size());
+//     v = options_trajopt.collision_weight * Vxd::Map(grad.data(), grad.size());
 //     if (d <= 0) {
 //       Jx.block(0, 0, 1, nx_effective) = v.transpose();
 //     } else {
@@ -1032,29 +1126,6 @@ void check_dyn(boost::shared_ptr<Dynamics> dyn, double eps, Vxd x, Vxd u,
   }
 }
 
-double max_rollout_error(ptr<Dynamics> dyn, const std::vector<Vxd> &xs,
-                         const std::vector<Vxd> &us) {
-  CHECK_EQ(xs.size(), us.size() + 1, AT);
-
-  size_t N = us.size();
-
-  size_t nx = xs.front().size();
-
-  Vxd xnext(nx);
-  double max_error = 0;
-
-  for (size_t i = 0; i < N; i++) {
-
-    dyn->calc(xnext, xs.at(i), us.at(i));
-    double d = (xnext - xs.at(i + 1)).norm();
-
-    if (d > max_error) {
-      max_error = d;
-    }
-  }
-  return max_error;
-}
-
 std::vector<ReportCost>
 get_report(ptr<ActionModelQ> p,
            std::function<void(ptr<Cost>, Eigen::Ref<Vxd>)> fun) {
@@ -1177,14 +1248,23 @@ Dynamics::Dynamics(std::shared_ptr<Model_robot> robot_model,
 
   if (control_mode == Control_Mode::default_mode) {
     state_croco = boost::make_shared<StateCrocoQ>(robot_model->state);
-  }
-
-  if (control_mode == Control_Mode::free_time) {
+  } else if (control_mode == Control_Mode::free_time) {
     state_croco = boost::make_shared<StateCrocoQ>(robot_model->state);
     nu++;
+    __v.resize(nx);
+  } else if (control_mode == Control_Mode::free_time_linear) {
+
+    __v.resize(nx);
+    nu++;
+    nx++;
+
+    state_croco =
+        boost::make_shared<StateCrocoQ>(std::make_shared<CompoundState2>(
+            robot_model->state, std::make_shared<Rn>(1)));
+
   }
 
-  if (control_mode == Control_Mode::contour) {
+  else if (control_mode == Control_Mode::contour) {
     nu++;
     nx++;
 
@@ -1211,8 +1291,12 @@ void Dynamics::calc(Eigen::Ref<Eigen::VectorXd> xnext,
   if (control_mode == Control_Mode::default_mode) {
     robot_model->step(xnext, x, u, dt);
   } else if (control_mode == Control_Mode::free_time) {
-    CHECK_GE(u(robot_model->nu), 0, AT);
+    CHECK_GEQ(u(robot_model->nu), 0., AT);
     robot_model->step(xnext, x, u.head(_nu), dt * u(_nu));
+  } else if (control_mode == Control_Mode::free_time_linear) {
+    CHECK_GEQ(u(robot_model->nu), 0., AT);
+    robot_model->step(xnext.head(_nx), x.head(_nx), u.head(_nu), dt * u(_nu));
+    xnext(_nx) = u(_nu);
   } else if (control_mode == Control_Mode::contour) {
     robot_model->step(xnext.head(_nx), x.head(_nx), u.head(_nu), dt);
     xnext(nx - 1) = x(nx - 1) + u(nu - 1);
@@ -1237,9 +1321,20 @@ void Dynamics::calcDiff(Eigen::Ref<Eigen::MatrixXd> Fx,
 
   if (control_mode == Control_Mode::default_mode) {
     robot_model->stepDiff(Fx, Fu, x, u, dt);
+  } else if (control_mode == Control_Mode::free_time_linear) {
+    CHECK_GE(u(robot_model->nu), 0, AT);
+    CHECK_EQ(static_cast<size_t>(__v.size()), _nx, AT);
+    robot_model->stepDiff_with_v(Fx.block(0, 0, _nx, _nx),
+                                 Fu.block(0, 0, _nx, _nu), __v, x.head(_nx),
+                                 u.head(_nu), dt * u(_nu));
+    Fu.block(0, _nu, _nx, 1) = __v * dt;
+    Fu(_nx, _nu) = 1.;
+    CHECK_EQ(static_cast<size_t>(__v.size()), _nx, AT);
   } else if (control_mode == Control_Mode::free_time) {
-    robot_model->stepDiffdt(Fx, Fu, x, u.head(_nu), dt * u(_nu));
-    Fu.col(_nu) *= dt;
+    robot_model->stepDiff_with_v(Fx, Fu.block(0, 0, _nx, _nu), __v, x,
+                                 u.head(_nu), dt * u(_nu));
+    CHECK_EQ(static_cast<size_t>(__v.size()), _nx, AT);
+    Fu.col(_nu) = __v * dt;
   } else if (control_mode == Control_Mode::contour) {
     robot_model->stepDiff(Fx.block(0, 0, _nx, _nx), Fu.block(0, 0, _nx, _nu),
                           x.head(_nx), u.head(_nu), dt);
@@ -1297,18 +1392,26 @@ State_cost_model::State_cost_model(
   CSTR_(nr);
   CSTR_(nu);
   CSTR_(nx);
+
+  name = "state_cost_model";
 }
 
 void State_cost_model::calc(Eigen::Ref<Eigen::VectorXd> r,
                             const Eigen::Ref<const Eigen::VectorXd> &x,
                             const Eigen::Ref<const Eigen::VectorXd> &u) {
   (void)u;
+  check_input_calc(r, x, u);
   calc(r, x);
 }
 
 void State_cost_model::calc(Eigen::Ref<Eigen::VectorXd> r,
                             const Eigen::Ref<const Eigen::VectorXd> &x) {
 
+  check_input_calc(r, x);
+  // CSTR_V(r)
+  // CSTR_V(ref)
+  // CSTR_V(x)
+  // CSTR_(nx_effective)
   model_robot->state_diff(r, ref, x.head(nx_effective));
   r.array() *= x_weight.array();
 }
@@ -1337,31 +1440,74 @@ void State_cost_model::calcDiff(Eigen::Ref<Eigen::VectorXd> Lx,
 
   bool Jx1_is_diagonal = is_diagonal(Jx1);
 
-  CSTR_V(ref);
-  CSTR_V(__r);
-  CSTR_V(x);
+  // CSTR_V(ref);
+  // CSTR_V(__r);
+  // CSTR_V(x);
 
-  std::cout << "Jx1 " << std::endl;
-  std::cout << Jx1 << std::endl;
+  // std::cout << "Jx1 " << std::endl;
+  // std::cout << Jx1 << std::endl;
 
-  CSTR_(Jx1.diagonal().size());
-  CSTR_(__r.size());
-  CSTR_(x_weight_sq.size());
+  // CSTR_(Jx1.diagonal().size());
+  // CSTR_(__r.size());
+  // CSTR_(x_weight_sq.size());
 
   if (Jx1_is_diagonal) {
-    CHECK_EQ(Lx.head(nx_effective).size(),
-             __r.cwiseProduct(Jx1.diagonal()).cwiseProduct(x_weight_sq).size(),
-             AT);
+    // CHECK_EQ(Lx.head(nx_effective).size(),
+    //          __r.cwiseProduct(Jx1.diagonal()).cwiseProduct(x_weight_sq).size(),
+    //          AT);
     Lx.head(nx_effective) +=
         __r.cwiseProduct(Jx1.diagonal()).cwiseProduct(x_weight_sq);
     Lxx.diagonal().head(nx_effective) += x_weight_sq;
   } else {
-    CHECK_EQ(Jx1.cols(), x_weight_mat.cols(), AT);
-    CHECK_EQ(Jx1.rows(), x_weight_mat.rows(), AT);
+    // CHECK_EQ(Jx1.cols(), x_weight_mat.cols(), AT);
+    // CHECK_EQ(Jx1.rows(), x_weight_mat.rows(), AT);
     Jx1_w = Jx1.cwiseProduct(x_weight_mat);
     Lx.block(0, 0, nx_effective, nx_effective).noalias() +=
         __r.cwiseProduct(x_weight) * Jx1_w;
     Lxx.block(0, 0, nx_effective, nx_effective).noalias() +=
         Jx1_w.transpose() * Jx1_w;
   }
+}
+
+// u - x
+
+Min_time_linear::Min_time_linear(size_t nx, size_t nu) : Cost(nx, nu, 1) {
+  cost_type = CostTYPE::linear;
+  name = "min_time_linear";
+}
+
+void Min_time_linear::calc(Eigen::Ref<Eigen::VectorXd> r,
+                           const Eigen::Ref<const Eigen::VectorXd> &x,
+                           const Eigen::Ref<const Eigen::VectorXd> &u) {
+
+  check_input_calc(r, x, u);
+  r(0) = k * u.tail(1)(0);
+}
+
+void Min_time_linear::calc(Eigen::Ref<Eigen::VectorXd> r,
+                           const Eigen::Ref<const Eigen::VectorXd> &x) {
+
+  check_input_calc(r, x);
+  ERROR_WITH_INFO("should not be here");
+}
+
+void Min_time_linear::calcDiff(Eigen::Ref<Eigen::VectorXd> Lx,
+                               Eigen::Ref<Eigen::VectorXd> Lu,
+                               Eigen::Ref<Eigen::MatrixXd> Lxx,
+                               Eigen::Ref<Eigen::MatrixXd> Luu,
+                               Eigen::Ref<Eigen::MatrixXd> Lxu,
+                               const Eigen::Ref<const Eigen::VectorXd> &x,
+                               const Eigen::Ref<const Eigen::VectorXd> &u) {
+
+  check_input_calcDiff(Lx, Lu, Lxx, Luu, Lxu, x, u);
+  Lu(nu - 1) += k;
+}
+
+void Min_time_linear::calcDiff(Eigen::Ref<Eigen::VectorXd> Lx,
+                               Eigen::Ref<Eigen::MatrixXd> Lxx,
+                               const Eigen::Ref<const Eigen::VectorXd> &x)
+
+{
+  check_input_calcDiff(Lx, Lxx, x);
+  ERROR_WITH_INFO("should not be here");
 }

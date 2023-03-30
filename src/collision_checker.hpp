@@ -36,6 +36,6 @@ std::vector<bool>* non_zero_flags = nullptr);
 
   std::shared_ptr<fcl::CollisionGeometryf> geom_;
   std::shared_ptr<fcl::BroadPhaseCollisionManagerf> env_;
-  std::shared_ptr<Robot> robot_;
+  std::shared_ptr<RobotOmpl> robot_;
   ompl::base::State *tmp_state_;
 };

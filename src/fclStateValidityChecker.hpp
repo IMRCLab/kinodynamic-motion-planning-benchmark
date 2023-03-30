@@ -5,14 +5,15 @@
 
 #include <fcl/fcl.h>
 
+#if 0 
 class fclStateValidityChecker
   : public ompl::base::StateValidityChecker
 {
 public:
   fclStateValidityChecker(
       ompl::base::SpaceInformationPtr si,
-      std::shared_ptr<fcl::BroadPhaseCollisionManagerf> environment,
-      std::shared_ptr<Robot> robot)
+      std::shared_ptr<fcl::BroadPhaseCollisionManagerd> environment,
+      std::shared_ptr<RobotOmpl> robot)
       : StateValidityChecker(si)
       , environment_(environment)
       , robot_(robot)
@@ -27,11 +28,11 @@ public:
 
     for (size_t part = 0; part < robot_->numParts(); ++part) {
       const auto& transform = robot_->getTransform(state, part);
-      fcl::CollisionObjectf robot(robot_->getCollisionGeometry(part)); //, robot_->getTransform(state));
+      fcl::CollisionObjectd robot(robot_->getCollisionGeometry(part)); //, robot_->getTransform(state));
       robot.setTranslation(transform.translation());
       robot.setRotation(transform.rotation());
       robot.computeAABB();
-      fcl::DefaultCollisionData<float> collision_data;
+      fcl::DefaultCollisionData<double> collision_data;
       environment_->collide(&robot, &collision_data, fcl::DefaultCollisionFunction<float>);
       if (collision_data.result.isCollision()) {
         return false;
@@ -43,5 +44,6 @@ public:
 
 private:
   std::shared_ptr<fcl::BroadPhaseCollisionManagerf> environment_;
-  std::shared_ptr<Robot> robot_;
+  std::shared_ptr<RobotOmpl> robot_;
 };
+#endif

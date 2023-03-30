@@ -16,7 +16,7 @@
 #include "general_utils.hpp"
 #include "robot_models.hpp"
 
-Opti_params opti_params;
+Options_trajopt options_trajopt;
 double accumulated_time;
 
 using vstr = std::vector<std::string>;
@@ -26,28 +26,7 @@ using V4d = Eigen::Vector4d;
 using Vxd = Eigen::VectorXd;
 using V1d = Eigen::Matrix<double, 1, 1>;
 
-std::vector<Eigen::VectorXd> yaml_node_to_xs(const YAML::Node &node) {
-
-  std::vector<std::vector<double>> states;
-  std::vector<Eigen::VectorXd> xs;
-
-  for (const auto &state : node) {
-    std::vector<double> p;
-    for (const auto &elem : state) {
-      p.push_back(elem.as<double>());
-    }
-    states.push_back(p);
-  }
-
-  xs.resize(states.size());
-
-  std::transform(states.begin(), states.end(), xs.begin(),
-                 [](const auto &s) { return Vxd::Map(s.data(), s.size()); });
-
-  return xs;
-}
-
-void Opti_params::add_options(po::options_description &desc) {
+void Options_trajopt::add_options(po::options_description &desc) {
 
   set_from_boostop(desc, VAR_WITH_NAME(rollout_warmstart));
   set_from_boostop(desc, VAR_WITH_NAME(u_bound_scale));
@@ -76,13 +55,13 @@ void Opti_params::add_options(po::options_description &desc) {
   set_from_boostop(desc, VAR_WITH_NAME(tsearch_num_check));
 }
 
-void Opti_params::read_from_yaml(const char *file) {
+void Options_trajopt::read_from_yaml(const char *file) {
   std::cout << "loading file: " << file << std::endl;
   YAML::Node node = YAML::LoadFile(file);
   read_from_yaml(node);
 }
 
-void Opti_params::read_from_yaml(YAML::Node &node) {
+void Options_trajopt::read_from_yaml(YAML::Node &node) {
   set_from_yaml(node, VAR_WITH_NAME(rollout_warmstart));
   set_from_yaml(node, VAR_WITH_NAME(u_bound_scale));
   set_from_yaml(node, VAR_WITH_NAME(interp));
@@ -111,7 +90,7 @@ void Opti_params::read_from_yaml(YAML::Node &node) {
   set_from_yaml(node, VAR_WITH_NAME(tsearch_num_check));
 }
 
-void Opti_params::print(std::ostream &out) {
+void Options_trajopt::print(std::ostream &out) const {
 
   const std::string be = "";
   const std::string af = ": ";
@@ -148,20 +127,21 @@ void Opti_params::print(std::ostream &out) {
   out << be << STR(tsearch_num_check, af) << std::endl;
 }
 
-const char *SOLVER_txt[] = {"traj_opt",
-                            "traj_opt_free_time",
-                            "traj_opt_smooth_then_free_time",
-                            "mpc",
-                            "mpcc",
-                            "mpcc2",
-                            "traj_opt_mpcc",
-                            "mpc_nobound_mpcc",
-                            "mpcc_linear",
-                            "time_search_traj_opt",
-                            "mpc_adaptative",
-                            "traj_opt_free_time_proxi",
-                            "traj_opt_no_bound_bound",
-                            "none"};
+// const char *SOLVER_txt[] = {"traj_opt",
+//                             "traj_opt_free_time",
+//                             "traj_opt_smooth_then_free_time",
+//                             "mpc",
+//                             "mpcc",
+//                             "mpcc2",
+//                             "traj_opt_mpcc",
+//                             "mpc_nobound_mpcc",
+//                             "mpcc_linear",
+//                             "time_search_traj_opt",
+//                             "mpc_adaptative",
+//                             "traj_opt_free_time_proxi",
+//                             "traj_opt_no_bound_bound",
+//                             "traj_opt_free_time_proxi_linear",
+//                             "none"};
 
 void PrintVariableMap(const boost::program_options::variables_map &vm,
                       std::ostream &out) {
@@ -253,9 +233,16 @@ void Generate_params::print(std::ostream &out) const {
 }
 
 ptr<crocoddyl::ShootingProblem>
-generate_problem(const Generate_params &gen_args, size_t &nx, size_t &nu) {
+generate_problem(const Generate_params &gen_args,
+                 const Options_trajopt &options_trajopt, size_t &nx,
+                 size_t &nu) {
   std::cout << "**\nGENERATING PROBLEM\n**\n" << std::endl;
+  std::cout << "**\nGenArgs\n**\n" << std::endl;
   gen_args.print(std::cout);
+  std::cout << "**\n" << std::endl;
+
+  std::cout << "**\nOpti Params\n**\n" << std::endl;
+  options_trajopt.print(std::cout);
   std::cout << "**\n" << std::endl;
 
   std::vector<ptr<Cost>> feats_terminal;
@@ -267,13 +254,17 @@ generate_problem(const Generate_params &gen_args, size_t &nx, size_t &nu) {
   }
 
   Control_Mode control_mode;
-  if (gen_args.free_time) {
+  if (gen_args.free_time && !gen_args.free_time_linear) {
     control_mode = Control_Mode::free_time;
   } else if (gen_args.contour_control) {
     control_mode = Control_Mode::contour;
+  } else if (gen_args.free_time_linear && gen_args.free_time) {
+    control_mode = Control_Mode::free_time_linear;
   } else {
     control_mode = Control_Mode::default_mode;
   }
+  std::cout << "control_mode" << static_cast<int>(control_mode) << std::endl;
+
   ptr<Dynamics> dyn = create_dynamics(gen_args.model_robot, control_mode);
 
   if (control_mode == Control_Mode::contour) {
@@ -293,11 +284,18 @@ generate_problem(const Generate_params &gen_args, size_t &nx, size_t &nu) {
   for (size_t t = 0; t < gen_args.N; t++) {
 
     std::vector<ptr<Cost>> feats_run;
+
+    if (control_mode == Control_Mode::free_time_linear) {
+      if (t > 0)
+        feats_run.emplace_back(mk<Time_linear_reg>(nx, nu));
+      feats_run.emplace_back(mk<Min_time_linear>(nx, nu));
+    }
+
     feats_run.push_back(control_feature);
 
     if (gen_args.collisions && gen_args.model_robot->env) {
       ptr<Cost> cl_feature = mk<Col_cost>(nx, nu, 1, gen_args.model_robot,
-                                          opti_params.collision_weight);
+                                          options_trajopt.collision_weight);
       feats_run.push_back(cl_feature);
 
       if (gen_args.contour_control)
@@ -375,31 +373,32 @@ generate_problem(const Generate_params &gen_args, size_t &nx, size_t &nu) {
 
       ptr<Contour_cost_alpha_u> contour_alpha_u =
           mk<Contour_cost_alpha_u>(nx, nu);
-      contour_alpha_u->k = opti_params.k_linear;
+      contour_alpha_u->k = options_trajopt.k_linear;
 
       feats_run.push_back(contour_alpha_u);
 
       // std::cout << "warning, no contour in non-terminal states" << std::endl;
       // ptr<Contour_cost_x> contour_x =
       //     mk<Contour_cost_x>(nx, nu, gen_args.interpolator);
-      // contour_x->weight = opti_params.k_contour;
+      // contour_x->weight = options_trajopt.k_contour;
 
       // std::cout << "warning, no cost on alpha in non-terminal states"
       //           << std::endl;
       // idea: use this only if it is close
       // ptr<Contour_cost_alpha_x> contour_alpha_x =
       //     mk<Contour_cost_alpha_x>(nx, nu);
-      // contour_alpha_x->k = .1 * opti_params.k_linear;
+      // contour_alpha_x->k = .1 * options_trajopt.k_linear;
 
       // feats_run.push_back(contour_x);
       // feats_run.push_back(contour_alpha_x);
     }
 
-    auto am_run = to_am_base(mk<ActionModelQ>(dyn, feats_run));
+    boost::shared_ptr<crocoddyl::ActionModelAbstract> am_run =
+        to_am_base(mk<ActionModelQ>(dyn, feats_run));
 
-    if (opti_params.control_bounds) {
-      am_run->set_u_lb(opti_params.u_bound_scale * dyn->u_lb);
-      am_run->set_u_ub(opti_params.u_bound_scale * dyn->u_ub);
+    if (options_trajopt.control_bounds) {
+      am_run->set_u_lb(options_trajopt.u_bound_scale * dyn->u_lb);
+      am_run->set_u_ub(options_trajopt.u_bound_scale * dyn->u_ub);
     }
     amq_runs.push_back(am_run);
   }
@@ -412,7 +411,7 @@ generate_problem(const Generate_params &gen_args, size_t &nx, size_t &nu) {
         mk<State_bounds>(nx, nu, nx, dyn->x_ub, dyn->x_weightb);
     ptr<Contour_cost_x> contour_x =
         mk<Contour_cost_x>(nx, nu, gen_args.interpolator);
-    contour_x->weight = opti_params.k_contour;
+    contour_x->weight = options_trajopt.k_contour;
 
     feats_terminal.push_back(contour_x);
     feats_terminal.push_back(state_bounds);
@@ -420,34 +419,35 @@ generate_problem(const Generate_params &gen_args, size_t &nx, size_t &nu) {
 
   if (gen_args.goal_cost) {
     // ptr<Cost> state_feature = mk<State_cost>(
-    //     nx, nu, nx, opti_params.weight_goal * Vxd::Ones(nx), gen_args.goal);
+    //     nx, nu, nx, options_trajopt.weight_goal * Vxd::Ones(nx),
+    //     gen_args.goal);
 
     CHECK_EQ(static_cast<size_t>(gen_args.goal.size()),
              gen_args.model_robot->nx, AT);
     ptr<Cost> state_feature = mk<State_cost_model>(
         gen_args.model_robot, nx, nu,
-        opti_params.weight_goal * Vxd::Ones(gen_args.model_robot->nx),
+        options_trajopt.weight_goal * Vxd::Ones(gen_args.model_robot->nx),
         gen_args.goal);
 
     feats_terminal.push_back(state_feature);
   }
   am_terminal = to_am_base(mk<ActionModelQ>(dyn, feats_terminal));
 
-  if (opti_params.use_finite_diff) {
+  if (options_trajopt.use_finite_diff) {
     std::cout << "using finite diff!" << std::endl;
 
     std::vector<boost::shared_ptr<crocoddyl::ActionModelAbstract>>
         amq_runs_diff(amq_runs.size());
 
     // double disturbance = 1e-4; // should be high, becaues I have collisions
-    double disturbance = opti_params.disturbance;
+    double disturbance = options_trajopt.disturbance;
     std::transform(
         amq_runs.begin(), amq_runs.end(), amq_runs_diff.begin(),
         [&](const auto &am_run) {
           auto am_rundiff = mk<crocoddyl::ActionModelNumDiff>(am_run, true);
           boost::static_pointer_cast<crocoddyl::ActionModelNumDiff>(am_rundiff)
               ->set_disturbance(disturbance);
-          if (opti_params.control_bounds) {
+          if (options_trajopt.control_bounds) {
             am_rundiff->set_u_lb(am_run->get_u_lb());
             am_rundiff->set_u_ub(am_run->get_u_ub());
           }
@@ -474,18 +474,7 @@ generate_problem(const Generate_params &gen_args, size_t &nx, size_t &nu) {
   return problem;
 };
 
-YAML::Node load_yaml_safe(const char *str) {
-  if (!std::filesystem::exists(str)) {
-    ERROR_WITH_INFO(std::string("Not found file ") + str);
-  }
-  return YAML::LoadFile(str);
-}
-YAML::Node load_yaml_safe(const std::string &s) {
-  return load_yaml_safe(s.c_str());
-}
-
 void read_from_file(File_parser_inout &inout) {
-  double dt = 0;
 
   YAML::Node init;
   if (inout.init_guess != "") {
@@ -498,7 +487,11 @@ void read_from_file(File_parser_inout &inout) {
     // ...
   }
 
-  inout.name = env["robots"][0]["type"].as<std::string>();
+  Problem problem;
+  problem.read_from_yaml(inout.env_file.c_str());
+
+  inout.name = problem.robotType;
+
   Vxd uzero;
 
   // if (__in(vstr{"unicycle_first_order_0", "unicycle_second_order_0",
@@ -519,7 +512,7 @@ void read_from_file(File_parser_inout &inout) {
   YAML::Node robot_model = load_yaml_safe(inout.robot_model_file);
   CHECK(robot_model["dt"], AT);
   inout.dt = robot_model["dt"].as<double>();
-  std::cout << STR_(dt) << std::endl;
+  std::cout << STR_(inout.dt) << std::endl;
 
   // // load the collision checker
   // if (__in(vstr{"unicycle_first_order_0", "unicycle_second_order_0",
@@ -540,79 +533,29 @@ void read_from_file(File_parser_inout &inout) {
   size_t N;
   std::vector<std::vector<double>> actions;
 
-  std::vector<double> _start, _goal;
-  for (const auto &e : env["robots"][0]["start"]) {
-    _start.push_back(e.as<double>());
-  }
+  inout.start = problem.start;
+  inout.goal = problem.goal;
 
-  for (const auto &e : env["robots"][0]["goal"]) {
-    _goal.push_back(e.as<double>());
-  }
-
-  inout.start = Vxd::Map(_start.data(), _start.size());
-  inout.goal = Vxd::Map(_goal.data(), _goal.size());
-
-  if (inout.init_guess != "") {
+  if (inout.xs.size() && inout.us.size()) {
+    std::cout << "using xs and us as init guess " << std::endl;
+  } else if (inout.init_guess != "") {
     if (!inout.new_format) {
 
-      if (!init["result"]) {
-        CHECK(false, AT);
-        // ...
-      }
-
-      for (const auto &state : init["result"][0]["states"]) {
-        std::vector<double> p;
-        for (const auto &elem : state) {
-          p.push_back(elem.as<double>());
-        }
-        states.push_back(p);
-      }
-
-      N = states.size() - 1;
-
-      for (const auto &state : init["result"][0]["actions"]) {
-        std::vector<double> p;
-        for (const auto &elem : state) {
-          p.push_back(elem.as<double>());
-        }
-        actions.push_back(p);
-      }
-
-      inout.xs.resize(states.size());
-      inout.us.resize(actions.size());
-
-      std::transform(
-          states.begin(), states.end(), inout.xs.begin(),
-          [](const auto &s) { return Vxd::Map(s.data(), s.size()); });
-
-      std::transform(
-          actions.begin(), actions.end(), inout.us.begin(),
-          [](const auto &s) { return Vxd::Map(s.data(), s.size()); });
+      CHECK(init["result"], AT);
+      CHECK(init["result"][0], AT);
+      get_states_and_actions(init["result"][0], inout.xs, inout.us);
 
     } else {
 
-      if (!init["result2"]) {
-        CHECK(false, AT);
-      }
+      std::vector<Vxd> _xs_init;
+      std::vector<Vxd> _us_init;
+
+      CHECK(init["result2"], AT);
+      CHECK(init["result2"][0], AT);
+
+      get_states_and_actions(init["result2"][0], _xs_init, _us_init);
 
       std::cout << "Reading results in the new format " << std::endl;
-      for (const auto &state : init["result2"][0]["states"]) {
-        std::vector<double> p;
-        for (const auto &elem : state) {
-          p.push_back(elem.as<double>());
-        }
-        states.push_back(p);
-      }
-
-      N = states.size() - 1;
-
-      for (const auto &action : init["result2"][0]["actions"]) {
-        std::vector<double> p;
-        for (const auto &elem : action) {
-          p.push_back(elem.as<double>());
-        }
-        actions.push_back(p);
-      }
 
       std::vector<double> _times;
 
@@ -625,16 +568,13 @@ void read_from_file(File_parser_inout &inout) {
       // 0 1 2 3 4
 
       // we use floor in the time to be more agressive
-      std::cout << STR_(dt) << std::endl;
+      std::cout << STR_(inout.dt) << std::endl;
 
       double total_time = _times.back();
 
-      size_t num_time_steps = std::ceil(total_time / dt);
+      size_t num_time_steps = std::ceil(total_time / inout.dt);
 
       Vxd times = Vxd::Map(_times.data(), _times.size());
-
-      std::vector<Vxd> _xs_init(states.size());
-      std::vector<Vxd> _us_init(actions.size());
 
       std::vector<Vxd> xs_init_new;
       std::vector<Vxd> us_init_new;
@@ -642,15 +582,8 @@ void read_from_file(File_parser_inout &inout) {
       size_t nx = states.at(0).size();
       size_t nu = actions.at(0).size();
 
-      std::transform(
-          states.begin(), states.end(), _xs_init.begin(),
-          [](const auto &s) { return Vxd::Map(s.data(), s.size()); });
-
-      std::transform(
-          actions.begin(), actions.end(), _us_init.begin(),
-          [](const auto &s) { return Vxd::Map(s.data(), s.size()); });
-
-      auto ts = Vxd::LinSpaced(num_time_steps + 1, 0, num_time_steps * dt);
+      auto ts =
+          Vxd::LinSpaced(num_time_steps + 1, 0, num_time_steps * inout.dt);
 
       std::cout << "taking samples at " << ts.transpose() << std::endl;
 
@@ -704,7 +637,7 @@ void read_from_file(File_parser_inout &inout) {
 
     Vxd x0 = inout.start;
 
-    if (opti_params.ref_x0) {
+    if (options_trajopt.ref_x0) {
       std::cout << "Warning: using a ref x0, instead of start" << std::endl;
 
       if (startsWith(inout.name, "unicycle1")) {
@@ -730,7 +663,7 @@ void read_from_file(File_parser_inout &inout) {
       inout.xs = std::vector<Vxd>(inout.T + 1, x0);
     }
     // lets use slerp.
-    else if (opti_params.interp) {
+    else if (options_trajopt.interp) {
 
       if (inout.name == "quadrotor_0") {
 
@@ -911,9 +844,23 @@ std::vector<ReportCost> report_problem(ptr<crocoddyl::ShootingProblem> problem,
   return reports;
 }
 
-void check_problem(ptr<crocoddyl::ShootingProblem> problem,
+bool check_problem(ptr<crocoddyl::ShootingProblem> problem,
                    ptr<crocoddyl::ShootingProblem> problem2,
                    const std::vector<Vxd> &xs, const std::vector<Vxd> &us) {
+
+  bool equal = true;
+  std::cout << "xs" << std::endl;
+  // for (auto &x : xs) {
+  //   CSTR_V(x);
+  //   CSTR_(x.size());
+  // }
+  // std::cout << "us" << std::endl;
+  // for (auto &u : us) {
+  //
+  //   CSTR_(u.size());
+  //   CSTR_V(u);
+  // }
+
   problem->calc(xs, us);
   problem->calcDiff(xs, us);
   auto data_running = problem->get_runningDatas();
@@ -930,8 +877,12 @@ void check_problem(ptr<crocoddyl::ShootingProblem> problem,
 
   check = check_equal(data_terminal_diff->Lx, data_terminal->Lx, tol, tol);
   WARN(check, std::string("LxT:") + AT);
+  if (!check)
+    equal = false;
 
   check = check_equal(data_terminal_diff->Lxx, data_terminal->Lxx, tol, tol);
+  if (!check)
+    equal = false;
   WARN(check, std::string("LxxT:") + AT);
 
   CHECK_EQ(data_running_diff.size(), data_running.size(), AT);
@@ -939,77 +890,138 @@ void check_problem(ptr<crocoddyl::ShootingProblem> problem,
     auto &d = data_running.at(i);
     auto &d_diff = data_running_diff.at(i);
     check = check_equal(d_diff->Fx, d->Fx, tol, tol);
+    if (!check)
+      equal = false;
     WARN(check, std::string("Fx:") + AT);
     check = check_equal(d_diff->Fu, d->Fu, tol, tol);
+    if (!check)
+      equal = false;
     WARN(check, std::string("Fu:") + AT);
     check = check_equal(d_diff->Lx, d->Lx, tol, tol);
+    if (!check)
+      equal = false;
     WARN(check, std::string("Lx:") + AT);
     check = check_equal(d_diff->Lu, d->Lu, tol, tol);
+    if (!check)
+      equal = false;
     WARN(check, std::string("Lu:") + AT);
     check = check_equal(d_diff->Fx, d->Fx, tol, tol);
+    if (!check)
+      equal = false;
     WARN(check, std::string("Fx:") + AT);
     check = check_equal(d_diff->Fu, d->Fu, tol, tol);
+    if (!check)
+      equal = false;
     WARN(check, std::string("Fu:") + AT);
     check = check_equal(d_diff->Lxx, d->Lxx, tol, tol);
+    if (!check)
+      equal = false;
     WARN(check, std::string("Lxx:") + AT);
     check = check_equal(d_diff->Lxu, d->Lxu, tol, tol);
+    if (!check)
+      equal = false;
     WARN(check, std::string("Lxu:") + AT);
     check = check_equal(d_diff->Luu, d->Luu, tol, tol);
+    if (!check)
+      equal = false;
     WARN(check, std::string("Luu:") + AT);
   }
+  return equal;
 }
 
-// check gradient
-
-void solve_with_custom_solver(File_parser_inout &file_inout,
-                              Result_opti &opti_out) {
-  CHECK(file_inout.robot_model_file.size(), AT);
+void __trajectory_optimization(const Problem &problem,
+                               const Trajectory &init_guess,
+                               Options_trajopt &options_trajopt,
+                               Trajectory &traj, Result_opti &opti_out) {
 
   std::shared_ptr<Model_robot> model_robot =
-      robot_factory(file_inout.robot_model_file.c_str());
-  model_robot->load_env_quim(file_inout.env_file);
+      robot_factory(robot_type_to_path(problem.robotType).c_str());
+  model_robot->load_env_quim(problem);
 
   bool check_with_finite_diff = true;
 
-  std::vector<SOLVER> solvers{
-      SOLVER::traj_opt,      SOLVER::traj_opt_free_time_proxi,
-      SOLVER::mpc,           SOLVER::mpcc,
-      SOLVER::mpcc2,         SOLVER::mpcc_linear,
-      SOLVER::mpc_adaptative};
+  std::string name = problem.robotType;
+
+  std::vector<SOLVER> solvers{SOLVER::traj_opt,
+                              SOLVER::traj_opt_free_time_proxi,
+                              SOLVER::mpc,
+                              SOLVER::mpcc,
+                              SOLVER::mpcc2,
+                              SOLVER::mpcc_linear,
+                              SOLVER::mpc_adaptative,
+                              SOLVER::traj_opt_free_time_proxi_linear};
 
   CHECK(__in_if(solvers,
-                [](const SOLVER &s) {
-                  return s == static_cast<SOLVER>(opti_params.solver_id);
+                [&](const SOLVER &s) {
+                  return s == static_cast<SOLVER>(options_trajopt.solver_id);
                 }),
         AT);
 
-  std::cout << STR_(opti_params.solver_id) << std::endl;
+  std::cout << STR_(options_trajopt.solver_id) << std::endl;
 
   bool verbose = false;
-  auto xs_init = file_inout.xs;
-  auto us_init = file_inout.us;
-  size_t N = us_init.size();
-  auto goal = file_inout.goal;
-  auto start = file_inout.start;
-  auto name = file_inout.name;
+  auto xs_init = init_guess.states;
+  auto us_init = init_guess.actions;
+  auto goal = problem.goal;
+  auto start = problem.start;
   double dt = model_robot->ref_dt;
 
   std::cout << STR_(dt) << std::endl;
 
+  if (!xs_init.size() && init_guess.num_time_steps == 0) {
+    ERROR_WITH_INFO("define either xs_init or num time steps");
+  }
+
+  if (!xs_init.size() && !us_init.size()) {
+
+    std::cout << "Warning: no xs_init or us_init has been provided "
+              << model_robot->u_0.format(FMT) << std::endl;
+
+    xs_init.resize(init_guess.num_time_steps + 1);
+
+    std::for_each(xs_init.begin(), xs_init.end(), [&](auto &x) {
+      if (options_trajopt.ref_x0)
+        x = model_robot->get_x0(problem.start);
+      else
+        x = problem.start;
+    });
+
+    us_init.resize(xs_init.size() - 1);
+    std::for_each(us_init.begin(), us_init.end(),
+                  [&](auto &x) { x = model_robot->u_0; });
+  }
+
+  if (xs_init.size() && !us_init.size()) {
+
+    std::cout << "Warning: no us_init has been provided -- using u_0: "
+              << model_robot->u_0.format(FMT) << std::endl;
+
+    us_init.resize(xs_init.size() - 1);
+
+    std::for_each(us_init.begin(), us_init.end(),
+                  [&](auto &x) { x = model_robot->u_0; });
+  }
+
+  if (init_guess.times.size()) {
+    std::cout << "i have time stamps, I resample the trajectory" << std::endl;
+    resample_trajectory(xs_init, us_init, init_guess.states, init_guess.actions,
+                        init_guess.times, model_robot->ref_dt);
+  }
+  size_t N = us_init.size();
   CHECK(us_init.size(), AT);
   CHECK(xs_init.size(), AT);
   CHECK_EQ(xs_init.size(), us_init.size() + 1, AT);
   const size_t _nx = xs_init.front().size();
   const size_t _nu = us_init.front().size();
 
-  SOLVER solver = static_cast<SOLVER>(opti_params.solver_id);
+  SOLVER solver = static_cast<SOLVER>(options_trajopt.solver_id);
 
   // TODO: put this inside each model
-  // if (opti_params.repair_init_guess) {
+  // if (options_trajopt.repair_init_guess) {
   //   if (startsWith(name, "unicycle") || startsWith(name, "car")) {
   //
-  //     std::cout << "WARNING: reparing init guess, annoying SO2" << std::endl;
-  //     for (size_t i = 1; i < N + 1; i++) {
+  //     std::cout << "WARNING: reparing init guess, annoying SO2" <<
+  //     std::endl; for (size_t i = 1; i < N + 1; i++) {
   //       xs_init.at(i)(2) = xs_init.at(i - 1)(2) +
   //                          diff_angle(xs_init.at(i)(2), xs_init.at(i -
   //                          1)(2));
@@ -1022,8 +1034,8 @@ void solve_with_custom_solver(File_parser_inout &file_inout,
   //     // std::cout << "goal is now (maybe updated) " << goal.transpose()
   //     //           << std::endl;
   //   } else if (startsWith(name, "car")) {
-  //     std::cout << "WARNING: reparing init guess, annoying SO2" << std::endl;
-  //     for (size_t i = 1; i < N + 1; i++) {
+  //     std::cout << "WARNING: reparing init guess, annoying SO2" <<
+  //     std::endl; for (size_t i = 1; i < N + 1; i++) {
   //       xs_init.at(i)(2) = xs_init.at(i - 1)(2) +
   //                          diff_angle(xs_init.at(i)(2), xs_init.at(i -
   //                          1)(2));
@@ -1038,8 +1050,8 @@ void solve_with_custom_solver(File_parser_inout &file_inout,
   //               << std::endl;
   //   } else if (startsWith(name, "acrobot")) {
   //
-  //     std::cout << "WARNING: reparing init guess, annoying SO2" << std::endl;
-  //     for (size_t i = 1; i < N + 1; i++) {
+  //     std::cout << "WARNING: reparing init guess, annoying SO2" <<
+  //     std::endl; for (size_t i = 1; i < N + 1; i++) {
   //       for (size_t j = 0; j < 2; j++)
   //         xs_init.at(i)(j) = xs_init.at(i - 1)(j) +
   //                            diff_angle(xs_init.at(i)(j), xs_init.at(i -
@@ -1060,7 +1072,7 @@ void solve_with_custom_solver(File_parser_inout &file_inout,
             << "i modify last state to match goal" << std::endl;
   xs_init.back() = goal;
 
-  if (opti_params.smooth_traj) {
+  if (options_trajopt.smooth_traj) {
     for (size_t i = 0; i < 10; i++) {
       xs_init = smooth_traj(xs_init);
       xs_init.at(0) = start;
@@ -1074,7 +1086,7 @@ void solve_with_custom_solver(File_parser_inout &file_inout,
     xs_init.back() = goal;
   }
 
-  if (name == "quadrotor_0") {
+  if (problem.robotType == "quadrotor_0") {
     for (auto &s : xs_init) {
       std::cout << STR_V(s) << std::endl;
       s.segment<4>(3).normalize();
@@ -1087,12 +1099,12 @@ void solve_with_custom_solver(File_parser_inout &file_inout,
       std::cout << x.format(FMT) << std::endl;
   }
 
-  bool feasible;
+  bool success = false;
   std::vector<Vxd> xs_out;
   std::vector<Vxd> us_out;
 
-  std::ofstream debug_file_yaml(opti_params.debug_file_name);
-  debug_file_yaml << "name: " << name << std::endl;
+  std::ofstream debug_file_yaml(options_trajopt.debug_file_name);
+  debug_file_yaml << "robotType: " << problem.robotType << std::endl;
   debug_file_yaml << "N: " << N << std::endl;
   debug_file_yaml << "start: " << start.format(FMT) << std::endl;
   debug_file_yaml << "goal: " << goal.format(FMT) << std::endl;
@@ -1110,7 +1122,8 @@ void solve_with_custom_solver(File_parser_inout &file_inout,
     // it with the step move. Then, I would do the last at full speed?
     // ( I hope :) ) Anyway, now is just fine
 
-    CHECK_GEQ(opti_params.window_optimize, opti_params.window_shift, AT);
+    CHECK_GEQ(options_trajopt.window_optimize, options_trajopt.window_shift,
+              AT);
 
     bool finished = false;
 
@@ -1168,16 +1181,17 @@ void solve_with_custom_solver(File_parser_inout &file_inout,
 
         auto start_i = previous_state;
         if (solver == SOLVER::mpc) {
-          CHECK_GEQ(N - counter * opti_params.window_shift, 0, AT);
-          size_t remaining_steps = N - counter * opti_params.window_shift;
+          CHECK_GEQ(int(N) - int(counter * options_trajopt.window_shift), 0,
+                    AT);
+          size_t remaining_steps = N - counter * options_trajopt.window_shift;
 
           window_optimize_i =
-              std::min(opti_params.window_optimize, remaining_steps);
+              std::min(options_trajopt.window_optimize, remaining_steps);
 
           int subgoal_index =
-              counter * opti_params.window_shift + window_optimize_i;
+              counter * options_trajopt.window_shift + window_optimize_i;
 
-          is_last = opti_params.window_optimize > remaining_steps;
+          is_last = options_trajopt.window_optimize > remaining_steps;
 
           if (is_last)
             goal_mpc = goal;
@@ -1197,9 +1211,9 @@ void solve_with_custom_solver(File_parser_inout &file_inout,
           size_t index = std::distance(path->x.begin(), it);
           std::cout << "starting with approx index " << index << std::endl;
           std::cout << "Non adaptative index would be: "
-                    << counter * opti_params.window_shift << std::endl;
+                    << counter * options_trajopt.window_shift << std::endl;
 
-          window_optimize_i = opti_params.window_optimize;
+          window_optimize_i = options_trajopt.window_optimize;
           // next goal:
           size_t goal_index = index + window_optimize_i;
           if (goal_index > xs_init.size() - 1) {
@@ -1226,27 +1240,29 @@ void solve_with_custom_solver(File_parser_inout &file_inout,
                                  .states = {},
                                  .actions = {},
                                  .collisions =
-                                     opti_params.collision_weight > 1e-3};
+                                     options_trajopt.collision_weight > 1e-3};
 
         size_t nx, nu;
 
         std::cout << "gen problem " << STR_(AT) << std::endl;
-        problem = generate_problem(gen_args, nx, nu);
+        problem = generate_problem(gen_args, options_trajopt, nx, nu);
 
         // report problem
 
-        if (opti_params.use_warmstart) {
+        if (options_trajopt.use_warmstart) {
 
           if (solver == SOLVER::mpc) {
-            xs = std::vector<Vxd>(
-                xs_init_rewrite.begin() + counter * opti_params.window_shift,
-                xs_init_rewrite.begin() + counter * opti_params.window_shift +
-                    window_optimize_i + 1);
+            xs = std::vector<Vxd>(xs_init_rewrite.begin() +
+                                      counter * options_trajopt.window_shift,
+                                  xs_init_rewrite.begin() +
+                                      counter * options_trajopt.window_shift +
+                                      window_optimize_i + 1);
 
-            us = std::vector<Vxd>(
-                us_init_rewrite.begin() + counter * opti_params.window_shift,
-                us_init_rewrite.begin() + counter * opti_params.window_shift +
-                    window_optimize_i);
+            us = std::vector<Vxd>(us_init_rewrite.begin() +
+                                      counter * options_trajopt.window_shift,
+                                  us_init_rewrite.begin() +
+                                      counter * options_trajopt.window_shift +
+                                      window_optimize_i);
 
           } else {
 
@@ -1262,7 +1278,7 @@ void solve_with_custom_solver(File_parser_inout &file_inout,
 
               // TODO: Sample the interpolator to get new init guess.
 
-              if (opti_params.shift_repeat) {
+              if (options_trajopt.shift_repeat) {
                 for (size_t i = 0; i < missing_steps; i++) {
                   us.push_back(u_last);
                   xs.push_back(x_last);
@@ -1348,22 +1364,30 @@ void solve_with_custom_solver(File_parser_inout &file_inout,
           us = std::vector<Vxd>(window_optimize_i, Vxd::Zero(nu));
         }
 
-        if (!opti_params.use_finite_diff && check_with_finite_diff) {
+        if (!options_trajopt.use_finite_diff && check_with_finite_diff) {
 
-          opti_params.use_finite_diff = true;
-          opti_params.disturbance = 1e-4;
+          options_trajopt.use_finite_diff = true;
+          options_trajopt.disturbance = 1e-4;
           std::cout << "gen problem " << STR_(AT) << std::endl;
           ptr<crocoddyl::ShootingProblem> problem_fdiff =
 
-              generate_problem(gen_args, nx, nu);
+              generate_problem(gen_args, options_trajopt, nx, nu);
+
+          std::cout << "xs" << std::endl;
+          for (auto &x : xs)
+            CSTR_V(x);
+          std::cout << "us" << std::endl;
+          for (auto &u : us)
+            CSTR_V(u);
+
           check_problem(problem, problem_fdiff, xs, us);
-          opti_params.use_finite_diff = false;
+          options_trajopt.use_finite_diff = false;
         }
 
       } else if (solver == SOLVER::mpcc || solver == SOLVER::mpcc_linear) {
 
         window_optimize_i =
-            std::min(opti_params.window_optimize, us_init.size());
+            std::min(options_trajopt.window_optimize, us_init.size());
 
         std::cout << "previous state " << previous_state.format(FMT)
                   << std::endl;
@@ -1423,7 +1447,8 @@ void solve_with_custom_solver(File_parser_inout &file_inout,
           _states.resize(window_optimize_i);
 
           for (size_t t = 0; t < window_optimize_i; t++) {
-            if (t > index_first_goal - opti_params.window_shift - try_faster)
+            if (t >
+                index_first_goal - options_trajopt.window_shift - try_faster)
               state_weights.at(t) = 1. * Vxd::Ones(_nx + 1);
             else
               state_weights.at(t) = Vxd::Zero(_nx + 1);
@@ -1449,14 +1474,14 @@ void solve_with_custom_solver(File_parser_inout &file_inout,
             .max_alpha = max_alpha,
             .linear_contour = solver == SOLVER::mpcc_linear,
             .goal_cost = goal_cost,
-            .collisions = opti_params.collision_weight > 1e-3
+            .collisions = options_trajopt.collision_weight > 1e-3
 
         };
 
         std::cout << "gen problem " << STR_(AT) << std::endl;
-        problem = generate_problem(gen_args, nx, nu);
+        problem = generate_problem(gen_args, options_trajopt, nx, nu);
 
-        if (opti_params.use_warmstart) {
+        if (options_trajopt.use_warmstart) {
 
           // TODO: I need a more clever initialization. For example,
           // using the ones missing from last time, and then the
@@ -1483,7 +1508,7 @@ void solve_with_custom_solver(File_parser_inout &file_inout,
 
             // TODO: Sample the interpolator to get new init guess.
 
-            if (opti_params.shift_repeat) {
+            if (options_trajopt.shift_repeat) {
               std::cout << "filling window with last solution " << std::endl;
               for (size_t i = 0; i < missing_steps; i++) {
                 us_i.push_back(u_last);
@@ -1568,15 +1593,16 @@ void solve_with_custom_solver(File_parser_inout &file_inout,
         CHECK_EQ(xs.size(), window_optimize_i + 1, AT);
         CHECK_EQ(us.size(), window_optimize_i, AT);
 
-        if (!opti_params.use_finite_diff && check_with_finite_diff) {
+        if (!options_trajopt.use_finite_diff && check_with_finite_diff) {
 
-          opti_params.use_finite_diff = true;
-          opti_params.disturbance = 1e-4;
+          options_trajopt.use_finite_diff = true;
+          options_trajopt.disturbance = 1e-4;
           std::cout << "gen problem " << STR_(AT) << std::endl;
           ptr<crocoddyl::ShootingProblem> problem_fdiff =
-              generate_problem(gen_args, nx, nu);
+              generate_problem(gen_args, options_trajopt, nx, nu);
+
           check_problem(problem, problem_fdiff, xs, us);
-          opti_params.use_finite_diff = false;
+          options_trajopt.use_finite_diff = false;
         }
       }
       // report problem
@@ -1584,10 +1610,10 @@ void solve_with_custom_solver(File_parser_inout &file_inout,
       // auto models = problem->get_runningModels();
 
       crocoddyl::SolverBoxFDDP ddp(problem);
-      ddp.set_th_stop(opti_params.th_stop);
-      ddp.set_th_acceptnegstep(opti_params.th_acceptnegstep);
+      ddp.set_th_stop(options_trajopt.th_stop);
+      ddp.set_th_acceptnegstep(options_trajopt.th_acceptnegstep);
 
-      if (opti_params.CALLBACKS) {
+      if (options_trajopt.CALLBACKS) {
         std::vector<ptr<crocoddyl::CallbackAbstract>> cbs;
         cbs.push_back(mk<crocoddyl::CallbackVerbose>());
         ddp.setCallbacks(cbs);
@@ -1619,10 +1645,11 @@ void solve_with_custom_solver(File_parser_inout &file_inout,
         u_ub = inf * Vxd::Ones(_nu);
       }
 
-      if (opti_params.noise_level > 1e-8) {
+      if (options_trajopt.noise_level > 1e-8) {
         for (size_t i = 0; i < xs.size(); i++) {
           std::cout << "i " << i << " " << xs.at(i).size() << std::endl;
-          xs.at(i) += opti_params.noise_level * Vxd::Random(xs.front().size());
+          xs.at(i) +=
+              options_trajopt.noise_level * Vxd::Random(xs.front().size());
           xs.at(i) = enforce_bounds(xs.at(i), x_lb, x_ub);
 
           if (name == "quadrotor_0") {
@@ -1631,21 +1658,23 @@ void solve_with_custom_solver(File_parser_inout &file_inout,
         }
 
         for (size_t i = 0; i < us.size(); i++) {
-          us.at(i) += opti_params.noise_level * Vxd::Random(us.front().size());
+          us.at(i) +=
+              options_trajopt.noise_level * Vxd::Random(us.front().size());
           us.at(i) = enforce_bounds(us.at(i), u_lb, u_ub);
         }
       }
 
       crocoddyl::Timer timer;
 
-      if (!opti_params.use_finite_diff)
+      if (!options_trajopt.use_finite_diff)
         report_problem(problem, xs, us, "report-0.yaml");
       std::cout << "solving with croco " << std::endl;
 
-      ddp.solve(xs, us, opti_params.max_iter, false, opti_params.init_reg);
+      ddp.solve(xs, us, options_trajopt.max_iter, false,
+                options_trajopt.init_reg);
       double time_i = timer.get_duration();
       size_t iterations_i = ddp.get_iter();
-      if (!opti_params.use_finite_diff)
+      if (!options_trajopt.use_finite_diff)
         report_problem(problem, ddp.get_xs(), ddp.get_us(), "report-1.yaml");
       accumulated_time += time_i;
 
@@ -1656,7 +1685,7 @@ void solve_with_custom_solver(File_parser_inout &file_inout,
       std::vector<Vxd> xs_i_sol = ddp.get_xs();
       std::vector<Vxd> us_i_sol = ddp.get_us();
 
-      previous_state = xs_i_sol.at(opti_params.window_shift).head(_nx);
+      previous_state = xs_i_sol.at(options_trajopt.window_shift).head(_nx);
 
       size_t copy_steps = 0;
 
@@ -1696,7 +1725,7 @@ void solve_with_custom_solver(File_parser_inout &file_inout,
                   << std::endl;
         // Vxd x_last = ddp.get_xs().back();
         size_t final_index = window_optimize_i;
-        // size_t final_index = opti_params.window_shift;
+        // size_t final_index = options_trajopt.window_shift;
         std::cout << "final index is " << final_index << std::endl;
 
         double alpha_mpcc = ddp.get_xs().at(final_index)(_nx);
@@ -1768,7 +1797,7 @@ void solve_with_custom_solver(File_parser_inout &file_inout,
       if (is_last)
         copy_steps = window_optimize_i;
       else
-        copy_steps = opti_params.window_shift;
+        copy_steps = options_trajopt.window_shift;
 
       for (size_t i = 0; i < copy_steps; i++)
         xs_opt.push_back(xs_i_sol.at(i + 1).head(_nx));
@@ -1778,10 +1807,10 @@ void solve_with_custom_solver(File_parser_inout &file_inout,
 
       if (solver == SOLVER::mpc) {
         for (size_t i = 0; i < window_optimize_i; i++) {
-          xs_init_rewrite.at(1 + counter * opti_params.window_shift + i) =
+          xs_init_rewrite.at(1 + counter * options_trajopt.window_shift + i) =
               xs_i_sol.at(i + 1).head(_nx);
 
-          us_init_rewrite.at(counter * opti_params.window_shift + i) =
+          us_init_rewrite.at(counter * options_trajopt.window_shift + i) =
               us_i_sol.at(i).head(_nu);
         }
       } else if (solver == SOLVER::mpc_adaptative) {
@@ -1850,7 +1879,7 @@ void solve_with_custom_solver(File_parser_inout &file_inout,
 
       counter++;
 
-      if (counter > opti_params.max_mpc_iterations) {
+      if (counter > options_trajopt.max_mpc_iterations) {
         finished = true;
         std::cout << "finished: "
                   << "max mpc iterations" << std::endl;
@@ -1903,8 +1932,8 @@ void solve_with_custom_solver(File_parser_inout &file_inout,
     double goal_tol = 1e-2;
     double col_tol = 1e-2;
     bool feasible_traj =
-        check_trajectory(xs_check, us_check, dt_check, model_robot);
-    bool col_free = check_cols(model_robot, xs_check, col_tol);
+        check_trajectory(xs_check, us_check, dt_check, model_robot) < 1e-2;
+    bool col_free = check_cols(model_robot, xs_check) < col_tol;
     std::cout << "distance to goal "
               << model_robot->distance(xs_check.back(), goal) << std::endl;
     bool reaches_goal = model_robot->distance(xs_check.back(), goal) < goal_tol;
@@ -1913,12 +1942,14 @@ void solve_with_custom_solver(File_parser_inout &file_inout,
     std::cout << STR_(col_free) << std::endl;
     std::cout << STR_(reaches_goal) << std::endl;
 
-    feasible = col_free && feasible_traj && reaches_goal;
+    success = col_free && feasible_traj && reaches_goal;
 
   } else if (solver == SOLVER::traj_opt ||
-             solver == SOLVER::traj_opt_free_time_proxi) {
+             solver == SOLVER::traj_opt_free_time_proxi ||
+             solver == SOLVER::traj_opt_free_time_proxi_linear) {
 
-    if (solver == SOLVER::traj_opt_free_time_proxi) {
+    if (solver == SOLVER::traj_opt_free_time_proxi ||
+        solver == SOLVER::traj_opt_free_time_proxi_linear) {
       std::vector<Vxd> us_init_time(us_init.size());
       size_t nu = us_init.front().size();
       for (size_t i = 0; i < N; i++) {
@@ -1930,26 +1961,43 @@ void solve_with_custom_solver(File_parser_inout &file_inout,
       us_init = us_init_time;
     }
 
+    if (solver == SOLVER::traj_opt_free_time_proxi_linear) {
+      std::vector<Vxd> xs_init_time(xs_init.size());
+      size_t nx = xs_init.front().size();
+      for (size_t i = 0; i < xs_init_time.size(); i++) {
+        Vxd x(nx + 1);
+        x.head(nx) = xs_init.at(i);
+        x(nx) = 1.;
+        xs_init_time.at(i) = x;
+      }
+      xs_init = xs_init_time;
+      Eigen::VectorXd old_start = start;
+      start.resize(nx + 1);
+      start << old_start, 1.;
+    }
+
     // if reg
 
     std::vector<Vxd> regs;
-    if (opti_params.states_reg && solver == SOLVER::traj_opt) {
+    if (options_trajopt.states_reg && solver == SOLVER::traj_opt) {
       double state_reg_weight = 100.;
       regs = std::vector<Vxd>(xs_init.size() - 1,
                               state_reg_weight * Vxd::Ones(_nx));
     }
 
-    Generate_params gen_args{.free_time =
-                                 solver == SOLVER::traj_opt_free_time_proxi,
-                             .name = name,
-                             .N = N,
-                             .goal = goal,
-                             .start = start,
-                             .model_robot = model_robot,
-                             .states = {xs_init.begin(), xs_init.end() - 1},
-                             .states_weights = regs,
-                             .actions = us_init,
-                             .collisions = opti_params.collision_weight > 1e-3
+    Generate_params gen_args{
+        .free_time = solver == SOLVER::traj_opt_free_time_proxi ||
+                     solver == SOLVER::traj_opt_free_time_proxi_linear,
+        .free_time_linear = solver == SOLVER::traj_opt_free_time_proxi_linear,
+        .name = name,
+        .N = N,
+        .goal = goal,
+        .start = start,
+        .model_robot = model_robot,
+        .states = {xs_init.begin(), xs_init.end() - 1},
+        .states_weights = regs,
+        .actions = us_init,
+        .collisions = options_trajopt.collision_weight > 1e-3
 
     };
 
@@ -1957,34 +2005,47 @@ void solve_with_custom_solver(File_parser_inout &file_inout,
 
     std::cout << "gen problem " << STR_(AT) << std::endl;
     ptr<crocoddyl::ShootingProblem> problem =
-        generate_problem(gen_args, nx, nu);
+        generate_problem(gen_args, options_trajopt, nx, nu);
 
     // check gradient
 
     std::vector<Vxd> xs(N + 1, gen_args.start);
     std::vector<Vxd> us(N, Vxd::Zero(nu));
 
-    if (opti_params.use_warmstart) {
+    if (options_trajopt.use_warmstart) {
       xs = xs_init;
       us = us_init;
     }
 
-    if (!opti_params.use_finite_diff && check_with_finite_diff) {
+    if (!options_trajopt.use_finite_diff && check_with_finite_diff) {
 
       std::cout << "Checking with finite diff " << std::endl;
-      opti_params.use_finite_diff = true;
-      opti_params.disturbance = 1e-6;
+      options_trajopt.use_finite_diff = true;
+      options_trajopt.disturbance = 1e-6;
       std::cout << "gen problem " << STR_(AT) << std::endl;
       ptr<crocoddyl::ShootingProblem> problem_fdiff =
-          generate_problem(gen_args, nx, nu);
+          generate_problem(gen_args, options_trajopt, nx, nu);
+
+      std::cout << "xs" << std::endl;
+      for (auto &x : xs) {
+        CSTR_V(x);
+        CSTR_(x.size());
+      }
+      std::cout << "us" << std::endl;
+      for (auto &u : us) {
+
+        CSTR_(u.size());
+        CSTR_V(u);
+      }
+
       check_problem(problem, problem_fdiff, xs, us);
-      opti_params.use_finite_diff = false;
+      options_trajopt.use_finite_diff = false;
     }
 
-    if (opti_params.noise_level > 0.) {
+    if (options_trajopt.noise_level > 0.) {
       for (size_t i = 0; i < xs.size(); i++) {
         CHECK_EQ(static_cast<size_t>(xs.at(i).size()), nx, AT);
-        xs.at(i) += opti_params.noise_level * Vxd::Random(nx);
+        xs.at(i) += options_trajopt.noise_level * Vxd::Random(nx);
         if (name == "quadrotor_0") {
           xs.at(i).segment(3, 4).normalize();
         }
@@ -1992,15 +2053,15 @@ void solve_with_custom_solver(File_parser_inout &file_inout,
 
       for (size_t i = 0; i < us.size(); i++) {
         CHECK_EQ(static_cast<size_t>(us.at(i).size()), nu, AT);
-        us.at(i) += opti_params.noise_level * Vxd::Random(nu);
+        us.at(i) += options_trajopt.noise_level * Vxd::Random(nu);
       }
     }
 
     crocoddyl::SolverBoxFDDP ddp(problem);
-    ddp.set_th_stop(opti_params.th_stop);
-    ddp.set_th_acceptnegstep(opti_params.th_acceptnegstep);
+    ddp.set_th_stop(options_trajopt.th_stop);
+    ddp.set_th_acceptnegstep(options_trajopt.th_acceptnegstep);
 
-    if (opti_params.CALLBACKS) {
+    if (options_trajopt.CALLBACKS) {
       std::vector<ptr<crocoddyl::CallbackAbstract>> cbs;
       cbs.push_back(mk<crocoddyl::CallbackVerbose>());
       ddp.setCallbacks(cbs);
@@ -2008,13 +2069,15 @@ void solve_with_custom_solver(File_parser_inout &file_inout,
 
     crocoddyl::Timer timer;
 
-    if (!opti_params.use_finite_diff)
+    if (!options_trajopt.use_finite_diff)
       report_problem(problem, xs, us, "report-0.yaml");
     std::cout << "solving with croco " << std::endl;
-    ddp.solve(xs, us, opti_params.max_iter, false, opti_params.init_reg);
+    ddp.solve(xs, us, options_trajopt.max_iter, false,
+              options_trajopt.init_reg);
+    CSTR_V(xs.back());
     std::cout << "time: " << timer.get_duration() << std::endl;
     accumulated_time += timer.get_duration();
-    if (!opti_params.use_finite_diff)
+    if (!options_trajopt.use_finite_diff)
       report_problem(problem, ddp.get_xs(), ddp.get_us(), "report-1.yaml");
 
     // check the distance to the goal:
@@ -2024,7 +2087,8 @@ void solve_with_custom_solver(File_parser_inout &file_inout,
     // feasible = check_feas(feat_col, ddp.get_xs(), ddp.get_us(),
     // gen_args.goal);
 
-    bool __free_time = solver == SOLVER::traj_opt_free_time_proxi;
+    bool __free_time = solver == SOLVER::traj_opt_free_time_proxi ||
+                       solver == SOLVER::traj_opt_free_time_proxi_linear;
 
     std::vector<Eigen::VectorXd> __xs_out = ddp.get_xs();
     std::vector<Eigen::VectorXd> __us_out = ddp.get_us();
@@ -2049,43 +2113,51 @@ void solve_with_custom_solver(File_parser_inout &file_inout,
     double goal_tol = 1e-2;
     double col_tol = 1e-2;
     bool feasible_traj =
-        check_trajectory(xs_check, us_check, dt_check, model_robot);
-    bool col_free = check_cols(model_robot, xs_check, col_tol);
+        check_trajectory(xs_check, us_check, dt_check, model_robot) < 1e-2;
+    bool col_free = check_cols(model_robot, xs_check) < col_tol;
     bool reaches_goal = model_robot->distance(xs_check.back(), goal) < goal_tol;
-    // TODO or just use euclidean norm
-    // bool reaches_goal = (xs_check.back() - goal).norm() < 1e-2;
+    CSTR_(model_robot->distance(xs_check.back(), goal))
 
     std::cout << STR_(feasible_traj) << std::endl;
     std::cout << STR_(col_free) << std::endl;
     std::cout << STR_(reaches_goal) << std::endl;
 
-    feasible = col_free && feasible_traj && reaches_goal;
+    success = col_free && feasible_traj && reaches_goal;
 
-    std::cout << "feasible is " << feasible << std::endl;
+    std::cout << "feasible is " << success << std::endl;
 
     std::cout << "cost: " << problem->calc(xs, us) << std::endl;
 
-    if (solver == SOLVER::traj_opt_free_time_proxi) {
-      std::vector<Vxd> _xs;
-      std::vector<Vxd> _us;
+    if (__in({SOLVER::traj_opt_free_time_proxi,
+              SOLVER::traj_opt_free_time_proxi_linear},
+             solver)) {
 
-      /// Refactor this
-      ptr<Dynamics> dyn;
+      std::vector<Eigen::VectorXd> xs(ddp.get_xs().size());
+      std::vector<Eigen::VectorXd> us(ddp.get_us().size());
 
-      dyn = create_dynamics(model_robot, Control_Mode::free_time);
+      std::transform(ddp.get_xs().begin(), ddp.get_xs().end(), xs.begin(),
+                     [&](auto &o) { return o.head(model_robot->nx); });
 
-      std::cout << "max error before "
-                << max_rollout_error(dyn, ddp.get_xs(), ddp.get_us())
-                << std::endl;
+      std::transform(ddp.get_us().begin(), ddp.get_us().end(), us.begin(),
+                     [&](auto &o) { return o.head(model_robot->nu); });
 
-      convert_traj_with_variable_time(ddp.get_xs(), ddp.get_us(), _xs, _us, dt);
-      xs_out = _xs;
-      us_out = _us;
+      Eigen::VectorXd ts(xs.size());
+      ts(0) = 0.;
 
-      dyn = create_dynamics(model_robot, Control_Mode::default_mode);
+      for (size_t i = 0; i < us.size(); i++) {
+        ts(i + 1) = ts(i) + ddp.get_us().at(i).tail(1)(0) * model_robot->ref_dt;
+      }
 
-      std::cout << "max error after " << max_rollout_error(dyn, xs_out, us_out)
-                << std::endl;
+      CSTR_(ts.tail(1)(0))
+
+      std::cout << "before resample " << std::endl;
+      std::cout << xs.back().format(FMT) << std::endl;
+      resample_trajectory(xs_out, us_out, xs, us, ts, model_robot->ref_dt);
+      std::cout << "after resample " << std::endl;
+      std::cout << xs_out.back().format(FMT) << std::endl;
+
+      std::cout << "max error after "
+                << max_rollout_error(model_robot, xs_out, us_out) << std::endl;
 
     } else {
       xs_out = ddp.get_xs();
@@ -2110,40 +2182,84 @@ void solve_with_custom_solver(File_parser_inout &file_inout,
   for (auto &u : us_out)
     results_txt << u.transpose().format(FMT) << std::endl;
 
-  // store in the good format
-  opti_out.feasible = feasible;
+  opti_out.success = success;
+  // in some s
+  // opti_out.feasible = feasible;
+
   opti_out.xs_out = xs_out;
   opti_out.us_out = us_out;
   opti_out.cost = us_out.size() * dt;
+
+  traj.states = xs_out;
+  traj.actions = us_out;
+  traj.start = problem.start;
+  traj.goal = problem.goal;
+  if (opti_out.success) {
+
+    double traj_tol = 1e-2;
+    double goal_tol = 1e-2;
+    double col_tol = 1e-2;
+    double x_bound_tol = 1e-2;
+    double u_bound_tol = 1e-2;
+
+    traj.check(model_robot);
+    traj.update_feasibility(traj_tol, goal_tol, col_tol, x_bound_tol,
+                            u_bound_tol);
+
+    opti_out.feasible = traj.feasible;
+
+    if (!traj.feasible) {
+      std::cout << "WARNING: "
+                << "why first feas and now infeas? (could happen using the "
+                   "time proxi) "
+                << std::endl;
+
+      if (!__in({SOLVER::traj_opt_free_time_proxi,
+                 SOLVER::traj_opt_free_time_proxi_linear},
+                solver) &&
+          options_trajopt.u_bound_scale <= 1 + 1e-8) {
+        ERROR_WITH_INFO("why?");
+      }
+    }
+  } else {
+    traj.feasible = false;
+    opti_out.feasible = false;
+  }
 }
 
-void compound_solvers(File_parser_inout &file_inout, Result_opti &opti_out) {
-  read_from_file(file_inout);
-  opti_out.name = file_inout.name;
-  std::cout << STR_(opti_out.name) << std::endl;
+void trajectory_optimization(const Problem &problem,
+                             const Trajectory &init_guess,
+                             Options_trajopt &options_trajopt, Trajectory &traj,
+                             Result_opti &opti_out) {
 
-  std::cout << "file_inout -- parsed " << std::endl;
-  std::cout << "**\nfile_inout" << std::endl;
-  file_inout.print(std::cout);
-  std::cout << "**" << std::endl;
+  // std::cout << STR_(opti_out.name) << std::endl;
+  //
+  // std::cout << "file_inout -- parsed " << std::endl;
+  // std::cout << "**\nfile_inout" << std::endl;
+  // file_inout.print(std::cout);
+  // std::cout << "**" << std::endl;
+  //
+  // // std::cout << "writing results to:" << file_init_guess << std::endl;
+  //
+  // Result_opti res_;
+  // std::string file_init_guess = "init_guess.yaml";
+  // res_.xs_out = file_inout.xs;
+  // std::ofstream fout(file_init_guess);
+  // res_.name = "tmp";
+  // res_.write_yaml_db(fout);
+  //
+  // CHECK(file_inout.us.size(), AT);
+  // CHECK(file_inout.xs.size(), AT);
+  // CHECK_EQ(file_inout.xs.size(), file_inout.us.size() + 1, AT);
+  //
 
-  // std::cout << "writing results to:" << file_init_guess << std::endl;
+  size_t _nx = problem.start.size();
+  // size_t _nu = init_guess.actions.front().size();
 
-  Result_opti res_;
-  std::string file_init_guess = "init_guess.yaml";
-  res_.xs_out = file_inout.xs;
-  std::ofstream fout(file_init_guess);
-  res_.name = "tmp";
-  res_.write_yaml_db(fout);
+  Trajectory tmp_init_guess;
+  Trajectory tmp_solution;
 
-  CHECK(file_inout.us.size(), AT);
-  CHECK(file_inout.xs.size(), AT);
-  CHECK_EQ(file_inout.xs.size(), file_inout.us.size() + 1, AT);
-
-  size_t _nx = file_inout.xs.front().size();
-  size_t _nu = file_inout.us.front().size();
-
-  switch (static_cast<SOLVER>(opti_params.solver_id)) {
+  switch (static_cast<SOLVER>(options_trajopt.solver_id)) {
 
   case SOLVER::mpc_nobound_mpcc: {
 
@@ -2156,26 +2272,28 @@ void compound_solvers(File_parser_inout &file_inout, Result_opti &opti_out) {
     for (size_t i = 0; i < num_solve_mpc_no_bounds; i++) {
       std::cout << "iteration " << i << std::endl;
 
-      opti_params.solver_id = static_cast<int>(SOLVER::mpc);
-      opti_params.control_bounds = 0;
-      opti_params.debug_file_name =
+      options_trajopt.solver_id = static_cast<int>(SOLVER::mpc);
+      options_trajopt.control_bounds = 0;
+      options_trajopt.debug_file_name =
           "debug_file_mpc_" + std::to_string(i) + ".yaml";
 
       std::cout << "**\nopti params is " << std::endl;
 
-      opti_params.print(std::cout);
+      options_trajopt.print(std::cout);
 
       if (i > 0) {
-        file_inout.xs = opti_out.xs_out;
-        file_inout.us = opti_out.us_out;
+        tmp_init_guess = tmp_solution;
+      } else {
+        tmp_init_guess = init_guess;
       }
 
-      solve_with_custom_solver(file_inout, opti_out);
+      __trajectory_optimization(problem, tmp_init_guess, options_trajopt,
+                                tmp_solution, opti_out);
 
-      if (!opti_out.feasible) {
+      if (!opti_out.success) {
         std::cout << "warning"
                   << " "
-                  << "infeasible" << std::endl;
+                  << "not success" << std::endl;
         do_mpcc = false;
         break;
       }
@@ -2186,24 +2304,26 @@ void compound_solvers(File_parser_inout &file_inout, Result_opti &opti_out) {
       for (size_t i = 0; i < num_solve_mpcc_with_bounds; i++) {
 
         std::cout << "iteration " << i << std::endl;
-        opti_params.solver_id = static_cast<int>(SOLVER::mpcc);
-        opti_params.control_bounds = 1;
-        opti_params.debug_file_name =
+        options_trajopt.solver_id = static_cast<int>(SOLVER::mpcc);
+        options_trajopt.control_bounds = 1;
+        options_trajopt.debug_file_name =
             "debug_file_mpcc_" + std::to_string(i) + ".yaml";
 
-        file_inout.xs = opti_out.xs_out;
-        file_inout.us = opti_out.us_out;
+        tmp_init_guess = tmp_solution;
 
-        solve_with_custom_solver(file_inout, opti_out);
+        __trajectory_optimization(problem, tmp_init_guess, options_trajopt,
+                                  tmp_solution, opti_out);
 
-        if (!opti_out.feasible) {
+        if (!opti_out.success) {
           std::cout << "warning"
                     << " "
-                    << "infeasible" << std::endl;
+                    << "not success" << std::endl;
           break;
         }
       }
     }
+    traj = tmp_solution;
+    CHECK_EQ(traj.feasible, opti_out.feasible, AT);
 
   } break;
 
@@ -2211,53 +2331,61 @@ void compound_solvers(File_parser_inout &file_inout, Result_opti &opti_out) {
     // continue here
 
     bool do_free_time = true;
-    opti_params.control_bounds = false;
-    opti_params.solver_id = static_cast<int>(SOLVER::traj_opt);
-    opti_params.control_bounds = 0;
-    opti_params.debug_file_name = "debug_file_trajopt.yaml";
+    options_trajopt.control_bounds = false;
+    options_trajopt.solver_id = static_cast<int>(SOLVER::traj_opt);
+    options_trajopt.control_bounds = 0;
+    options_trajopt.debug_file_name = "debug_file_trajopt.yaml";
     std::cout << "**\nopti params is " << std::endl;
-    opti_params.print(std::cout);
+    options_trajopt.print(std::cout);
 
-    solve_with_custom_solver(file_inout, opti_out);
+    __trajectory_optimization(problem, init_guess, options_trajopt,
+                              tmp_solution, opti_out);
 
-    if (!opti_out.feasible) {
+    if (!opti_out.success) {
       std::cout << "warning"
                 << " "
-                << "infeasible" << std::endl;
+                << "not success" << std::endl;
       do_free_time = false;
     }
 
     if (do_free_time) {
 
-      opti_params.control_bounds = true;
-      opti_params.solver_id = static_cast<int>(SOLVER::traj_opt_free_time);
-      opti_params.control_bounds = 1;
-      opti_params.debug_file_name = "debug_file_trajopt_freetime.yaml";
+      tmp_init_guess.states = tmp_solution.states;
+      tmp_init_guess.actions = tmp_solution.actions;
 
-      file_inout.xs = opti_out.xs_out;
-      file_inout.us = opti_out.us_out;
+      options_trajopt.control_bounds = true;
+      options_trajopt.solver_id = static_cast<int>(SOLVER::traj_opt_free_time);
+      options_trajopt.control_bounds = 1;
+      options_trajopt.debug_file_name = "debug_file_trajopt_freetime.yaml";
 
-      solve_with_custom_solver(file_inout, opti_out);
+      __trajectory_optimization(problem, tmp_solution, options_trajopt, traj,
+                                opti_out);
     }
+    CHECK_EQ(traj.feasible, opti_out.feasible, AT);
 
   } break;
 
   case SOLVER::time_search_traj_opt: {
 
-    auto check_with_rate = [&](const File_parser_inout &file_inout, double rate,
-                               Result_opti &opti_out) {
-      auto name = file_inout.name;
+    CHECK(init_guess.actions.size(), AT);
+    CHECK(init_guess.states.size(), AT);
+    size_t _nu = init_guess.actions.front().size();
 
-      double dt = file_inout.dt;
-      // if (startsWith(name, "unicycle") || startsWith(name, "car"))
-      //   dt = .1;
-      // else if (startsWith(name, "quad") || startsWith(name, "acrobot"))
-      //   dt = .01;
-      // else
-      //   CHECK(false, AT);
+    auto check_with_rate = [&](double rate, Result_opti &opti_out_local) {
+      double dt = 0;
+      if (startsWith(problem.robotType, "unicycle") ||
+          startsWith(problem.robotType, "car"))
+        dt = .1;
+      else if (startsWith(problem.robotType, "quad") ||
+               startsWith(problem.robotType, "acrobot"))
+        dt = .01;
+      else
+        CHECK(false, AT);
+      std::cout << "WARNING! dt is hardcoded per type! " << std::endl;
+      CSTR_(dt);
 
-      std::vector<Vxd> us_init = file_inout.us;
-      std::vector<Vxd> xs_init = file_inout.xs;
+      std::vector<Vxd> us_init = init_guess.actions;
+      std::vector<Vxd> xs_init = init_guess.states;
 
       Vxd times = Vxd::LinSpaced(us_init.size() + 1, 0, us_init.size() * dt);
 
@@ -2290,17 +2418,18 @@ void compound_solvers(File_parser_inout &file_inout, Result_opti &opti_out) {
         }
       }
 
-      File_parser_inout file_next = file_inout;
-      file_next.xs = new_xs;
-      file_next.us = new_us;
+      tmp_init_guess.states = new_xs;
+      tmp_init_guess.actions = new_us;
 
-      opti_params.solver_id = static_cast<int>(SOLVER::traj_opt);
-      solve_with_custom_solver(file_next, opti_out);
+      options_trajopt.solver_id = static_cast<int>(SOLVER::traj_opt);
+
+      __trajectory_optimization(problem, tmp_init_guess, options_trajopt,
+                                tmp_solution, opti_out_local);
     };
 
-    Vxd rates = Vxd::LinSpaced(opti_params.tsearch_num_check,
-                               opti_params.tsearch_min_rate,
-                               opti_params.tsearch_max_rate);
+    Vxd rates = Vxd::LinSpaced(options_trajopt.tsearch_num_check,
+                               options_trajopt.tsearch_min_rate,
+                               options_trajopt.tsearch_max_rate);
 
     Result_opti opti_out_local;
     opti_out_local.name = opti_out.name;
@@ -2311,7 +2440,7 @@ void compound_solvers(File_parser_inout &file_inout, Result_opti &opti_out) {
     //     std::find_if(rates.data(), rates.data() + rates.size(), [&](auto
     //     rate) {
     //       std::cout << "checking rate " << rate << std::endl;
-    //       opti_params.debug_file_name =
+    //       options_trajopt.debug_file_name =
     //           "debug_file_trajopt_" + std::to_string(counter++) + ".yaml";
     //       check_with_rate(file_inout, rate, opti_out_local);
     //       return opti_out_local.feasible;
@@ -2328,9 +2457,9 @@ void compound_solvers(File_parser_inout &file_inout, Result_opti &opti_out) {
         [&](auto rate, auto val) {
           (void)val;
           std::cout << "checking rate " << rate << std::endl;
-          opti_params.debug_file_name =
+          options_trajopt.debug_file_name =
               "debug_file_trajopt_" + std::to_string(counter++) + ".yaml";
-          check_with_rate(file_inout, rate, opti_out_local);
+          check_with_rate(rate, opti_out_local);
           if (opti_out_local.feasible) {
             CHECK_GEQ(best.cost, opti_out_local.cost, AT);
             best = opti_out_local;
@@ -2349,19 +2478,58 @@ void compound_solvers(File_parser_inout &file_inout, Result_opti &opti_out) {
     }
   } break;
 
+  case SOLVER::traj_opt_free_time_linear: {
+
+    bool do_final_repair_step = true;
+    options_trajopt.control_bounds = true;
+    options_trajopt.solver_id =
+        static_cast<int>(SOLVER::traj_opt_free_time_proxi_linear);
+    options_trajopt.control_bounds = 1;
+    options_trajopt.debug_file_name = "debug_file_trajopt_freetime_proxi.yaml";
+    std::cout << "**\nopti params is " << std::endl;
+    options_trajopt.print(std::cout);
+
+    __trajectory_optimization(problem, init_guess, options_trajopt,
+                              tmp_solution, opti_out);
+
+    if (!opti_out.success) {
+      std::cout << "warning"
+                << " "
+                << "not success" << std::endl;
+      do_final_repair_step = false;
+    }
+
+    if (do_final_repair_step) {
+
+      std::cout << "time proxi was feasible, doing final step " << std::endl;
+      options_trajopt.control_bounds = true;
+      options_trajopt.solver_id = static_cast<int>(SOLVER::traj_opt);
+      options_trajopt.control_bounds = 1;
+      options_trajopt.debug_file_name =
+          "debug_file_trajopt_after_freetime_proxi.yaml";
+
+      __trajectory_optimization(problem, tmp_solution, options_trajopt, traj,
+                                opti_out);
+    }
+
+    CHECK_EQ(traj.feasible, opti_out.feasible, AT);
+  } break;
+
   case SOLVER::traj_opt_free_time: {
 
     bool do_final_repair_step = true;
-    opti_params.control_bounds = true;
-    opti_params.solver_id = static_cast<int>(SOLVER::traj_opt_free_time_proxi);
-    opti_params.control_bounds = 1;
-    opti_params.debug_file_name = "debug_file_trajopt_freetime_proxi.yaml";
+    options_trajopt.control_bounds = true;
+    options_trajopt.solver_id =
+        static_cast<int>(SOLVER::traj_opt_free_time_proxi);
+    options_trajopt.control_bounds = 1;
+    options_trajopt.debug_file_name = "debug_file_trajopt_freetime_proxi.yaml";
     std::cout << "**\nopti params is " << std::endl;
-    opti_params.print(std::cout);
+    options_trajopt.print(std::cout);
 
-    solve_with_custom_solver(file_inout, opti_out);
+    __trajectory_optimization(problem, init_guess, options_trajopt,
+                              tmp_solution, opti_out);
 
-    if (!opti_out.feasible) {
+    if (!opti_out.success) {
       std::cout << "warning"
                 << " "
                 << "infeasible" << std::endl;
@@ -2370,38 +2538,38 @@ void compound_solvers(File_parser_inout &file_inout, Result_opti &opti_out) {
 
     if (do_final_repair_step) {
 
-      opti_params.control_bounds = true;
-      opti_params.solver_id = static_cast<int>(SOLVER::traj_opt);
-      opti_params.control_bounds = 1;
-      opti_params.debug_file_name =
+      std::cout << "time proxi was feasible, doing final step " << std::endl;
+      options_trajopt.control_bounds = true;
+      options_trajopt.solver_id = static_cast<int>(SOLVER::traj_opt);
+      options_trajopt.control_bounds = 1;
+      options_trajopt.debug_file_name =
           "debug_file_trajopt_after_freetime_proxi.yaml";
 
-      file_inout.xs = opti_out.xs_out;
-      file_inout.us = opti_out.us_out;
-
-      solve_with_custom_solver(file_inout, opti_out);
+      __trajectory_optimization(problem, tmp_solution, options_trajopt, traj,
+                                opti_out);
     }
-    break;
-  }
+    CHECK_EQ(traj.feasible, opti_out.feasible, AT);
+  } break;
 
   case SOLVER::traj_opt_no_bound_bound: {
 
     bool do_opti_with_real_bounds = true;
-    opti_params.control_bounds = true;
-    opti_params.u_bound_scale = 1.5;
-    opti_params.solver_id = static_cast<int>(SOLVER::traj_opt);
-    opti_params.debug_file_name = "debug_file_trajopt_bound_scale.yaml";
+    options_trajopt.control_bounds = true;
+    options_trajopt.u_bound_scale = 1.5;
+    options_trajopt.solver_id = static_cast<int>(SOLVER::traj_opt);
+    options_trajopt.debug_file_name = "debug_file_trajopt_bound_scale.yaml";
     std::cout << "**\nopti params is " << std::endl;
-    opti_params.print(std::cout);
+    options_trajopt.print(std::cout);
 
-    solve_with_custom_solver(file_inout, opti_out);
+    __trajectory_optimization(problem, init_guess, options_trajopt,
+                              tmp_solution, opti_out);
 
     // solve without bounds  --
 
-    if (!opti_out.feasible) {
+    if (!opti_out.success) {
       std::cout << "warning"
                 << " "
-                << "infeasible" << std::endl;
+                << "not success" << std::endl;
       do_opti_with_real_bounds = false;
     }
 
@@ -2409,30 +2577,32 @@ void compound_solvers(File_parser_inout &file_inout, Result_opti &opti_out) {
       std::cout << "bound scale was succesful, optimize with real bounds"
                 << std::endl;
 
-      opti_params.control_bounds = true;
-      opti_params.u_bound_scale = 1.;
-      opti_params.solver_id = static_cast<int>(SOLVER::traj_opt);
-      opti_params.debug_file_name = "debug_file_trajopt_bound.yaml";
+      options_trajopt.control_bounds = true;
+      options_trajopt.u_bound_scale = 1.;
+      options_trajopt.solver_id = static_cast<int>(SOLVER::traj_opt);
+      options_trajopt.debug_file_name = "debug_file_trajopt_bound.yaml";
       std::cout << "**\nopti params is " << std::endl;
-      opti_params.print(std::cout);
+      options_trajopt.print(std::cout);
 
-      file_inout.xs = opti_out.xs_out;
-      file_inout.us = opti_out.us_out;
-
-      solve_with_custom_solver(file_inout, opti_out);
+      __trajectory_optimization(problem, tmp_solution, options_trajopt, traj,
+                                opti_out);
     }
+    CHECK_EQ(traj.feasible, opti_out.feasible, AT);
   }
 
   break;
 
   default: {
-    solve_with_custom_solver(file_inout, opti_out);
+    __trajectory_optimization(problem, init_guess, options_trajopt, traj,
+                              opti_out);
+    CHECK_EQ(traj.feasible, opti_out.feasible, AT);
   }
   }
 }
 
 void Result_opti::write_yaml(std::ostream &out) {
   out << "feasible: " << feasible << std::endl;
+  out << "success: " << success << std::endl;
   out << "cost: " << cost << std::endl;
 
   out << "xs_out: " << std::endl;
@@ -2445,20 +2615,21 @@ void Result_opti::write_yaml(std::ostream &out) {
 }
 
 void Result_opti::write_yaml_db(std::ostream &out) {
-  CHECK((name != ""), AT);
+  // CHECK((name != ""), AT);
   out << "feasible: " << feasible << std::endl;
+  out << "success: " << success << std::endl;
   out << "cost: " << cost << std::endl;
   out << "result:" << std::endl;
   out << "  - states:" << std::endl;
   for (auto &x : xs_out) {
-    if (__in(vstr{"unicycle_first_order_0", "unicycle_second_order_0",
-                  "car_first_order_with_1_trailers_0", "quad2d"},
-             name)) {
-      x(2) = std::remainder(x(2), 2 * M_PI);
-    } else if (name == "acrobot") {
-      x(0) = std::remainder(x(0), 2 * M_PI);
-      x(1) = std::remainder(x(1), 2 * M_PI);
-    }
+    // if (__in(vstr{"unicycle_first_order_0", "unicycle_second_order_0",
+    //               "car_first_order_with_1_trailers_0", "quad2d"},
+    //          name)) {
+    //   x(2) = std::remainder(x(2), 2 * M_PI);
+    // } else if (name == "acrobot") {
+    //   x(0) = std::remainder(x(0), 2 * M_PI);
+    //   x(1) = std::remainder(x(1), 2 * M_PI);
+    // }
     out << "      - " << x.format(FMT) << std::endl;
   }
 

@@ -1,3 +1,4 @@
+#include "pinocchio/math/fwd.hpp"
 #include "pinocchio/multibody/liegroup/liegroup.hpp"
 
 #include <algorithm>
@@ -41,7 +42,221 @@ double max__ = std::sqrt(std::numeric_limits<double>::max());
 using namespace pinocchio;
 // using namespace crocoddyl;
 
-// #include "crocoddyl/core/state-base.hpp"
+void Trajectory::read_from_yaml(const YAML::Node &node) {
+
+  auto get_all = [this](auto &node) {
+    this->states = yaml_node_to_xs(node["states"]);
+    this->actions = yaml_node_to_xs(node["actions"]);
+
+    if (node["times"]) {
+      std::vector<double> __times =
+          node["times"].template as<std::vector<double>>();
+      this->times = Eigen::VectorXd::Map(__times.data(), __times.size());
+    }
+  };
+
+  if (node["states"] && node["actions"]) {
+    get_all(node);
+  } else if (node["result"] && node["result"]["states"] &&
+             node["result"]["actions"]) {
+    get_all(node["result"]);
+  } else if (node["result"] && node["result"][0] &&
+             node["result"][0]["states"] && node["result"][0]["actions"]) {
+    get_all(node["result"][0]);
+  } else {
+    ERROR_WITH_INFO("this format is not supported!");
+  }
+}
+
+void Trajectory::read_from_yaml(const char *file) {
+  std::cout << "Loading file: " << file << std::endl;
+  read_from_yaml(load_yaml_safe(file));
+}
+
+void Trajectory::to_yaml_format(std::ostream &out, std::string prefix) {
+
+  out << prefix << "- " << STR_(time_stamp) << std::endl;
+  out << prefix << "  " << STR_(cost) << std::endl;
+  out << prefix << "  " << STR_(feasible) << std::endl;
+  out << prefix << "  " << STR_(traj_feas) << std::endl;
+  out << prefix << "  " << STR_(goal_feas) << std::endl;
+  out << prefix << "  " << STR_(start_feas) << std::endl;
+  out << prefix << "  " << STR_(col_feas) << std::endl;
+  out << prefix << "  " << STR_(x_bounds_feas) << std::endl;
+  out << prefix << "  " << STR_(u_bounds_feas) << std::endl;
+  out << prefix << "  " << STR_V(start) << std::endl;
+  out << prefix << "  " << STR_V(goal) << std::endl;
+  out << prefix << "  states:" << std::endl;
+  for (auto &state : states) {
+    out << prefix << "  - " << state.format(FMT) << std::endl;
+  }
+  out << prefix << "  actions:" << std::endl;
+  for (auto &action : actions) {
+    out << prefix << "  - " << action.format(FMT) << std::endl;
+  }
+  out << prefix << "  times:" << std::endl;
+  for (size_t i = 0; i < static_cast<size_t>(times.size()); i++) {
+    out << prefix << "  - " << times(i) << std::endl;
+  }
+};
+
+void Trajectory::update_feasibility(double traj_tol, double goal_tol,
+                                    double col_tol, double x_bound_tol,
+                                    double u_bound_tol) {
+  traj_feas = max_jump < traj_tol;
+  goal_feas = goal_distance < goal_tol;
+  start_feas = start_distance < goal_tol;
+  col_feas = max_collision < col_tol;
+  x_bounds_feas = x_bound_distance < x_bound_tol;
+  u_bounds_feas = u_bound_distance < u_bound_tol;
+
+  feasible = traj_feas && goal_feas && start_feas && col_feas &&
+             x_bounds_feas && u_bounds_feas;
+
+  std::cout << "updating flags " << std::endl;
+  CSTR_(feasible);
+  CSTR_(traj_feas);
+  CSTR_(goal_feas);
+  CSTR_(start_feas);
+  CSTR_(col_feas);
+  CSTR_(x_bounds_feas);
+  CSTR_(u_bounds_feas);
+}
+
+void Trajectory::check(std::shared_ptr<Model_robot> &robot) {
+
+  max_collision = check_cols(robot, states);
+  Eigen::VectorXd dts;
+
+  if (times.size())
+    dts = times;
+  else {
+    size_t T = actions.size();
+    dts.resize(T);
+    dts.setOnes();
+    dts.array() *= robot->ref_dt;
+  }
+
+  max_jump = check_trajectory(states, actions, dts, robot);
+  x_bound_distance = check_x_bounds(states, robot);
+  u_bound_distance = check_u_bounds(actions, robot);
+
+  if (goal.size()) {
+    CSTR_V(states.back());
+    CSTR_V(goal);
+    goal_distance = robot->distance(states.back(), goal);
+  }
+  if (start.size())
+    start_distance = robot->distance(states.front(), start);
+
+  bool debug = true;
+  if (debug) {
+    std::cout << " -- Checking trajectory -- " << std::endl;
+    CSTR_(max_jump);
+    CSTR_(x_bound_distance);
+    CSTR_(u_bound_distance);
+    CSTR_(goal_distance);
+    CSTR_(start_distance);
+    CSTR_(max_collision);
+  }
+
+  // &&goal_feas &&start_feas &&col_feas &&x_bounds_feas &&u_bounds_feas;
+}
+
+void Problem::read_from_yaml(const YAML::Node &env) {
+
+  std::vector<double> _start, _goal;
+  YAML::Node tmp = env["robots"][0]["start"];
+
+  if (auto nn = env["name"]; nn)
+    name = nn.as<std::string>();
+
+  for (const auto &e : env["robots"][0]["start"]) {
+    _start.push_back(e.as<double>());
+  }
+
+  for (const auto &e : env["robots"][0]["goal"]) {
+    _goal.push_back(e.as<double>());
+  }
+
+  start = Vxd::Map(_start.data(), _start.size());
+  goal = Vxd::Map(_goal.data(), _goal.size());
+
+  // const auto &env_min = env["environment"]["min"];
+  // const auto &env_max = env["environment"]["max"];
+
+  std::vector<double> min_ =
+      env["environment"]["min"].as<std::vector<double>>();
+  std::vector<double> max_ =
+      env["environment"]["max"].as<std::vector<double>>();
+
+  CHECK_EQ(min_.size(), max_.size(), AT);
+  CHECK((min_.size() <= 3), AT);
+  p_lb = Eigen::Map<Eigen::VectorXd>(&min_.at(0), min_.size());
+  p_ub = Eigen::Map<Eigen::VectorXd>(&max_.at(0), max_.size());
+
+  for (const auto &obs : env["environment"]["obstacles"]) {
+    std::vector<double> size_ = obs["size"].as<std::vector<double>>();
+    Vxd size = Vxd::Map(size_.data(), size_.size());
+
+    auto obs_type = obs["type"].as<std::string>();
+
+    std::vector<double> center_ = obs["center"].as<std::vector<double>>();
+    Vxd center = Vxd::Map(center_.data(), center_.size());
+
+    obstacles.push_back(
+        Obstacle{.type = obs_type, .size = size, .center = center});
+  }
+
+  robotType = env["robots"][0]["type"].as<std::string>();
+}
+
+void Problem::read_from_yaml(const char *file) {
+  std::cout << "Loading yaml file:" << file << std::endl;
+  read_from_yaml(load_yaml_safe(file));
+}
+
+void Problem::write_to_yaml(const char *file) {
+  (void)file;
+  ERROR_WITH_INFO("not implemented");
+}
+
+void get_states_and_actions(const YAML::Node &data,
+                            std::vector<Eigen::VectorXd> &states,
+                            std::vector<Eigen::VectorXd> &actions) {
+
+  using Vxd = Eigen::VectorXd;
+  CHECK(data["states"], AT);
+  CHECK(data["actions"], AT);
+
+  std::vector<std::vector<double>> __states;
+  std::vector<std::vector<double>> __actions;
+
+  for (const auto &state : data["states"]) {
+    std::vector<double> p;
+    for (const auto &elem : state) {
+      p.push_back(elem.as<double>());
+    }
+    __states.push_back(p);
+  }
+
+  for (const auto &state : data["actions"]) {
+    std::vector<double> p;
+    for (const auto &elem : state) {
+      p.push_back(elem.as<double>());
+    }
+    __actions.push_back(p);
+  }
+
+  states.resize(__states.size());
+  actions.resize(__actions.size());
+
+  std::transform(__states.begin(), __states.end(), states.begin(),
+                 [](const auto &s) { return Vxd::Map(s.data(), s.size()); });
+
+  std::transform(__actions.begin(), __actions.end(), actions.begin(),
+                 [](const auto &s) { return Vxd::Map(s.data(), s.size()); });
+}
 
 CompoundState2::CompoundState2(std::shared_ptr<StateQ> s1,
                                std::shared_ptr<StateQ> s2)
@@ -231,6 +446,9 @@ Model_robot::Model_robot(std::shared_ptr<StateQ> state, size_t nu)
   u_ref.resize(nu);
   u_ref.setZero();
 
+  u_0.resize(nu);
+  u_0.setZero();
+
   u_lb.resize(nu);
   u_ub.resize(nu);
 
@@ -273,8 +491,8 @@ Model_robot::Model_robot(std::shared_ptr<StateQ> state, size_t nu)
 void Model_robot::transformation_collision_geometries(
     const Eigen::Ref<const Eigen::VectorXd> &x, std::vector<Transform3d> &ts) {
 
-  assert(x.size() >= 3);
-  assert(ts.size() == 1);
+  CHECK_GEQ(x.size(), 3, AT);
+  CHECK_EQ(ts.size(), 1, AT);
 
   fcl::Transform3d result;
   result = Eigen::Translation<double, 3>(fcl::Vector3d(x(0), x(1), 0));
@@ -289,14 +507,11 @@ void Model_robot::sample_uniform(Eigen::Ref<Eigen::VectorXd> x) {
                                      Eigen::VectorXd::Ones(nx)));
 }
 
-void Model_robot::collision_distance(const Eigen::Ref<const Eigen::VectorXd> &x,
-                                     CollisionOut &cout) {
+bool Model_robot::collision_check(const Eigen::Ref<const Eigen::VectorXd> &x) {
 
   assert(env);
 
-  fcl::DefaultDistanceData<double> distance_data;
-
-  // compute all tansforms
+  fcl::DefaultCollisionData<double> collision_data;
 
   transformation_collision_geometries(x, ts_data);
   CHECK_EQ(collision_geometries.size(), ts_data.size(), AT);
@@ -313,29 +528,68 @@ void Model_robot::collision_distance(const Eigen::Ref<const Eigen::VectorXd> &x,
     co.setTranslation(result.translation());
     co.setRotation(result.rotation());
     co.computeAABB();
-    distance_data.request.enable_signed_distance = true;
-    env->distance(&co, &distance_data, fcl::DefaultDistanceFunction<double>);
-
-    auto &col_out = col_outs.at(i);
-
-    col_out.distance = distance_data.result.min_distance;
-    col_out.p1 = distance_data.result.nearest_points[0];
-    col_out.p2 = distance_data.result.nearest_points[1];
+    env->collide(&co, &collision_data, fcl::DefaultCollisionFunction<double>);
+    if (collision_data.result.isCollision()) {
+      return false;
+    }
   }
+  return true;
+}
 
-  // decid eht
+void Model_robot::collision_distance(const Eigen::Ref<const Eigen::VectorXd> &x,
+                                     CollisionOut &cout) {
 
-  bool return_only_min = true;
-  if (return_only_min) {
+  if (env) {
 
-    auto it = std::min_element(
-        col_outs.begin(), col_outs.end(),
-        [](auto &a, auto &b) { return a.distance < b.distance; });
+    fcl::DefaultDistanceData<double> distance_data;
 
-    cout = *it; // copy only the min
+    // compute all tansforms
 
+    transformation_collision_geometries(x, ts_data);
+    CHECK_EQ(collision_geometries.size(), ts_data.size(), AT);
+    assert(collision_geometries.size() == ts_data.size());
+    CHECK_EQ(collision_geometries.size(), col_outs.size(), AT);
+    assert(collision_geometries.size() == col_outs.size());
+
+    for (size_t i = 0; i < collision_geometries.size(); i++) {
+
+      fcl::Transform3d &result = ts_data[i];
+      assert(collision_geometries[i]);
+      fcl::CollisionObject co(collision_geometries[i]);
+
+      co.setTranslation(result.translation());
+      co.setRotation(result.rotation());
+      co.computeAABB();
+      distance_data.request.enable_signed_distance = true;
+      env->distance(&co, &distance_data, fcl::DefaultDistanceFunction<double>);
+
+      auto &col_out = col_outs.at(i);
+
+      col_out.distance = distance_data.result.min_distance;
+      col_out.p1 = distance_data.result.nearest_points[0];
+      col_out.p2 = distance_data.result.nearest_points[1];
+    }
+
+    // decid eht
+
+    bool return_only_min = true;
+    if (return_only_min) {
+
+      auto it = std::min_element(
+          col_outs.begin(), col_outs.end(),
+          [](auto &a, auto &b) { return a.distance < b.distance; });
+
+      cout = *it; // copy only the min
+
+    } else {
+      ERROR_WITH_INFO("not implemented");
+    }
   } else {
-    ERROR_WITH_INFO("not implemented");
+    cout.distance = max__;
+    // struct CollisionOut {
+    //   double distance;
+    //   Eigen::Vector3d p1;
+    //   Eigen::Vector3d p2;
   }
 }
 
@@ -361,38 +615,31 @@ void Model_robot::collision_distance_diff(
       x.head(nx_col), dd.head(nx_col), eps);
 }
 
-void Model_robot::load_env_quim(const std::string &filename) {
+void Model_robot::load_env_quim(const Problem &problem) {
 
-  YAML::Node yaml_env = YAML::LoadFile(filename);
   std::vector<fcl::CollisionObjectd *> obstacles;
   double ref_pos = 0;
   double ref_size = 1.;
-  for (const auto &obs : yaml_env["environment"]["obstacles"]) {
-    const auto &size = obs["size"];
-
-    auto obs_type = obs["type"].as<std::string>();
+  for (const auto &obs : problem.obstacles) {
+    auto &obs_type = obs.type;
+    auto &size = obs.size;
+    auto &center = obs.center;
 
     if (obs_type == "box") {
-
       std::shared_ptr<fcl::CollisionGeometryd> geom;
-      geom.reset(
-          new fcl::Boxd(size[0].as<double>(), size[1].as<double>(),
-                        size.size() == 3 ? size[2].as<double>() : ref_size));
-      const auto &center = obs["center"];
+      geom.reset(new fcl::Boxd(size(0), size(1),
+                               size.size() == 3 ? size(2) : ref_size));
       auto co = new fcl::CollisionObjectd(geom);
-      co->setTranslation(
-          fcl::Vector3d(center[0].as<double>(), center[1].as<double>(),
-                        size.size() == 3 ? center[2].as<double>() : ref_pos));
+      co->setTranslation(fcl::Vector3d(center(0), center(1),
+                                       size.size() == 3 ? center(2) : ref_pos));
       co->computeAABB();
       obstacles.push_back(co);
     } else if (obs_type == "sphere") {
       std::shared_ptr<fcl::CollisionGeometryd> geom;
-      geom.reset(new fcl::Sphered(size[0].as<double>()));
-      const auto &center = obs["center"];
+      geom.reset(new fcl::Sphered(size(0)));
       auto co = new fcl::CollisionObjectd(geom);
-      co->setTranslation(
-          fcl::Vector3d(center[0].as<double>(), center[1].as<double>(),
-                        size.size() == 3 ? center[2].as<double>() : ref_pos));
+      co->setTranslation(fcl::Vector3d(center(0), center(1),
+                                       size.size() == 3 ? center(2) : ref_pos));
       co->computeAABB();
       obstacles.push_back(co);
     } else {
@@ -516,6 +763,7 @@ void Model_robot::stepDiff(Eigen::Ref<Eigen::MatrixXd> Fx,
                            const Eigen::Ref<const Eigen::VectorXd> &x,
                            const Eigen::Ref<const Eigen::VectorXd> &u,
                            double dt) {
+
   calcDiffV(__Jv_x, __Jv_u, x, u);
   // euler_diff(Fx, Fu, dt, __Jv_x, __Jv_u);
 
@@ -534,21 +782,40 @@ void Model_robot::stepDiff(Eigen::Ref<Eigen::MatrixXd> Fx,
   Fu.noalias() += __Jsecond * dt * __Jv_u;
 }
 
-void Model_robot::stepDiffdt(Eigen::Ref<Eigen::MatrixXd> Fx,
-                             Eigen::Ref<Eigen::MatrixXd> Fu,
-                             const Eigen::Ref<const Eigen::VectorXd> &x,
-                             const Eigen::Ref<const Eigen::VectorXd> &u,
-                             double dt) {
-  assert(nu == u.size());
-  assert(nx == x.size());
-  assert(nx == Fx.rows());
-  assert(nx == Fx.cols());
-  assert(nx == Fu.rows());
-  assert(Fu.cols() == nu + 1);
-  calcDiffV(__Jv_x, __Jv_u, x, u);
-  euler_diff(Fx, Fu.block(0, 0, nx, nu), dt, __Jv_x, __Jv_u);
+// void Model_robot::stepDiffdt(Eigen::Ref<Eigen::MatrixXd> Fx,
+//                              Eigen::Ref<Eigen::MatrixXd> Fu,
+//                              const Eigen::Ref<const Eigen::VectorXd> &x,
+//                              const Eigen::Ref<const Eigen::VectorXd> &u,
+//                              double dt) {
+//   CHECK_EQ(nu, static_cast<size_t>(u.size()), AT);
+//   CHECK_EQ(nx, static_cast<size_t>(x.size()), AT);
+//   CHECK_EQ(nx, static_cast<size_t>(Fx.rows()), AT);
+//   CHECK_EQ(nx, static_cast<size_t>(Fx.cols()), AT);
+//   CHECK_EQ(nx, static_cast<size_t>(Fu.rows()), AT);
+//   CHECK_EQ(static_cast<size_t>(Fu.cols()), nu + 1, AT);
+//   calcDiffV(__Jv_x, __Jv_u, x, u);
+//   euler_diff(Fx, Fu.block(0, 0, nx, nu), dt, __Jv_x, __Jv_u);
+//   calcV(__v, x, u);
+//   Fu.col(nu) = __v;
+// }
+
+void Model_robot::stepDiff_with_v(Eigen::Ref<Eigen::MatrixXd> Fx,
+                                  Eigen::Ref<Eigen::MatrixXd> Fu,
+                                  Eigen::Ref<Eigen::VectorXd> __v,
+                                  const Eigen::Ref<const Eigen::VectorXd> &x,
+                                  const Eigen::Ref<const Eigen::VectorXd> &u,
+                                  double dt) {
+  CHECK_EQ(nu, static_cast<size_t>(u.size()), AT);
+  CHECK_EQ(nx, static_cast<size_t>(x.size()), AT);
+  CHECK_EQ(nx, static_cast<size_t>(Fx.rows()), AT);
+  CHECK_EQ(nx, static_cast<size_t>(Fx.cols()), AT);
+  CHECK_EQ(nx, static_cast<size_t>(Fu.rows()), AT);
+  CHECK_EQ(static_cast<size_t>(Fu.cols()), nu, AT);
+
   calcV(__v, x, u);
-  Fu.col(nu) = __v;
+  calcDiffV(__Jv_x, __Jv_u, x, u);
+  euler_diff(Fx.block(0, 0, nx, nx), Fu.block(0, 0, nx, nu), dt, __Jv_x,
+             __Jv_u);
 }
 
 void Model_robot::calcDiffV(Eigen::Ref<Eigen::MatrixXd> Jv_x,
@@ -592,7 +859,10 @@ std::vector<size_t> create_vector_so2_for_car(size_t num_trailers) {
   return out;
 }
 
-Model_car_with_trailers::Model_car_with_trailers(const Car_params &params)
+Model_car_with_trailers::Model_car_with_trailers(const Car_params &params,
+
+                                                 const Eigen::VectorXd &p_lb,
+                                                 const Eigen::VectorXd &p_ub)
     : Model_robot(std::make_shared<RnSOn>(
                       2, 1 + params.num_trailers,
                       create_vector_so2_for_car(params.num_trailers)),
@@ -614,7 +884,6 @@ Model_car_with_trailers::Model_car_with_trailers(const Car_params &params)
 
   u_weight = V2d(.5, .5);
 
-  name = "car1";
   x_desc = {"x [m]", "y [m]", "yaw [rad]"};
   u_desc = {"v [m/s]", "phi [rad]"};
 
@@ -644,6 +913,11 @@ Model_car_with_trailers::Model_car_with_trailers(const Car_params &params)
 
   ts_data.resize(params.hitch_lengths.size() + 1);
   col_outs.resize(params.hitch_lengths.size() + 1);
+
+  if (p_lb.size() && p_ub.size()) {
+    set_position_lb(p_lb);
+    set_position_ub(p_ub);
+  }
 }
 
 void Model_car_with_trailers::sample_uniform(Eigen::Ref<Eigen::VectorXd> x) {
@@ -682,9 +956,9 @@ void Model_car_with_trailers::calcV(
     Eigen::Ref<Eigen::VectorXd> f, const Eigen::Ref<const Eigen::VectorXd> &x,
     const Eigen::Ref<const Eigen::VectorXd> &u) {
 
-  assert(f.size() == nx);
-  assert(x.size() == nx);
-  assert(u.size() == nu);
+  assert(static_cast<size_t>(f.size()) == nx);
+  assert(static_cast<size_t>(x.size()) == nx);
+  assert(static_cast<size_t>(u.size()) == nu);
 
   const double &v = u(0);
   const double &phi = u(1);
@@ -711,14 +985,14 @@ void Model_car_with_trailers::calcDiffV(
     const Eigen::Ref<const Eigen::VectorXd> &x,
     const Eigen::Ref<const Eigen::VectorXd> &u) {
 
-  assert(Jv_x.rows() == nx);
-  assert(Jv_u.rows() == nx);
+  CHECK_EQ(static_cast<size_t>(Jv_x.rows()), nx, AT);
+  CHECK_EQ(static_cast<size_t>(Jv_u.rows()), nx, AT);
 
-  assert(Jv_x.cols() == nx);
-  assert(Jv_u.cols() == nu);
+  CHECK_EQ(static_cast<size_t>(Jv_x.cols()), nx, AT);
+  CHECK_EQ(static_cast<size_t>(Jv_u.cols()), nu, AT);
 
-  assert(x.size() == nx);
-  assert(u.size() == nu);
+  CHECK_EQ(static_cast<size_t>(x.size()), nx, AT);
+  CHECK_EQ(static_cast<size_t>(u.size()), nu, AT);
 
   const double &v = u(0);
   const double &phi = u(1);
@@ -795,7 +1069,9 @@ double Model_car_with_trailers::lower_bound_time(
 // Model_acrobot(
 //   const Acrobot_params & acrobot_params = Acrobot_params());
 
-Model_acrobot::Model_acrobot(const Acrobot_params &acrobot_params)
+Model_acrobot::Model_acrobot(const Acrobot_params &acrobot_params,
+                             const Eigen::VectorXd &p_lb,
+                             const Eigen::VectorXd &p_ub)
     : Model_robot(std::make_shared<RnSOn>(2, 2, std::vector<size_t>{0, 1}), 1),
       params(acrobot_params) {
   is_2d = false;
@@ -834,6 +1110,9 @@ Model_acrobot::Model_acrobot(const Acrobot_params &acrobot_params)
 
   ts_data.resize(2);
   col_outs.resize(2);
+
+  CHECK_EQ(p_lb.size(), 0, AT);
+  CHECK_EQ(p_ub.size(), 0, AT);
 }
 
 void Model_acrobot::sample_uniform(Eigen::Ref<Eigen::VectorXd> x) {
@@ -907,9 +1186,9 @@ void Model_acrobot::calcV(Eigen::Ref<Eigen::VectorXd> f,
                           const Eigen::Ref<const Eigen::VectorXd> &x,
                           const Eigen::Ref<const Eigen::VectorXd> &uu) {
 
-  assert(f.size() == nx);
-  assert(x.size() == nx);
-  assert(uu.size() == nu);
+  assert(static_cast<size_t>(f.size()) == nx);
+  assert(static_cast<size_t>(x.size()) == nx);
+  assert(static_cast<size_t>(uu.size()) == nu);
 
   const double &q1 = x(0);
   const double &q2 = x(1);
@@ -959,6 +1238,12 @@ void Model_acrobot::calcDiffV(Eigen::Ref<Eigen::MatrixXd> Jv_x,
                               Eigen::Ref<Eigen::MatrixXd> Jv_u,
                               const Eigen::Ref<const Eigen::VectorXd> &x,
                               const Eigen::Ref<const Eigen::VectorXd> &uu) {
+
+  CHECK_EQ(static_cast<size_t>(x.size()), nx, AT);
+  CHECK_EQ(static_cast<size_t>(Jv_x.cols()), nx, AT);
+  CHECK_EQ(static_cast<size_t>(Jv_x.rows()), nx, AT);
+  CHECK_EQ(static_cast<size_t>(Jv_u.rows()), nx, AT);
+  CHECK_EQ(static_cast<size_t>(Jv_u.cols()), nu, AT);
 
   double q1dotdot_u;
   double q2dotdot_u;
@@ -1141,7 +1426,9 @@ Model_acrobot::lower_bound_time(const Eigen::Ref<const Eigen::VectorXd> &x,
   return *std::max_element(maxs.cbegin(), maxs.cend());
 }
 
-Model_unicycle1::Model_unicycle1(const Unicycle1_params &params)
+Model_unicycle1::Model_unicycle1(const Unicycle1_params &params,
+                                 const Eigen::VectorXd &p_lb,
+                                 const Eigen::VectorXd &p_ub)
     : Model_robot(std::make_shared<RnSOn>(2, 1, std::vector<size_t>{2}), 2),
       params(params) {
   is_2d = true;
@@ -1181,6 +1468,11 @@ Model_unicycle1::Model_unicycle1(const Unicycle1_params &params)
   } else {
     ERROR_WITH_INFO("not implemented");
   }
+
+  if (p_lb.size() && p_ub.size()) {
+    set_position_lb(p_lb);
+    set_position_ub(p_ub);
+  }
 }
 
 void Model_unicycle1::sample_uniform(Eigen::Ref<Eigen::VectorXd> x) {
@@ -1194,9 +1486,9 @@ void Model_unicycle1::calcV(Eigen::Ref<Eigen::VectorXd> v,
                             const Eigen::Ref<const Eigen::VectorXd> &x,
                             const Eigen::Ref<const Eigen::VectorXd> &u) {
 
-  assert(v.size() == 3);
-  assert(x.size() == 3);
-  assert(u.size() == 2);
+  CHECK_EQ(v.size(), 3, AT);
+  CHECK_EQ(x.size(), 3, AT);
+  CHECK_EQ(u.size(), 2, AT);
 
   const double c = cos(x[2]);
   const double s = sin(x[2]);
@@ -1259,7 +1551,11 @@ Model_unicycle1::lower_bound_time(const Eigen::Ref<const Eigen::VectorXd> &x,
                   so2_distance(x(2), y(2)) / params.max_angular_vel);
 }
 
-Model_quad3d::Model_quad3d(const Quad3d_params &params)
+Model_quad3d::Model_quad3d(const Quad3d_params &params,
+
+                           const Eigen::VectorXd &p_lb,
+                           const Eigen::VectorXd &p_ub)
+
     : Model_robot(std::make_shared<Rn>(13), 4), params(params) {
 
   std::cout << "Robot name " << name << std::endl;
@@ -1270,6 +1566,7 @@ Model_quad3d::Model_quad3d(const Quad3d_params &params)
   translation_invariance = 3;
   nx_col = 7;
   is_2d = false;
+  u_0 << 1., 1., 1., 1.;
 
   ref_dt = params.dt;
   distance_weights = params.distance_weights;
@@ -1347,6 +1644,16 @@ Model_quad3d::Model_quad3d(const Quad3d_params &params)
   } else {
     ERROR_WITH_INFO("not implemented");
   }
+
+  if (p_lb.size() && p_ub.size()) {
+    set_position_lb(p_lb);
+    set_position_ub(p_ub);
+  }
+}
+
+void Model_quad3d::sample_uniform(Eigen::Ref<Eigen::VectorXd> x) {
+  (void)x;
+  ERROR_WITH_INFO("not implemented");
 }
 
 void Model_quad3d::transformation_collision_geometries(
@@ -1545,9 +1852,9 @@ void Model_quad3d::interpolate(Eigen::Ref<Eigen::VectorXd> xt,
   assert(dt <= 1);
   assert(dt >= 0);
 
-  assert(xt.size() == nx);
-  assert(from.size() == nx);
-  assert(to.size() == nx);
+  assert(static_cast<size_t>(xt.size()) == nx);
+  assert(static_cast<size_t>(from.size()) == nx);
+  assert(static_cast<size_t>(to.size()) == nx);
 
   xt.head<3>() = from.head<3>() + dt * (to.head<3>() - from.head<3>());
   xt.tail<6>() = from.head<6>() + dt * (to.head<6>() - from.head<6>());
@@ -1575,13 +1882,18 @@ Model_quad3d::lower_bound_time(const Eigen::Ref<const Eigen::VectorXd> &x,
   return *std::max_element(maxs.cbegin(), maxs.cend());
 }
 
-Model_quad2d::Model_quad2d(const Quad2d_params &params)
+Model_quad2d::Model_quad2d(const Quad2d_params &params,
+
+                           const Eigen::VectorXd &p_lb,
+                           const Eigen::VectorXd &p_ub)
+
     : Model_robot(std::make_shared<RnSOn>(5, 1, std::vector<size_t>{2}), 2),
       params(params) {
   is_2d = true;
   translation_invariance = 2;
   ref_dt = params.dt;
   name = "quad2d";
+  u_0 << 1., 1.;
 
   std::cout << "Robot name " << name << std::endl;
   std::cout << "Parameters" << std::endl;
@@ -1614,6 +1926,11 @@ Model_quad2d::Model_quad2d(const Quad2d_params &params)
     std::make_shared<fcl::Sphered>(params.size(0));
   } else {
     ERROR_WITH_INFO("not implemented");
+  }
+
+  if (p_lb.size() && p_ub.size()) {
+    set_position_lb(p_lb);
+    set_position_ub(p_ub);
   }
 }
 
@@ -1663,14 +1980,14 @@ void Model_quad2d::calcDiffV(Eigen::Ref<Eigen::MatrixXd> Jv_x,
                              const Eigen::Ref<const Eigen::VectorXd> &x,
                              const Eigen::Ref<const Eigen::VectorXd> &u) {
 
-  assert(Jv_x.rows() == 6);
-  assert(Jv_u.rows() == 6);
+  assert(static_cast<size_t>(Jv_x.rows()) == 6);
+  assert(static_cast<size_t>(Jv_u.rows()) == 6);
 
-  assert(Jv_x.cols() == 6);
-  assert(Jv_u.cols() == 2);
+  assert(static_cast<size_t>(Jv_x.cols()) == 6);
+  assert(static_cast<size_t>(Jv_u.cols()) == 2);
 
-  assert(x.size() == 6);
-  assert(u.size() == 2);
+  assert(static_cast<size_t>(x.size()) == 6);
+  assert(static_cast<size_t>(u.size()) == 2);
 
   const double &f1 = u_nominal * u(0);
   const double &f2 = u_nominal * u(1);
@@ -1749,7 +2066,10 @@ Model_quad2d::lower_bound_time(const Eigen::Ref<const Eigen::VectorXd> &x,
   return *it;
 }
 
-Model_unicycle2::Model_unicycle2(const Unicycle2_params &params)
+Model_unicycle2::Model_unicycle2(const Unicycle2_params &params,
+                                 const Eigen::VectorXd &p_lb,
+                                 const Eigen::VectorXd &p_ub)
+
     : Model_robot(std::make_shared<RnSOn>(4, 1, std::vector<size_t>{2}), 2),
       params(params) {
 
@@ -1787,6 +2107,11 @@ Model_unicycle2::Model_unicycle2(const Unicycle2_params &params)
   } else {
     ERROR_WITH_INFO("not implemented");
   }
+
+  if (p_lb.size() && p_ub.size()) {
+    set_position_lb(p_lb);
+    set_position_ub(p_ub);
+  }
 }
 
 void Model_unicycle2::sample_uniform(Eigen::Ref<Eigen::VectorXd> x) {
@@ -1800,9 +2125,9 @@ void Model_unicycle2::calcV(Eigen::Ref<Eigen::VectorXd> f,
                             const Eigen::Ref<const Eigen::VectorXd> &x,
                             const Eigen::Ref<const Eigen::VectorXd> &u) {
 
-  assert(f.size() == nx);
-  assert(x.size() == nx);
-  assert(u.size() == nu);
+  assert(static_cast<size_t>(f.size()) == nx);
+  assert(static_cast<size_t>(x.size()) == nx);
+  assert(static_cast<size_t>(u.size()) == nu);
 
   const double yaw = x[2];
   const double vv = x[3];
@@ -1823,14 +2148,14 @@ void Model_unicycle2::calcDiffV(Eigen::Ref<Eigen::MatrixXd> Jv_x,
                                 const Eigen::Ref<const Eigen::VectorXd> &u) {
 
   (void)u;
-  assert(Jv_x.rows() == nx);
-  assert(Jv_u.rows() == nx);
+  assert(static_cast<size_t>(Jv_x.rows()) == nx);
+  assert(static_cast<size_t>(Jv_u.rows()) == nx);
 
-  assert(Jv_x.cols() == nx);
-  assert(Jv_u.cols() == nu);
+  assert(static_cast<size_t>(Jv_x.cols()) == nx);
+  assert(static_cast<size_t>(Jv_u.cols()) == nu);
 
-  assert(x.size() == nx);
-  assert(u.size() == nu);
+  assert(static_cast<size_t>(x.size()) == nx);
+  assert(static_cast<size_t>(u.size()) == nu);
 
   const double c = cos(x[2]);
   const double s = sin(x[2]);
@@ -1867,9 +2192,9 @@ void Model_unicycle2::interpolate(Eigen::Ref<Eigen::VectorXd> xt,
   assert(dt <= 1);
   assert(dt >= 0);
 
-  assert(xt.size() == nx);
-  assert(from.size() == nx);
-  assert(to.size() == nx);
+  assert(static_cast<size_t>(xt.size()) == nx);
+  assert(static_cast<size_t>(from.size()) == nx);
+  assert(static_cast<size_t>(to.size()) == nx);
 
   xt.head<2>() = from.head<2>() + dt * (to.head<2>() - from.head<2>());
   so2_interpolation(xt(2), from(2), to(2), dt);
@@ -1945,10 +2270,151 @@ void Car_params::read_from_yaml(YAML::Node &node) {
   set_from_yaml_eigen(node, VAR_WITH_NAME(size_trailer));
 
   set_from_yaml_eigenx(node, VAR_WITH_NAME(distance_weights));
-  set_from_yaml_eigenx(node, VAR_WITH_NAME(distance_weights));
   set_from_yaml_eigenx(node, VAR_WITH_NAME(hitch_lengths));
 
   assert(num_trailers == hitch_lengths.size());
+}
+
+Model_car2::Model_car2(const Car2_params &params, const Eigen::VectorXd &p_lb,
+                       const Eigen::VectorXd &p_ub)
+    : Model_robot(std::make_shared<RnSOn>(4, 1, std::vector<size_t>{2}), 2),
+      params(params) {
+
+  name = "car2";
+  std::cout << "Robot name " << name << std::endl;
+  std::cout << "Parameters" << std::endl;
+  this->params.write(std::cout);
+  std::cout << "***" << std::endl;
+
+  u_lb << -params.max_acc_abs, -params.max_steer_vel_abs;
+  u_ub << params.max_acc_abs, params.max_steer_vel_abs;
+  ref_dt = params.dt;
+
+  u_weight = V2d(.5, .5);
+
+  x_lb << low__, low__, low__, params.min_vel, -params.max_steering_abs;
+  x_ub << max__, max__, max__, params.max_vel, params.max_steering_abs;
+
+  x_desc = {"x [m]", "y [m]", "yaw [rad]", "v[m/s]", "phi[rad]"};
+  u_desc = {"a [m/s^2]", "phiw [rad/s]"};
+
+  translation_invariance = 2;
+  is_2d = true;
+  nx_col = 3;
+
+  if (p_lb.size() && p_ub.size()) {
+    set_position_lb(p_lb);
+    set_position_ub(p_ub);
+  }
+
+  collision_geometries.emplace_back(
+      std::make_shared<fcl::Boxd>(params.size[0], params.size[1], 1.0));
+
+  ts_data.resize(1);
+  col_outs.resize(1);
+};
+
+double Model_car2::distance(const Eigen::Ref<const Eigen::VectorXd> &x,
+                            const Eigen::Ref<const Eigen::VectorXd> &y) {
+
+  CHECK_EQ(x.size(), 5, AT);
+  CHECK_EQ(y.size(), 5, AT);
+  CHECK((y(2) <= M_PI && y(2) >= -M_PI), AT);
+  CHECK((x(2) <= M_PI && x(2) >= -M_PI), AT);
+  CHECK_EQ(params.distance_weights.size(), 4, AT);
+  double d = params.distance_weights(0) * (x.head<2>() - y.head<2>()).norm() +
+             params.distance_weights(1) * so2_distance(x(2), y(2)) +
+             params.distance_weights(2) * std::abs(x(3) - y(3)) +
+             params.distance_weights(3) * std::abs(x(4) - y(4));
+
+  return d;
+}
+
+void Model_car2::calcV(Eigen::Ref<Eigen::VectorXd> f,
+                       const Eigen::Ref<const Eigen::VectorXd> &x,
+                       const Eigen::Ref<const Eigen::VectorXd> &u) {
+
+  assert(static_cast<size_t>(f.size()) == nx);
+  assert(static_cast<size_t>(x.size()) == nx);
+  assert(static_cast<size_t>(u.size()) == nu);
+
+  const double &v = x(3);
+  const double &phi = x(4);
+  const double &yaw = x(2);
+
+  const double &c = std::cos(yaw);
+  const double &s = std::sin(yaw);
+
+  f(0) = v * c;
+  f(1) = v * s;
+  f(2) = v / params.l * std::tan(phi);
+  // f(3) = params.max_acc_abs * u(0);
+  // f(4) = params.max_steer_vel_abs * u(1);
+  f(3) = u(0);
+  if (x(4) + u(1) * ref_dt > -params.max_steering_abs &&
+      x(4) + u(1) * ref_dt < params.max_steering_abs)
+    f(4) = u(1);
+  else
+    f(4) = 0;
+};
+
+void Model_car2::calcDiffV(Eigen::Ref<Eigen::MatrixXd> Jv_x,
+                           Eigen::Ref<Eigen::MatrixXd> Jv_u,
+                           const Eigen::Ref<const Eigen::VectorXd> &x,
+                           const Eigen::Ref<const Eigen::VectorXd> &u) {
+
+  CHECK_EQ(static_cast<size_t>(Jv_x.rows()), nx, AT);
+  CHECK_EQ(static_cast<size_t>(Jv_u.rows()), nx, AT);
+
+  CHECK_EQ(static_cast<size_t>(Jv_x.cols()), nx, AT);
+  CHECK_EQ(static_cast<size_t>(Jv_u.cols()), nu, AT);
+
+  CHECK_EQ(static_cast<size_t>(x.size()), nx, AT);
+  CHECK_EQ(static_cast<size_t>(u.size()), nu, AT);
+
+  const double &v = x(3);
+  const double &phi = x(4);
+  const double &yaw = x(2);
+
+  const double &c = std::cos(yaw);
+  const double &s = std::sin(yaw);
+
+  Jv_x(0, 2) = -v * s;
+  Jv_x(1, 2) = v * c;
+
+  Jv_x(0, 3) = c;
+  Jv_x(1, 3) = s;
+  Jv_x(2, 3) = 1. / params.l * std::tan(phi);
+  Jv_x(2, 4) = 1. * v / params.l / (std::cos(phi) * std::cos(phi));
+
+  Jv_u(3, 0) = 1.;
+  Jv_u(4, 1) = 1.;
+}
+
+void Car2_params::read_from_yaml(YAML::Node &node) {
+  set_from_yaml(node, VAR_WITH_NAME(l));
+  set_from_yaml(node, VAR_WITH_NAME(max_vel));
+  set_from_yaml(node, VAR_WITH_NAME(min_vel));
+  set_from_yaml(node, VAR_WITH_NAME(max_steering_abs));
+  set_from_yaml(node, VAR_WITH_NAME(max_angular_vel));
+  set_from_yaml(node, VAR_WITH_NAME(dt));
+  set_from_yaml(node, VAR_WITH_NAME(shape));
+  set_from_yaml(node, VAR_WITH_NAME(shape_trailer));
+  set_from_yaml(node, VAR_WITH_NAME(dt));
+
+  set_from_yaml(node, VAR_WITH_NAME(max_acc_abs));
+  set_from_yaml(node, VAR_WITH_NAME(max_steer_vel_abs));
+
+  set_from_yaml_eigen(node, VAR_WITH_NAME(size));
+
+  set_from_yaml_eigenx(node, VAR_WITH_NAME(distance_weights));
+}
+
+void Car2_params::read_from_yaml(const char *file) {
+  std::cout << "loading file: " << file << std::endl;
+  filename = file;
+  YAML::Node node = YAML::LoadFile(file);
+  read_from_yaml(node);
 }
 
 void Car_params::read_from_yaml(const char *file) {
@@ -2073,14 +2539,51 @@ std::unique_ptr<Model_robot> robot_factory(const char *file) {
     return std::make_unique<Model_acrobot>(file);
   } else if (dynamics == "car_with_trailers") {
     return std::make_unique<Model_car_with_trailers>(file);
+  } else if (dynamics == "car2") {
+    return std::make_unique<Model_car2>(file);
   } else {
     ERROR_WITH_INFO("dynamics not implemented");
   }
 }
 
-bool check_trajectory(const std::vector<Vxd> &xs_out,
-                      const std::vector<Vxd> &us_out, const Vxd &dt,
-                      std::shared_ptr<Model_robot> model, double tolerance) {
+double check_u_bounds(const std::vector<Vxd> &us_out,
+                      std::shared_ptr<Model_robot> model) {
+  CHECK(us_out.size(), AT);
+  CHECK(model, AT);
+
+  double max_out = 0;
+  for (const auto &u : us_out) {
+
+    if (check_bounds_distance(u, model->get_u_lb(), model->get_u_ub()) > 1e-3) {
+      CSTR_V(u);
+      CSTR_V(model->get_u_lb());
+      CSTR_V(model->get_u_ub());
+    }
+
+    max_out = std::max(max_out, check_bounds_distance(u, model->get_u_lb(),
+                                                      model->get_u_ub()));
+  }
+
+  return max_out;
+  ;
+}
+
+double check_x_bounds(const std::vector<Vxd> &xs_out,
+                      std::shared_ptr<Model_robot> model) {
+  CHECK(xs_out.size(), AT);
+  CHECK(model, AT);
+
+  double max_out = 0;
+  for (const auto &x : xs_out) {
+    max_out = std::max(max_out, check_bounds_distance(x, model->get_x_lb(),
+                                                      model->get_x_ub()));
+  }
+  return max_out;
+}
+
+double check_trajectory(const std::vector<Vxd> &xs_out,
+                        const std::vector<Vxd> &us_out, const Vxd &dt,
+                        std::shared_ptr<Model_robot> model) {
   CHECK(xs_out.size(), AT);
   CHECK(us_out.size(), AT);
   CHECK(model, AT);
@@ -2089,7 +2592,8 @@ bool check_trajectory(const std::vector<Vxd> &xs_out,
            AT);
 
   size_t N = us_out.size();
-  bool feasible = true;
+
+  double max_jump_distance = 0;
 
   for (size_t i = 0; i < N; i++) {
     Vxd xnext(model->nx);
@@ -2098,36 +2602,24 @@ bool check_trajectory(const std::vector<Vxd> &xs_out,
 
     model->step(xnext, x, u, dt(i));
 
-    if (model->get_x_lb().size() && model->get_x_ub().size() &&
-        !check_bounds(x, model->get_x_lb(), model->get_x_ub(), 1e-2)) {
-      std::cout << "Infeasible at " << i << " -- xbounds " << std::endl;
-      feasible = false;
-      break;
-    }
+    double jump = model->distance(xnext, xs_out.at(i + 1));
+    if (jump > max_jump_distance) {
+      std::cout << "jump of " << jump << std::endl;
+      CSTR_(i);
+      CSTR_V(x);
+      CSTR_V(u);
+      CSTR_V(xnext);
+      CSTR_V(xs_out.at(i + 1));
 
-    if (!check_bounds(u, model->get_u_lb(), model->get_u_ub())) {
-      std::cout << "Infeasible at " << i << " -- ubounds " << std::endl;
-      feasible = false;
-      break;
-    }
-
-    if ((xnext - xs_out.at(i + 1)).norm() > tolerance) {
-      std::cout << "Infeasible at " << i << std::endl;
-      std::cout << "x " << x.format(FMT) << std::endl;
-      std::cout << "u " << u.format(FMT) << std::endl;
-      std::cout << "xnext " << xnext.format(FMT) << std::endl;
-      std::cout << "xs_out " << xs_out.at(i + 1).format(FMT) << std::endl;
-      std::cout << (xnext - xs_out.at(i + 1)).format(FMT) << std::endl;
-      feasible = false;
-      break;
+      max_jump_distance = jump;
     }
   }
 
-  return feasible;
+  return max_jump_distance;
 }
 
-bool check_cols(std::shared_ptr<Model_robot> model_robot,
-                const std::vector<Vxd> &xs, double tol) {
+double check_cols(std::shared_ptr<Model_robot> model_robot,
+                  const std::vector<Vxd> &xs) {
   double accumulated_c = 0;
   double max_c = 0;
   CollisionOut out;
@@ -2143,7 +2635,84 @@ bool check_cols(std::shared_ptr<Model_robot> model_robot,
       }
     }
   }
+
   std::cout << STR_(accumulated_c) << std::endl;
   std::cout << STR_(max_c) << std::endl;
-  return accumulated_c < tol;
+  return max_c;
+}
+
+double max_rollout_error(std::shared_ptr<Model_robot> robot,
+                         const std::vector<Vxd> &xs,
+                         const std::vector<Vxd> &us) {
+  CHECK_EQ(xs.size(), us.size() + 1, AT);
+
+  size_t N = us.size();
+
+  size_t nx = xs.front().size();
+
+  Vxd xnext(nx);
+  double max_error = 0;
+
+  for (size_t i = 0; i < N; i++) {
+
+    robot->step(xnext, xs.at(i), us.at(i), robot->ref_dt);
+    double d = (xnext - xs.at(i + 1)).norm();
+
+    if (d > max_error) {
+      max_error = d;
+    }
+  }
+  return max_error;
+}
+
+void resample_trajectory(std::vector<Eigen::VectorXd> &xs_out,
+                         std::vector<Eigen::VectorXd> &us_out,
+                         const std::vector<Eigen::VectorXd> &xs,
+                         const std::vector<Eigen::VectorXd> &us,
+                         const Eigen::VectorXd &ts, double ref_dt)
+
+{
+
+  xs_out.clear();
+  us_out.clear();
+  std::cout
+      << "resampling assumes that state space is R^n! change to manifold!!!"
+      << std::endl;
+
+  double total_time = ts(ts.size() - 1);
+
+  ptr<Interpolator> path_u = mk<Interpolator>(ts.head(ts.size() - 1), us);
+
+  ptr<Interpolator> path_x = mk<Interpolator>(ts, xs);
+
+  size_t num_time_steps = std::ceil(total_time / ref_dt);
+
+  auto ts__ = Eigen::VectorXd::LinSpaced(num_time_steps + 1, 0,
+                                         num_time_steps * ref_dt);
+
+  std::cout << "taking samples at " << ts__.format(FMT) << std::endl;
+
+  std::vector<Eigen::VectorXd> new_xs;
+  std::vector<Eigen::VectorXd> new_us;
+
+  CHECK(xs.size(), AT);
+  CHECK(us.size(), AT);
+  size_t nx = xs.front().size();
+  size_t nu = us.front().size();
+
+  Vxd xout(nx);
+  Vxd Jout(nx);
+  Vxd uout(nu);
+  Vxd Juout(nu);
+  for (size_t ti = 0; ti < num_time_steps + 1; ti++) {
+    path_x->interpolate(ts__(ti), xout, Jout);
+    new_xs.push_back(xout);
+    if (ti < num_time_steps) {
+      path_u->interpolate(ts__(ti), uout, Juout);
+      new_us.push_back(uout);
+    }
+  }
+
+  xs_out = new_xs;
+  us_out = new_us;
 }

@@ -3,6 +3,9 @@
 
 namespace ob = ompl::base;
 
+
+#if 0 
+
 CollisionChecker::CollisionChecker() : tmp_state_(nullptr) {}
 
 CollisionChecker::~CollisionChecker() {
@@ -88,7 +91,11 @@ void CollisionChecker::load(const std::string &filename) {
     position_bounds.setLow(i, env_min[i].as<double>());
     position_bounds.setHigh(i, env_max[i].as<double>());
   }
-  robot_ = create_robot(robotType, position_bounds);
+  robot_ = create_robot_ompl(robotType, position_bounds);
+  std::cout << "diff" << std::endl;
+  for (auto& p : position_bounds.getDifference() ) {
+    std::cout << p << std::endl;
+  }
 
   auto si = robot_->getSpaceInformation();
   si->getStateSpace()->setup();
@@ -156,3 +163,6 @@ CollisionChecker::distanceWithFDiffGradient(const std::vector<double> &state,
   }
   return std::make_tuple(dd, out);
 }
+
+
+#endif 

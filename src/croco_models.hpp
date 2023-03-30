@@ -25,7 +25,13 @@
 #include "math_utils.hpp"
 #include "robot_models.hpp"
 
-enum class Control_Mode { default_mode, free_time, free_time_linear, contour };
+enum class Control_Mode {
+  default_mode,
+  free_time,
+  free_time_linear,
+  free_time_linear_first,
+  contour
+};
 
 enum class CostTYPE {
   linear,
@@ -39,6 +45,21 @@ struct ReportCost {
   Eigen::VectorXd r;
   CostTYPE type;
 };
+
+void modify_x_bound_for_free_time_linear(const Eigen::VectorXd &__x_lb,
+                                         const Eigen::VectorXd &__x_ub,
+                                         const Eigen::VectorXd &__xb__weight,
+                                         Eigen::VectorXd &x_lb,
+                                         Eigen::VectorXd &x_ub,
+                                         Eigen::VectorXd &xb_weight);
+
+void modify_u_for_free_time_linear(const Eigen::VectorXd &__u_lb,
+                                   const Eigen::VectorXd &__u_ub,
+                                   const Eigen::VectorXd &__u__weight,
+                                   const Eigen::VectorXd &__u__ref,
+                                   Eigen::VectorXd &u_lb, Eigen::VectorXd &u_ub,
+                                   Eigen::VectorXd &u_weight,
+                                   Eigen::VectorXd &u_ref);
 
 void modify_u_bound_for_contour(const Eigen::VectorXd &__u_lb,
                                 const Eigen::VectorXd &__u_ub,
@@ -169,6 +190,7 @@ struct Dynamics {
   double dt = 0;
   Control_Mode control_mode;
   boost::shared_ptr<StateCrocoQ> state_croco;
+  Eigen::VectorXd __v; // data
 
   Dynamics(std::shared_ptr<Model_robot> robot_model = nullptr,
            const Control_Mode &control_mode = Control_Mode::default_mode);
@@ -206,7 +228,21 @@ struct Dynamics {
           __u_ref(u_ref);
       modify_u_bound_for_free_time(__u_lb, __u_ub, __u_weight, __u_ref, u_lb,
                                    u_ub, u_weight, u_ref);
-    } else if (control_mode == Control_Mode::contour) {
+    } else if (control_mode == Control_Mode::free_time_linear) {
+
+      Eigen::VectorXd __u_lb(u_lb), __u_ub(u_ub), __u_weight(u_weight),
+          __u_ref(u_ref);
+      modify_u_for_free_time_linear(__u_lb, __u_ub, __u_weight, __u_ref, u_lb,
+                                    u_ub, u_weight, u_ref);
+
+      Eigen::VectorXd __x_lb(x_lb), __x_ub(x_ub), __x_weightb(x_weightb);
+
+      modify_x_bound_for_free_time_linear(__x_lb, __x_ub, __x_weightb, x_lb,
+                                          x_ub, x_weightb);
+
+    }
+
+    else if (control_mode == Control_Mode::contour) {
       nu = robot_model->nu + 1;
       nx = robot_model->nx + 1;
       Eigen::VectorXd __u_lb(u_lb), __u_ub(u_ub), __u_weight(u_weight),
@@ -238,25 +274,6 @@ struct Dynamics {
   Eigen::VectorXd x_weightb;
 
   virtual ~Dynamics(){};
-};
-
-struct Dynamics_contour : Dynamics {
-
-  ptr<Dynamics> dyn;
-  bool accumulate = false;
-  Dynamics_contour(ptr<Dynamics> dyn, bool accumulate, double max_alpha);
-
-  typedef MathBaseTpl<double> MathBase;
-  typedef typename MathBase::VectorXs VectorXs;
-
-  virtual void calc(Eigen::Ref<Eigen::VectorXd> xnext,
-                    const Eigen::Ref<const VectorXs> &x,
-                    const Eigen::Ref<const VectorXs> &u) override;
-
-  virtual void calcDiff(Eigen::Ref<Eigen::MatrixXd> Fx,
-                        Eigen::Ref<Eigen::MatrixXd> Fu,
-                        const Eigen::Ref<const VectorXs> &x,
-                        const Eigen::Ref<const VectorXs> &u) override;
 };
 
 struct Cost {
@@ -395,8 +412,8 @@ struct Acceleration_cost_acrobot : Cost {
   Eigen::Matrix<double, 2, 1> acc_u;
   Eigen::Matrix<double, 2, 4> acc_x;
 
-  Eigen::Matrix<double, 4, 1> Jv_x;
-  Eigen::Matrix<double, 4, 4> Jv_u;
+  Eigen::Matrix<double, 4, 4> Jv_x;
+  Eigen::Matrix<double, 4, 1> Jv_u;
 
   Acceleration_cost_acrobot(size_t nx, size_t nu);
 
@@ -437,6 +454,61 @@ struct Contour_cost_alpha_x : Cost {
                         Eigen::Ref<Eigen::MatrixXd> Lxx,
                         const Eigen::Ref<const Eigen::VectorXd> &x) override;
 };
+
+struct Time_linear_reg : Cost {
+  // u - x
+
+  double k = 50; // bigger than 0
+  Time_linear_reg(size_t nx, size_t nu);
+
+  virtual void calc(Eigen::Ref<Eigen::VectorXd> r,
+                    const Eigen::Ref<const Eigen::VectorXd> &x,
+                    const Eigen::Ref<const Eigen::VectorXd> &u) override;
+
+  virtual void calc(Eigen::Ref<Eigen::VectorXd> r,
+                    const Eigen::Ref<const Eigen::VectorXd> &x) override;
+
+  virtual void calcDiff(Eigen::Ref<Eigen::VectorXd> Lx,
+                        Eigen::Ref<Eigen::VectorXd> Lu,
+                        Eigen::Ref<Eigen::MatrixXd> Lxx,
+                        Eigen::Ref<Eigen::MatrixXd> Luu,
+                        Eigen::Ref<Eigen::MatrixXd> Lxu,
+                        const Eigen::Ref<const Eigen::VectorXd> &x,
+                        const Eigen::Ref<const Eigen::VectorXd> &u) override;
+
+  virtual void calcDiff(Eigen::Ref<Eigen::VectorXd> Lx,
+                        Eigen::Ref<Eigen::MatrixXd> Lxx,
+                        const Eigen::Ref<const Eigen::VectorXd> &x) override;
+};
+
+struct Min_time_linear : Cost {
+  // u - x
+
+  double k = 5; // bigger than 0
+  Min_time_linear(size_t nx, size_t nu);
+
+  virtual void calc(Eigen::Ref<Eigen::VectorXd> r,
+                    const Eigen::Ref<const Eigen::VectorXd> &x,
+                    const Eigen::Ref<const Eigen::VectorXd> &u) override;
+
+  virtual void calc(Eigen::Ref<Eigen::VectorXd> r,
+                    const Eigen::Ref<const Eigen::VectorXd> &x) override;
+
+  virtual void calcDiff(Eigen::Ref<Eigen::VectorXd> Lx,
+                        Eigen::Ref<Eigen::VectorXd> Lu,
+                        Eigen::Ref<Eigen::MatrixXd> Lxx,
+                        Eigen::Ref<Eigen::MatrixXd> Luu,
+                        Eigen::Ref<Eigen::MatrixXd> Lxu,
+                        const Eigen::Ref<const Eigen::VectorXd> &x,
+                        const Eigen::Ref<const Eigen::VectorXd> &u) override;
+
+  virtual void calcDiff(Eigen::Ref<Eigen::VectorXd> Lx,
+                        Eigen::Ref<Eigen::MatrixXd> Lxx,
+                        const Eigen::Ref<const Eigen::VectorXd> &x) override;
+};
+
+
+
 
 struct Contour_cost_alpha_u : Cost {
 
@@ -829,6 +901,6 @@ std::vector<ReportCost>
 get_report(ptr<ActionModelQ> p,
            std::function<void(ptr<Cost>, Eigen::Ref<Eigen::VectorXd>)> fun);
 
-double max_rollout_error(ptr<Dynamics> dyn,
-                         const std::vector<Eigen::VectorXd> &xs,
-                         const std::vector<Eigen::VectorXd> &us);
+
+
+
