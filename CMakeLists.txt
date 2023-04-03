@@ -14,7 +14,7 @@ project(kinodynamic-motion-planning-benchmark)
 
 find_package(crocoddyl REQUIRED)
 find_package(pinocchio REQUIRED)
-find_package(Boost  REQUIRED COMPONENTS program_options unit_test_framework)
+find_package(Boost  REQUIRED COMPONENTS program_options unit_test_framework serialization)
 
 find_package(Eigen3 REQUIRED)
 find_package(PkgConfig)
@@ -47,7 +47,7 @@ set(CMAKE_CXX_FLAGS  "${CMAKE_CXX_FLAGS} -Wall -Wextra")
 add_subdirectory(deps/fcl EXCLUDE_FROM_ALL)
 add_subdirectory(deps/sbpl)# EXCLUDE_FROM_ALL)
 add_subdirectory(deps/ompl EXCLUDE_FROM_ALL)
-add_subdirectory(deps/rai EXCLUDE_FROM_ALL)
+# add_subdirectory(deps/rai EXCLUDE_FROM_ALL)
 
 # external projects
 # include(ExternalProject)
@@ -63,16 +63,16 @@ include_directories(
   ${CMAKE_SOURCE_DIR}/deps/libMultiRobotPlanning/include
   ${CMAKE_SOURCE_DIR}/deps/ompl/src
   ${CMAKE_BINARY_DIR}/deps/ompl/src
-  ${CMAKE_SOURCE_DIR}/deps/rai/rai
 )
 
 add_library(motion_planning_common
   src/robots.cpp
-  src/collision_checker.cpp
 )
 
 add_library(robot_models
+  src/robot_models_base.cpp
   src/robot_models.cpp
+  src/motions.cpp
 )
 
 
@@ -87,7 +87,7 @@ add_library(dbastar
 )
 
 
-# add_library(ompl_geometric
+# add_library(ompl_geo
 #   src/ompl_geo.cpp
 # )
 #
@@ -221,12 +221,12 @@ target_link_libraries(test_ompl_sst
 
 
 
-## main_ompl_geometric
-add_executable(main_ompl_geometric
-  src/main_ompl_geometric.cpp
+## main_ompl_geo
+add_executable(main_ompl_geo
+  src/main_ompl_geo.cpp
   src/ompl_geo.cpp
 )
-target_include_directories(main_ompl_geometric
+target_include_directories(main_ompl_geo
   PRIVATE ${CMAKE_BINARY_DIR}/deps/fcl/include
   PRIVATE ${CMAKE_SOURCE_DIR}/deps/fcl/include
   PRIVATE ${CROCODDYL_INCLUDE_DIRS}
@@ -234,7 +234,7 @@ target_include_directories(main_ompl_geometric
 
 
 
-target_link_libraries(main_ompl_geometric
+target_link_libraries(main_ompl_geo
   motion_planning_common
   robot_models
   croco_ocp 
@@ -280,9 +280,9 @@ add_executable(main_dbastar
   src/main_dbastar.cpp
 )
 
-add_executable(evaluate_nn
-  src/evaluate_nn.cpp
-)
+# add_executable(evaluate_nn
+#   src/evaluate_nn.cpp
+# )
 
 add_executable(test_croco
   src/test_croco.cpp 
@@ -293,8 +293,8 @@ add_executable(test_db
 )
 
 
-add_executable(test_ompl_geometric
-  src/test_ompl_geometric.cpp 
+add_executable(test_ompl_geo
+  src/test_ompl_geo.cpp 
   src/ompl_geo.cpp
 )
 
@@ -305,6 +305,15 @@ add_executable(croco_main
   src/croco_main.cpp 
 )
 
+add_executable(main_primitives
+  src/main_primitives.cpp 
+  src/generate_primitives.cpp 
+)
+
+add_executable(test_primitives
+  src/test_primitives.cpp 
+  src/generate_primitives.cpp 
+)
 
 
 ## TODO: add the graph as another file!
@@ -323,7 +332,7 @@ target_include_directories(test_db
   PRIVATE ${CMAKE_SOURCE_DIR}/deps/fcl/include
 )
 
-target_include_directories(test_ompl_geometric
+target_include_directories(test_ompl_geo
   PRIVATE ${CMAKE_BINARY_DIR}/deps/fcl/include
   PRIVATE ${CMAKE_SOURCE_DIR}/deps/fcl/include
   PRIVATE ${CMAKE_SOURCE_DIR}/deps/fcl/include
@@ -392,8 +401,8 @@ target_link_libraries(test_db
   yaml-cpp
 )
 
-target_link_libraries(test_ompl_geometric
-  # ompl_geometric
+target_link_libraries(test_ompl_geo
+  # ompl_geo
   motion_planning_common
   robot_models
   croco_ocp
@@ -411,7 +420,12 @@ ${CROCODDYL_INCLUDE_DIRS}
 target_include_directories(croco_ocp PRIVATE ${CROCODDYL_INCLUDE_DIRS})
 target_include_directories(test_croco PRIVATE ${CROCODDYL_INCLUDE_DIRS})
 target_include_directories(dev_manifold PRIVATE ${CROCODDYL_INCLUDE_DIRS} ${PINOCCHIO_INCLUDE_DIRS})
+
+
+
 target_include_directories(croco_main PRIVATE ${CROCODDYL_INCLUDE_DIRS})
+target_include_directories(main_primitives PRIVATE ${CROCODDYL_INCLUDE_DIRS})
+target_include_directories(test_primitives PRIVATE ${CROCODDYL_INCLUDE_DIRS})
 
 
 
@@ -447,7 +461,27 @@ ${Boost_LIBRARIES}
   yaml-cpp
 )
 
+target_link_libraries(main_primitives
+  croco_ocp
+  robot_models
+  # motion_planning_common
+${CROCODDYL_LIBRARIES} 
+${Boost_LIBRARIES}
+  ompl
+  fcl
+  yaml-cpp
+)
 
+target_link_libraries(test_primitives
+  croco_ocp
+  robot_models
+  # motion_planning_common
+${CROCODDYL_LIBRARIES} 
+${Boost_LIBRARIES}
+  ompl
+  fcl
+  yaml-cpp
+)
 
 target_link_libraries(main_check_robot
   robot_models
@@ -461,43 +495,24 @@ ${Boost_LIBRARIES}
 
 
 
-target_include_directories(evaluate_nn
-  PRIVATE ${CMAKE_BINARY_DIR}/deps/fcl/include
-  PRIVATE ${CMAKE_SOURCE_DIR}/deps/fcl/include
-)
+# target_include_directories(evaluate_nn
+#   PRIVATE ${CMAKE_BINARY_DIR}/deps/fcl/include
+#   PRIVATE ${CMAKE_SOURCE_DIR}/deps/fcl/include
+# )
 
-target_link_libraries(evaluate_nn
-  motion_planning_common
-  robot_models
-  ${Boost_LIBRARIES}
-  ${LZ4_LIBRARIES}
-  ompl
-  fcl
-  yaml-cpp
-)
+# target_link_libraries(evaluate_nn
+#   motion_planning_common
+#   robot_models
+#   ${Boost_LIBRARIES}
+#   ${LZ4_LIBRARIES}
+#   ompl
+#   fcl
+#   yaml-cpp
+# )
 
 
 
-## main_rai
-add_executable(main_rai
-  src/main_rai.cpp
-  src/rai/car_utils.cpp
-  src/rai/unicycle.cpp
-  src/rai/trailer.cpp
-  src/rai/quadrotor.cpp
-)
-target_link_libraries(main_rai
-  rai
-  yaml-cpp
-)
 
-## kinedit
-add_executable(kinedit
-  deps/rai/bin/src_kinEdit/main.cpp
-)
-target_link_libraries(kinedit
-  rai
-)
 
 # Python bindings
 add_subdirectory(deps/pybind11 EXCLUDE_FROM_ALL)
