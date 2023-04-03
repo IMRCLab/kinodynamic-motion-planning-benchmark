@@ -1,0 +1,18 @@
+default:
+  solver_id: 1
+  dummy: 0
+  bu: 0
+
+# you can set parameters per dynamial system
+unicycle1_v0:
+  default:
+    dummy: 2
+    bu: 1
+
+  # And also per problem
+  parallelpark:
+    dummy: 3
+    buu: 2
+
+
+
