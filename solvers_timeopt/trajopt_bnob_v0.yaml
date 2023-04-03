@@ -1,0 +1,10 @@
+name: "trajopt_bnob_v0"
+solver_id: 12 
+control_bounds: true
+use_warmstart: true
+# weight_goal: 150
+weight_goal: 200
+max_iter: 1000 
+noise_level: 1e-4
+smooth_traj: true
+ref_x0: true

@@ -1,0 +1,4 @@
+problem_name: "quad2d_recovery_good_guess"
+env_file: "../benchmark/quad2d/quad_obs_recovery.yaml"
+init_guess: "../test/quad2d/quad2d_recovery_good_init_guess.yaml"
+new_format: false

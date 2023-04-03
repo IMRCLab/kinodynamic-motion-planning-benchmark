@@ -4,7 +4,7 @@ control_bounds: true
 use_warmstart: true
 weight_goal: 50
 smooth_traj: true
-max_iter: 15 
+max_iter: 20 
 window_optimize: 50
 window_shift: 30  
 shift_repeat: false

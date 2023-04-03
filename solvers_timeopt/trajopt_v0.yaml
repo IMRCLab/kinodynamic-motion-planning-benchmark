@@ -1,0 +1,7 @@
+solver_name: "trajopt_v0"
+solver_id: 0
+control_bounds: true
+use_warmstart: true
+weight_goal: 100. 
+max_iter: 400 
+noise_level: 1e-6

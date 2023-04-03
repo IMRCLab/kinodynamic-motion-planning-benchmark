@@ -67,19 +67,24 @@ solvers = [
     "mpc_v0.yaml",
     "freetime_v0.yaml",
     "mpcc_v0.yaml",
-    "bsearch_v0.yaml"
+    "bsearch_v0.yaml",
+    "trajopt_v0.yaml"
 ]
+
 problems = [
     # "bug_1_bad.yaml",
     # "bug_1_good.yaml",
     # "bug_1_very_good.yaml",
     # "park_1_very_good.yaml",
     # "park_1_bad.yaml",
-    # "kink_1_good.yaml"
+    # "kink_1_good.yaml",
     # "bug_2.yaml",
     # "kink_2.yaml",
     # "bug_trailer.yaml"
-    "quad2d_obs.yaml"
+    "quad2d_obs.yaml",
+    # "quad2d_recovery_very_easy.yaml",
+    # "quad2d_recovery.yaml"
+    # "quad2d_recovery_good_guess.yaml"
 ]
 
 # Continue HERE!!
@@ -153,7 +158,7 @@ for file in out_files:
             data = yaml.safe_load(f)
             datas.append(data)
     except:
-        print("error while loading the file")
+        print(f"error while loading the file:{file}" )
 
 
 if write_csv_files:
@@ -197,3 +202,9 @@ for y in ["feasible", "cost", "time_total"]:
     plt.xticks(range(len(problems_dict)), problems_dict.keys(), rotation=45)
 
     plt.show()
+
+
+
+
+    
+
