@@ -507,9 +507,6 @@ struct Min_time_linear : Cost {
                         const Eigen::Ref<const Eigen::VectorXd> &x) override;
 };
 
-
-
-
 struct Contour_cost_alpha_u : Cost {
 
   double k = 1.5; // bigger than 0
@@ -900,7 +897,3 @@ create_dynamics(std::shared_ptr<Model_robot> model_robot,
 std::vector<ReportCost>
 get_report(ptr<ActionModelQ> p,
            std::function<void(ptr<Cost>, Eigen::Ref<Eigen::VectorXd>)> fun);
-
-
-
-

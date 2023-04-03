@@ -77,12 +77,9 @@ int main(int argc, const char *argv[]) {
 
   Result_opti result;
   crocoddyl::Timer timer;
-  accumulated_time = 0.;
-
-  trajectory_optimization(problem, traj_init, options_trajopt, traj_out, result);
-
+  trajectory_optimization(problem, traj_init, options_trajopt, traj_out,
+                          result);
   double d = timer.get_duration();
-  std::cout << STR_(accumulated_time) << std::endl;
 
   std::cout << "Result summary " << std::endl;
   std::cout << STR_(result.feasible) << std::endl;
@@ -103,7 +100,6 @@ int main(int argc, const char *argv[]) {
   ff << "problem_name: " << problem.name << std::endl;
   ff << "feasible: " << result.feasible << std::endl;
   ff << "cost: " << result.cost << std::endl;
-  ff << "time_solve: " << accumulated_time << std::endl;
   ff << "time_total: " << d << std::endl;
   ff << "time_stamp: " << get_time_stamp() << std::endl;
   ff << "solver_file: " << yaml_solver_file << std::endl;

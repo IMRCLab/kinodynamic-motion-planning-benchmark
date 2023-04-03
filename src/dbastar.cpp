@@ -21,10 +21,8 @@
 #include <ompl/datastructures/NearestNeighborsGNATNoThreadSafety.h>
 #include <ompl/datastructures/NearestNeighborsSqrtApprox.h>
 
-#include "fclHelper.hpp"
-#include "fclStateValidityChecker.hpp"
+#include "motions.hpp"
 #include "ompl/base/ScopedState.h"
-#include "robotStatePropagator.hpp"
 #include "robot_models.hpp"
 #include "robots.h"
 
@@ -823,7 +821,62 @@ double heuristicCollisionsTree(ompl::NearestNeighbors<HeuNode *> *T_heu,
 #define NAMEOF(variable) #variable
 #define VAR_WITH_NAME(variable) variable, #variable
 
-void Options_db::add_options(po::options_description &desc) {
+struct Loader {
+
+  bool use_boost = true; // boost (true) or yaml (false)
+  void *source = nullptr;
+
+  template <typename T> void set(T &x, const char *name) {
+
+    if (use_boost) {
+      po::options_description *p =
+          static_cast<po::options_description *>(source);
+      CHECK(p, AT);
+      set_from_boostop(*p, x, name);
+    } else {
+      YAML::Node *p = static_cast<YAML::Node *>(source);
+      CHECK(p, AT);
+      set_from_yaml(*p, x, name);
+    }
+  }
+};
+
+// TODO: how to unify: write form boost and write from yaml?
+void Options_dbastar::__load_data(void *source, bool boost) {
+
+  Loader loader;
+  loader.use_boost = boost;
+  loader.source = source;
+
+  loader.set(VAR_WITH_NAME(delta));
+  loader.set(VAR_WITH_NAME(epsilon));
+  loader.set(VAR_WITH_NAME(alpha));
+  loader.set(VAR_WITH_NAME(filterDuplicates));
+  loader.set(VAR_WITH_NAME(maxCost));
+  loader.set(VAR_WITH_NAME(heuristic));
+  loader.set(VAR_WITH_NAME(max_motions));
+  loader.set(VAR_WITH_NAME(resolution));
+  loader.set(VAR_WITH_NAME(delta_factor_goal));
+  loader.set(VAR_WITH_NAME(cost_delta_factor));
+  loader.set(VAR_WITH_NAME(rebuild_every));
+  loader.set(VAR_WITH_NAME(num_sample_trials));
+  loader.set(VAR_WITH_NAME(max_expands));
+  loader.set(VAR_WITH_NAME(cut_actions));
+  loader.set(VAR_WITH_NAME(duplicate_detection_int));
+  loader.set(VAR_WITH_NAME(use_landmarks));
+  loader.set(VAR_WITH_NAME(factor_duplicate_detection));
+  loader.set(VAR_WITH_NAME(epsilon_soft_duplicate));
+  loader.set(VAR_WITH_NAME(add_node_if_better));
+  loader.set(VAR_WITH_NAME(debug));
+  loader.set(VAR_WITH_NAME(add_after_expand));
+  loader.set(VAR_WITH_NAME(motionsFile));
+  loader.set(VAR_WITH_NAME(outFile));
+  loader.set(VAR_WITH_NAME(search_timelimit));
+}
+
+void Options_dbastar::add_options(po::options_description &desc) {
+  __load_data(&desc, true);
+#if 0 
   set_from_boostop(desc, VAR_WITH_NAME(delta));
   set_from_boostop(desc, VAR_WITH_NAME(epsilon));
   set_from_boostop(desc, VAR_WITH_NAME(alpha));
@@ -847,12 +900,12 @@ void Options_db::add_options(po::options_description &desc) {
   set_from_boostop(desc, VAR_WITH_NAME(add_after_expand));
   set_from_boostop(desc, VAR_WITH_NAME(motionsFile));
   set_from_boostop(desc, VAR_WITH_NAME(outFile));
+  set_from_boostop(desc, VAR_WITH_NAME(search_timelimit));
+#endif
 }
 
-void Options_db::print(std::ostream &out) {
-
-  std::string be = "";
-  std::string af = ": ";
+void Options_dbastar::print(std::ostream &out, const std::string &be,
+                            const std::string &af) const {
 
   out << be << STR(delta, af) << std::endl;
   out << be << STR(epsilon, af) << std::endl;
@@ -877,16 +930,28 @@ void Options_db::print(std::ostream &out) {
   out << be << STR(add_after_expand, af) << std::endl;
   out << be << STR(motionsFile, af) << std::endl;
   out << be << STR(outFile, af) << std::endl;
+  out << be << STR(search_timelimit, af) << std::endl;
 }
 
-void Options_db::read_from_yaml(const char *file) {
+void Options_dbastar::read_from_yaml(const char *file) {
   std::cout << "loading file: " << file << std::endl;
   YAML::Node node = YAML::LoadFile(file);
   read_from_yaml(node);
 }
 
-void Options_db::read_from_yaml(YAML::Node &node) {
+void Options_dbastar::read_from_yaml(YAML::Node &node) {
 
+  if (node["options_dbastar"]) {
+    __read_from_node(node["options_dbastar"]);
+  } else {
+    __read_from_node(node);
+  }
+}
+void Options_dbastar::__read_from_node(const YAML::Node &node) {
+
+  __load_data(&const_cast<YAML::Node &>(node), false);
+
+#if 0
   set_from_yaml(node, VAR_WITH_NAME(delta));
   set_from_yaml(node, VAR_WITH_NAME(epsilon));
   set_from_yaml(node, VAR_WITH_NAME(alpha));
@@ -910,6 +975,8 @@ void Options_db::read_from_yaml(YAML::Node &node) {
   set_from_yaml(node, VAR_WITH_NAME(add_after_expand));
   set_from_yaml(node, VAR_WITH_NAME(motionsFile));
   set_from_yaml(node, VAR_WITH_NAME(outFile));
+  set_from_yaml(node, VAR_WITH_NAME(search_timelimit));
+#endif
 }
 
 void Time_benchmark::write(std::ostream &out) {
@@ -973,6 +1040,89 @@ void Time_benchmark::write(std::ostream &out) {
 //   bpcm_env->registerObjects(obstacles);
 //   bpcm_env->setup();
 // }
+
+void compute_col_shape(Motion &m, RobotOmpl &robot) {
+  Eigen::VectorXd x(robot.diff_model->nx);
+  for (auto &state : m.states) {
+    robot.toEigen(state, x);
+    auto &ts_data = robot.diff_model->ts_data;
+    auto &col_geo = robot.diff_model->collision_geometries;
+    robot.diff_model->transformation_collision_geometries(x, ts_data);
+
+    for (size_t i = 0; i < ts_data.size(); i++) {
+      auto &transform = ts_data.at(i);
+      auto co = new fcl::CollisionObjectd(col_geo.at(i));
+      co->setTranslation(transform.translation());
+      co->setRotation(transform.rotation());
+      co->computeAABB();
+      m.collision_objects.push_back(co);
+    }
+  }
+
+  m.collision_manager.reset(
+      new ShiftableDynamicAABBTreeCollisionManager<double>());
+  m.collision_manager->registerObjects(m.collision_objects);
+};
+
+void traj_to_motion(const Trajectory &traj, RobotOmpl &robot,
+                    Motion &motion_out) {
+
+  auto si = robot.getSpaceInformation();
+
+  std::transform(traj.states.begin(), traj.states.end(),
+                 motion_out.states.begin(), [&](auto &x) {
+                   ob::State *state = si->allocState();
+                   robot.fromEigen(state, x);
+                   return state;
+                 });
+  std::transform(traj.actions.begin(), traj.actions.end(),
+                 motion_out.actions.begin(), [&](auto &a) {
+                   oc::Control *action = si->allocControl();
+                   control_from_eigen(a, si, action);
+                   return action;
+                 });
+
+  compute_col_shape(motion_out, robot);
+  motion_out.cost = traj.cost;
+}
+
+//
+//
+// new!
+void load_motion_primitives_new(const std::string &motionsFile,
+                                RobotOmpl &robot, std::vector<Motion> &motions,
+                                int max_motions, bool cut_actions,
+                                bool shuffle) {
+
+  Trajectories trajs;
+
+  trajs.load_file_boost(motionsFile.c_str());
+
+  if (max_motions < trajs.data.size())
+    trajs.data.resize(max_motions);
+
+  motions.resize(trajs.data.size());
+
+  std::transform(trajs.data.begin(), trajs.data.end(), motions.begin(),
+                 [&](const auto &traj) {
+                   Motion m;
+                   traj_to_motion(traj, robot, m);
+                   return m;
+                 });
+
+  if (cut_actions) {
+    NOT_IMPLEMENTED;
+  }
+
+  if (shuffle) {
+    std::shuffle(std::begin(motions), std::end(motions),
+                 std::default_random_engine{});
+  }
+
+  for (size_t idx = 0; idx < motions.size(); ++idx) {
+    motions[idx].idx = idx;
+  }
+}
 
 void load_motion_primitives(const std::string &motionsFile, RobotOmpl &robot,
                             std::vector<Motion> &motions, int max_motions,
@@ -1050,11 +1200,12 @@ void load_motion_primitives(const std::string &motionsFile, RobotOmpl &robot,
 
           si->getStateSpace()->copyFromReals(state, reals);
           m.states.push_back(state);
-          // TODO: add and code check the primitive!! -- then skip the position
-          // bounds
+          // TODO: add and code check the primitive!! -- then skip the
+          // position bounds
           //
           //
-          // if (!robot.getSpaceInformation()->satisfiesBounds(m.states.back()))
+          // if
+          // (!robot.getSpaceInformation()->satisfiesBounds(m.states.back()))
           // {
           //   std::cout << "Warning invalid state" << std::endl;
           //   si->printState(m.states.back());
@@ -1093,26 +1244,7 @@ void load_motion_primitives(const std::string &motionsFile, RobotOmpl &robot,
     m.idx = motions.size();
     // m.name = motion["name"].as<std::string>();
 
-    Eigen::VectorXd x(robot.diff_model->nx);
-    for (auto &state : m.states) {
-      robot.toEigen(state, x);
-      auto &ts_data = robot.diff_model->ts_data;
-      auto &col_geo = robot.diff_model->collision_geometries;
-      robot.diff_model->transformation_collision_geometries(x, ts_data);
-
-      for (size_t i = 0; i < ts_data.size(); i++) {
-        auto &transform = ts_data.at(i);
-        auto co = new fcl::CollisionObjectd(col_geo.at(i));
-        co->setTranslation(transform.translation());
-        co->setRotation(transform.rotation());
-        co->computeAABB();
-        m.collision_objects.push_back(co);
-      }
-    }
-
-    m.collision_manager.reset(
-        new ShiftableDynamicAABBTreeCollisionManager<double>());
-    m.collision_manager->registerObjects(m.collision_objects);
+    compute_col_shape(m, robot);
 
     m.disabled = false;
     if (good)
@@ -1289,11 +1421,13 @@ void add_landmarks(ompl::NearestNeighbors<AStarNode *> *T_landmarks,
 }
 
 // continue here: cost lower bound for the quadcopter
-void dbastar(const Problem &problem, Options_db &options_db, Trajectory &traj_out,
-           Out_info_db &out_info_db) {
+void dbastar(const Problem &problem, const Options_dbastar &options_dbastar,
+             Trajectory &traj_out, Out_info_db &out_info_db) {
 
-  std::cout << "*** options_db ***" << std::endl;
-  options_db.print(std::cout);
+  Options_dbastar options_dbastar_local = options_dbastar;
+
+  std::cout << "*** options_dbastar_local ***" << std::endl;
+  options_dbastar_local.print(std::cout);
   std::cout << "***" << std::endl;
   std::cout << "*** inout_db ***" << std::endl;
   std::cout << "***" << std::endl;
@@ -1306,8 +1440,8 @@ void dbastar(const Problem &problem, Options_db &options_db, Trajectory &traj_ou
 
   Time_benchmark time_bench;
 
-  Duplicate_detection duplicate_detection =
-      static_cast<Duplicate_detection>(options_db.duplicate_detection_int);
+  Duplicate_detection duplicate_detection = static_cast<Duplicate_detection>(
+      options_dbastar_local.duplicate_detection_int);
 
   std::shared_ptr<RobotOmpl> robot = robot_factory_ompl(problem);
 
@@ -1320,8 +1454,19 @@ void dbastar(const Problem &problem, Options_db &options_db, Trajectory &traj_ou
   auto goalState = robot->goalState;
 
   std::vector<Motion> motions;
-  load_motion_primitives(options_db.motionsFile, *robot, motions,
-                         options_db.max_motions, options_db.cut_actions, true);
+  if (options_dbastar_local.motions_ptr) {
+    std::cout << "motions have alredy loaded " << std::endl;
+    motions = *options_dbastar_local.motions_ptr;
+    if (options_dbastar_local.max_motions < motions.size())
+      motions.resize(options_dbastar_local.max_motions);
+
+  } else {
+    std::cout << "loading motions ... " << std::endl;
+    load_motion_primitives(options_dbastar_local.motionsFile, *robot, motions,
+                           options_dbastar_local.max_motions,
+                           options_dbastar_local.cut_actions, true);
+  }
+
   std::cout << "There are " << motions.size() << " motions!" << std::endl;
 
   // build kd-tree for motion primitives
@@ -1347,29 +1492,30 @@ void dbastar(const Problem &problem, Options_db &options_db, Trajectory &traj_ou
     time_bench.time_nearestMotion += out.second;
   }
 
-  if (options_db.alpha <= 0 || options_db.alpha >= 1) {
+  if (options_dbastar_local.alpha <= 0 || options_dbastar_local.alpha >= 1) {
     ERROR_WITH_INFO("Alpha needs to be between 0 and 1!");
   }
 
-  if (options_db.delta < 0) {
-    options_db.delta =
-        automatic_delta(options_db.delta, options_db.alpha, *robot, *T_m);
+  if (options_dbastar_local.delta < 0) {
+    options_dbastar_local.delta = automatic_delta(
+        options_dbastar_local.delta, options_dbastar_local.alpha, *robot, *T_m);
   }
 
-  if (options_db.filterDuplicates) {
-    filte_duplicates(motions, options_db.delta, options_db.alpha, *robot, *T_m);
+  if (options_dbastar_local.filterDuplicates) {
+    filte_duplicates(motions, options_dbastar_local.delta,
+                     options_dbastar_local.alpha, *robot, *T_m);
   }
 
   std::shared_ptr<Heu_fun> h_fun;
 
-  switch (options_db.heuristic) {
+  switch (options_dbastar_local.heuristic) {
   case 0: {
     h_fun = std::make_shared<Heu_euclidean>(robot, robot->goalState);
   } break;
   case 1: {
-    h_fun = std::make_shared<Heu_roadmap>(robot, options_db.num_sample_trials,
-                                          robot->startState, robot->goalState,
-                                          options_db.resolution);
+    h_fun = std::make_shared<Heu_roadmap>(
+        robot, options_dbastar_local.num_sample_trials, robot->startState,
+        robot->goalState, options_dbastar_local.resolution);
   } break;
   case -1: {
     h_fun = std::make_shared<Heu_blind>();
@@ -1404,7 +1550,7 @@ void dbastar(const Problem &problem, Options_db &options_db, Trajectory &traj_ou
 
   double hstart = h_fun->h(robot->startState);
 
-  start_node->fScore = options_db.epsilon * hstart;
+  start_node->fScore = options_dbastar_local.epsilon * hstart;
   start_node->hScore = start_node->fScore;
 
   std::cout << "start_node heuristic g: " << start_node->gScore
@@ -1441,10 +1587,11 @@ void dbastar(const Problem &problem, Options_db &options_db, Trajectory &traj_ou
   // size_t expands = 0;
   // clock start
 
-  if (options_db.use_landmarks) {
+  if (options_dbastar_local.use_landmarks) {
 
     T_landmarks = new ompl::NearestNeighborsGNATNoThreadSafety<AStarNode *>();
-    add_landmarks(T_landmarks, ptrs, robot, options_db.num_sample_trials);
+    add_landmarks(T_landmarks, ptrs, robot,
+                  options_dbastar_local.num_sample_trials);
     T_n = T_landmarks;
   }
 
@@ -1478,17 +1625,19 @@ void dbastar(const Problem &problem, Options_db &options_db, Trajectory &traj_ou
   bool print_queue = false;
   int print_every = 100;
 
-  if (options_db.add_node_if_better) {
+  if (options_dbastar_local.add_node_if_better) {
     // didn't check if this works togehter
-    CHECK_EQ(options_db.duplicate_detection_int,
+    CHECK_EQ(options_dbastar_local.duplicate_detection_int,
              static_cast<int>(Duplicate_detection::NO), AT);
   }
 
-  double radius = options_db.delta * (1. - options_db.alpha);
+  double radius =
+      options_dbastar_local.delta * (1. - options_dbastar_local.alpha);
 
   auto nearest_motion_timed = [&](auto &fakeMotion, auto &neighbors_m) {
     auto out = timed_fun([&] {
-      T_m->nearestR(&fakeMotion, options_db.delta * options_db.alpha,
+      T_m->nearestR(&fakeMotion,
+                    options_dbastar_local.delta * options_dbastar_local.alpha,
                     neighbors_m);
       return 0;
     });
@@ -1533,8 +1682,9 @@ void dbastar(const Problem &problem, Options_db &options_db, Trajectory &traj_ou
     time_bench.time_nearestNode_add += out.second;
   };
 
-  if (!options_db.use_landmarks && !options_db.add_after_expand) {
-    if (options_db.debug) {
+  if (!options_dbastar_local.use_landmarks &&
+      !options_dbastar_local.add_after_expand) {
+    if (options_dbastar_local.debug) {
       std::vector<double> _state;
       si->getStateSpace()->copyToReals(_state, start_node->state);
       _states_debug.push_back(_state);
@@ -1542,8 +1692,8 @@ void dbastar(const Problem &problem, Options_db &options_db, Trajectory &traj_ou
     add_state_timed(start_node);
   }
 
-  if (options_db.add_after_expand) {
-    CHECK(!options_db.add_node_if_better, AT);
+  if (options_dbastar_local.add_after_expand) {
+    CHECK(!options_dbastar_local.add_node_if_better, AT);
   }
 
   // std::cout << "MOTIONS" << std::endl;
@@ -1560,15 +1710,31 @@ void dbastar(const Problem &problem, Options_db &options_db, Trajectory &traj_ou
 
   static_cast<ompl::NearestNeighborsGNATNoThreadSafety<AStarNode *> *>(T_n)
       ->rebuildSize_ = 1e8;
+
+  auto start = std::chrono::steady_clock::now();
+
+  auto get_time_stamp_ms = [&] {
+    return static_cast<double>(
+        std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now() - start)
+            .count());
+  };
+
   while (true) {
 
-    if (static_cast<size_t>(time_bench.expands) >= options_db.max_expands) {
+    if (static_cast<size_t>(time_bench.expands) >=
+        options_dbastar_local.max_expands) {
       status = Terminate_status::MAX_EXPANDS;
       break;
     }
 
     if (open.empty()) {
       status = Terminate_status::EMPTY_QUEUE;
+      break;
+    }
+
+    if (get_time_stamp_ms() > options_dbastar_local.search_timelimit) {
+      status = Terminate_status::MAX_TIME;
       break;
     }
 
@@ -1595,7 +1761,7 @@ void dbastar(const Problem &problem, Options_db &options_db, Trajectory &traj_ou
     expanded.push_back(current->state);
     ++time_bench.expands;
 
-    if (options_db.add_after_expand) {
+    if (options_dbastar_local.add_after_expand) {
       // i have to check if state is novel
 
       std::vector<AStarNode *> neighbors_n;
@@ -1616,8 +1782,8 @@ void dbastar(const Problem &problem, Options_db &options_db, Trajectory &traj_ou
                 << std::endl;
     }
 
-    if (time_bench.expands % options_db.rebuild_every == 0 &&
-        !options_db.use_landmarks) {
+    if (time_bench.expands % options_dbastar_local.rebuild_every == 0 &&
+        !options_dbastar_local.use_landmarks) {
 
       auto out = timed_fun([&] {
         auto p_derived = static_cast<
@@ -1630,7 +1796,7 @@ void dbastar(const Problem &problem, Options_db &options_db, Trajectory &traj_ou
       time_bench.time_nearestNode_add += out.second;
     }
 
-    if (options_db.heuristic == 0) {
+    if (options_dbastar_local.heuristic == 0) {
 
       if (current->fScore < last_f_score) {
         std::cout << "expand: " << time_bench.expands << " state: ";
@@ -1644,7 +1810,7 @@ void dbastar(const Problem &problem, Options_db &options_db, Trajectory &traj_ou
     // si->printState(current->state);
     // si->printState(goalState);
     if (si->distance(current->state, goalState) <=
-        options_db.delta_factor_goal * options_db.delta) {
+        options_dbastar_local.delta_factor_goal * options_dbastar_local.delta) {
       solution = current;
       std::cout << "current state is " << std::endl;
       printState(std::cout, si, current->state);
@@ -1712,14 +1878,14 @@ void dbastar(const Problem &problem, Options_db &options_db, Trajectory &traj_ou
       if (robot->isTranslationInvariant()) {
         robot->setPosition(tmpState2, current_pos);
       }
-      tentative_gScore += options_db.cost_delta_factor *
+      tentative_gScore += options_dbastar_local.cost_delta_factor *
                           robot->cost_lower_bound(tmpState2, current->state);
       double tentative_hScore = h_fun->h(tmpState);
 
       double tentative_fScore =
-          tentative_gScore + options_db.epsilon * tentative_hScore;
+          tentative_gScore + options_dbastar_local.epsilon * tentative_hScore;
 
-      if (tentative_fScore > options_db.maxCost) {
+      if (tentative_fScore > options_dbastar_local.maxCost) {
         continue;
       }
 
@@ -1733,7 +1899,7 @@ void dbastar(const Problem &problem, Options_db &options_db, Trajectory &traj_ou
 
       query_n->state = tmpState;
 
-      if (options_db.debug) {
+      if (options_dbastar_local.debug) {
 
         std::vector<double> _state;
         si->getStateSpace()->copyToReals(_state, query_n->state);
@@ -1756,11 +1922,11 @@ void dbastar(const Problem &problem, Options_db &options_db, Trajectory &traj_ou
         expansions.push_back(motion_v);
       }
 
-      if (!options_db.add_after_expand) {
+      if (!options_dbastar_local.add_after_expand) {
 
         nearestR_state_timed(query_n, neighbors_n);
 
-        if (neighbors_n.size() == 0 && !options_db.use_landmarks) {
+        if (neighbors_n.size() == 0 && !options_dbastar_local.use_landmarks) {
 
           bool add_node = true;
 
@@ -1769,7 +1935,8 @@ void dbastar(const Problem &problem, Options_db &options_db, Trajectory &traj_ou
 
             std::vector<AStarNode *> neighbors_n2;
             T_n->nearestR(query_n,
-                          options_db.factor_duplicate_detection * radius,
+                          options_dbastar_local.factor_duplicate_detection *
+                              radius,
                           neighbors_n2);
 
             if (neighbors_n2.size()) {
@@ -1788,7 +1955,8 @@ void dbastar(const Problem &problem, Options_db &options_db, Trajectory &traj_ou
                 }
 
                 if (!is_best) {
-                  tentative_hScore *= options_db.epsilon_soft_duplicate;
+                  tentative_hScore *=
+                      options_dbastar_local.epsilon_soft_duplicate;
                   tentative_fScore = tentative_hScore + tentative_gScore;
                 }
               }
@@ -1816,16 +1984,17 @@ void dbastar(const Problem &problem, Options_db &options_db, Trajectory &traj_ou
           bool added = false;
           for (AStarNode *entry : neighbors_n) {
 
-            if (options_db.debug) {
+            if (options_dbastar_local.debug) {
               std::vector<double> landmark_;
               si->getStateSpace()->copyToReals(landmark_, entry->state);
               found_nn.push_back(landmark_);
             }
 
             // AStarNode* entry = nearest;
-            assert(si->distance(entry->state, tmpState) <= options_db.delta);
+            assert(si->distance(entry->state, tmpState) <=
+                   options_dbastar_local.delta);
             double extra_time_to_reach =
-                options_db.cost_delta_factor *
+                options_dbastar_local.cost_delta_factor *
                 robot->cost_lower_bound(entry->state, tmpState);
             double tentative_gScore_ = tentative_gScore + extra_time_to_reach;
             double delta_score = entry->gScore - tentative_gScore_;
@@ -1834,7 +2003,7 @@ void dbastar(const Problem &problem, Options_db &options_db, Trajectory &traj_ou
 
             if (delta_score > 0) {
 
-              if (options_db.add_node_if_better) {
+              if (options_dbastar_local.add_node_if_better) {
                 if (!entry->valid)
                   continue;
                 if (!added) {
@@ -1871,8 +2040,8 @@ void dbastar(const Problem &problem, Options_db &options_db, Trajectory &traj_ou
                 entry->hScore = h_fun->h(entry->state);
                 // or entry state?
                 // entry->hScore = h_fun->h(tmpState);
-                entry->fScore =
-                    entry->gScore + options_db.epsilon * entry->hScore;
+                entry->fScore = entry->gScore +
+                                options_dbastar_local.epsilon * entry->hScore;
                 assert(entry->fScore >= 0);
                 entry->came_from = current;
                 entry->used_motion = motion->idx;
@@ -1918,9 +2087,10 @@ void dbastar(const Problem &problem, Options_db &options_db, Trajectory &traj_ou
   time_bench.motions_tree_size = T_m->size();
   time_bench.states_tree_size = T_n->size();
 
-  std::cout << "writing output to " << options_db.outFile << std::endl;
+  std::cout << "writing output to " << options_dbastar_local.outFile
+            << std::endl;
 
-  std::ofstream out(options_db.outFile);
+  std::ofstream out(options_dbastar_local.outFile);
   out << "status: " << terminate_status_str[static_cast<int>(status)]
       << std::endl;
 
@@ -1932,12 +2102,12 @@ void dbastar(const Problem &problem, Options_db &options_db, Trajectory &traj_ou
   out << std::endl;
   out << "solved: " << !(!solution) << std::endl;
 
-  options_db.print(out);
+  options_dbastar_local.print(out);
   time_bench.write(out);
 
-  if (options_db.debug) {
+  if (options_dbastar_local.debug) {
 
-    if (options_db.heuristic == 1) {
+    if (options_dbastar_local.heuristic == 1) {
       out << "batch:" << std::endl;
       auto fun_d = static_cast<Heu_roadmap *>(h_fun.get());
       for (auto &x : fun_d->batch_samples) {
@@ -2001,7 +2171,7 @@ void dbastar(const Problem &problem, Options_db &options_db, Trajectory &traj_ou
     out << "cost: " << solution->gScore << std::endl;
 
     double extra_time_weighted =
-        options_db.cost_delta_factor *
+        options_dbastar_local.cost_delta_factor *
         robot->cost_lower_bound(solution->state, goalState);
     std::cout << "extra time " << extra_time_weighted << std::endl;
 
@@ -2070,7 +2240,7 @@ void dbastar(const Problem &problem, Options_db &options_db, Trajectory &traj_ou
 
           out << space6 + "- ";
           Eigen::VectorXd x;
-          state_to_eigen(x, si, state);
+          state_to_eigen(x, si, tmpState);
           traj_out.states.push_back(x);
 
         } else {
@@ -2086,10 +2256,12 @@ void dbastar(const Problem &problem, Options_db &options_db, Trajectory &traj_ou
     }
     out << space6 + "- ";
 
-    std::cout << " time jumps " << time_jumps << std::endl;
-
     // printing the last state
+    Eigen::VectorXd x;
+    state_to_eigen(x, si, tmpState);
+    traj_out.states.push_back(x);
     printState(out, si, result.back()->state);
+    std::cout << " time jumps " << time_jumps << std::endl;
     out << std::endl;
     out << "    actions:" << std::endl;
 
@@ -2152,7 +2324,7 @@ void dbastar(const Problem &problem, Options_db &options_db, Trajectory &traj_ou
         out << space6 + "# delta time " << delta_time << std::endl;
         double delta_i = si->distance(node_state, tmpState);
         out << space6 + "# delta " << delta_i << std::endl;
-        assert(delta_i <= options_db.delta);
+        assert(delta_i <= options_dbastar_local.delta);
       }
 
       out << space6 + "# this is node " << std::endl;
@@ -2210,7 +2382,7 @@ void dbastar(const Problem &problem, Options_db &options_db, Trajectory &traj_ou
             out << space6 + "# delta time " << delta_time << std::endl;
             double delta_i = si->distance(node_state, tmpState);
             out << space6 + "# delta " << delta_i << std::endl;
-            assert(delta_i <= options_db.delta);
+            assert(delta_i <= options_dbastar_local.delta);
           } else {
             cost_with_jumps += dt;
           }
@@ -2240,7 +2412,7 @@ void dbastar(const Problem &problem, Options_db &options_db, Trajectory &traj_ou
       out << space6 + "# delta time " << delta_time << std::endl;
       double delta_i = si->distance(goalState, tmpState);
       std::cout << "delta_i " << delta_i << std::endl;
-      assert(delta_i < options_db.delta);
+      assert(delta_i < options_dbastar_local.delta);
       out << space6 + "# delta " << delta_i << std::endl;
       out << space6 + "# this is goal " << std::endl;
       out << space6 + "# time " << cost_with_jumps << std::endl;

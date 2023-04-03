@@ -390,77 +390,7 @@ void inline rotate_with_q(const Eigen::Ref<const Eigen::Vector4d> &x,
   }
 }
 
-void inline linearInterpolation(const Eigen::VectorXd &times,
-                                const std::vector<Eigen::VectorXd> &x,
-                                double t_query, Eigen::Ref<Eigen::VectorXd> out,
-                                Eigen::Ref<Eigen::VectorXd> Jx) {
 
-  CHECK(x.size(), AT);
-  CHECK_EQ(x.front().size(), out.size(), AT);
-
-  // double num_tolerance = 1e-8;
-  // CHECK_GEQ(t_query + num_tolerance, times.head(1)(0), AT);
-  assert(static_cast<size_t>(times.size()) == static_cast<size_t>(x.size()));
-
-  size_t index = 0;
-  if (t_query < times(0)) {
-    std::cout << "WARNING: " << AT << std::endl;
-    std::cout << "EXTRAPOLATION: " << t_query << " " << times(0) << "  "
-              << t_query - times(0) << std::endl;
-    index = 1;
-  } else if (t_query >= times(times.size() - 1)) {
-    std::cout << "WARNING: " << AT << std::endl;
-    std::cout << "EXTRAPOLATION: " << t_query << " " << times(times.size() - 1)
-              << "  " << t_query - times(times.size() - 1) << std::endl;
-    index = times.size() - 1;
-  } else {
-
-    auto it = std::lower_bound(
-        times.data(), times.data() + times.size(), t_query,
-        [](const auto &it, const auto &value) { return it <= value; });
-
-    index = std::distance(times.data(), it);
-
-    const bool debug_bs = false;
-    if (debug_bs) {
-      size_t index2 = 0;
-      for (size_t i = 0; i < static_cast<size_t>(times.size()); i++) {
-        if (t_query < times(i)) {
-          index2 = i;
-          break;
-        }
-      }
-      CHECK_EQ(index, index2, AT);
-    }
-  }
-
-  double factor =
-      (t_query - times(index - 1)) / (times(index) - times(index - 1));
-
-  // std::cout << "index is " << index << std::endl;
-  // std::cout << "size " << times.size() << std::endl;
-  // std::cout << "factor " << factor << std::endl;
-
-  out = x.at(index - 1) + factor * (x.at(index) - x.at(index - 1));
-  Jx = (x.at(index) - x.at(index - 1)) / (times(index) - times(index - 1));
-}
-
-struct Interpolator {
-
-  Eigen::VectorXd times;
-  std::vector<Eigen::VectorXd> x;
-
-  Interpolator(const Eigen::VectorXd &times,
-               const std::vector<Eigen::VectorXd> &x)
-      : times(times), x(x) {
-    CHECK_EQ(static_cast<size_t>(times.size()), x.size(), AT);
-  }
-
-  void inline interpolate(double t_query, Eigen::Ref<Eigen::VectorXd> out,
-                          Eigen::Ref<Eigen::VectorXd> J) {
-    linearInterpolation(times, x, t_query, out, J);
-  }
-};
 
 double inline diff_angle(double angle1, double angle2) {
   return atan2(sin(angle1 - angle2), cos(angle1 - angle2));

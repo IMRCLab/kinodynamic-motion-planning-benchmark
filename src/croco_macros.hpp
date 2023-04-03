@@ -16,7 +16,7 @@
 
 #define CSTR_(x) std::cout << #x << ": " << x << std::endl;
 
-#define STRY(x, out, be, af)  out <<  be << #x << af << x << std::endl
+#define STRY(x, out, be, af) out << be << #x << af << x << std::endl
 
 #define FMT_E                                                                  \
   Eigen::IOFormat(6, Eigen::DontAlignCols, ",", ",", "", "", "[", "]")
@@ -86,6 +86,8 @@
   throw std::runtime_error(std::string("--ERROR-- ") + __FILE__ +              \
                            std::string(":") + std::to_string(__LINE__) +       \
                            " \"" + std::string(msg) + "\"\n");
+
+#define NOT_IMPLEMENTED ERROR_WITH_INFO("not implemented")
 
 #define WARN_WITH_INFO(msg)                                                    \
   std::cout << __FILE__ + std::string(":") + std::to_string(__LINE__) + "\"" + \

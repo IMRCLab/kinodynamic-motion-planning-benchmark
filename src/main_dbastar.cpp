@@ -24,10 +24,7 @@
 #include <ompl/datastructures/NearestNeighborsGNATNoThreadSafety.h>
 #include <ompl/datastructures/NearestNeighborsSqrtApprox.h>
 
-#include "fclHelper.hpp"
-#include "fclStateValidityChecker.hpp"
 #include "ompl/base/ScopedState.h"
-#include "robotStatePropagator.hpp"
 #include "robots.h"
 
 #include "dbastar.hpp"
@@ -35,10 +32,10 @@
 
 int main(int argc, char *argv[]) {
 
-  Options_db options_db;
+  Options_dbastar options_dbastar;
   Out_info_db out_db;
   po::options_description desc("Allowed options");
-  options_db.add_options(desc);
+  options_dbastar.add_options(desc);
   // inout_db.add_options(desc);
   std::string cfg_file;
   std::string data_file;
@@ -63,14 +60,14 @@ int main(int argc, char *argv[]) {
   // print options
 
   if (cfg_file != "") {
-    options_db.read_from_yaml(cfg_file.c_str());
+    options_dbastar.read_from_yaml(cfg_file.c_str());
   }
 
   Problem problem;
   problem.read_from_yaml(inputFile.c_str());
 
-  std::cout << "*** options_db ***" << std::endl;
-  options_db.print(std::cout);
+  std::cout << "*** options_dbastar ***" << std::endl;
+  options_dbastar.print(std::cout);
   std::cout << "***" << std::endl;
 
   std::cout << "*** out_db ***" << std::endl;
@@ -78,7 +75,7 @@ int main(int argc, char *argv[]) {
   std::cout << "***" << std::endl;
 
   Trajectory traj;
-  dbastar(problem, options_db, traj, out_db);
+  dbastar(problem, options_dbastar, traj, out_db);
 
   std::cout << "*** inout_db *** " << std::endl;
   out_db.print(std::cout);

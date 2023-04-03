@@ -16,26 +16,25 @@
 #include <ompl/control/planners/sst/SST.h>
 #include <ompl/control/spaces/RealVectorControlSpace.h>
 
-#include "fclStateValidityChecker.hpp"
 #include "general_utils.hpp"
 #include "ompl_sst.hpp"
-#include "robotStatePropagator.hpp"
 #include "robots.h"
 
 int main(int argc, char *argv[]) {
 
-  Options_ompl_sst options_ompl_sst;
+  Options_sst options_ompl_sst;
   Options_trajopt
       options_trajopt; // only use if we optimize to reach the goal exactly
 
   namespace po = boost::program_options;
-  // Declare the supported options.
   po::options_description desc("Allowed options");
   std::string cfg_file = "";
+  std::string results_file = "";
   std::string env_file;
   options_ompl_sst.add_options(desc);
   set_from_boostop(desc, VAR_WITH_NAME(cfg_file));
   set_from_boostop(desc, VAR_WITH_NAME(env_file));
+  set_from_boostop(desc, VAR_WITH_NAME(results_file));
 
   try {
     po::variables_map vm;
@@ -67,7 +66,7 @@ int main(int argc, char *argv[]) {
 
   Problem problem(env_file.c_str());
   Trajectory traj_out;
-  Info_out_omplsst info_out_omplgeo;
+  Info_out info_out_omplgeo;
 
   solve_sst(problem, options_ompl_sst, options_trajopt, traj_out,
             info_out_omplgeo);
@@ -75,4 +74,16 @@ int main(int argc, char *argv[]) {
   std::cout << "solve_sst done" << std::endl;
   info_out_omplgeo.print(std::cout);
 
+  std::ofstream results(results_file);
+
+  results << "alg: sst" << std::endl;
+  results << "time_stamp: " << get_time_stamp() << std::endl;
+
+  results << "options_sst:" << std::endl;
+  options_ompl_sst.print(results, "  ");
+
+  results << "options_trajopt:" << std::endl;
+  options_trajopt.print(results, "  ");
+
+  info_out_omplgeo.to_yaml(results);
 }

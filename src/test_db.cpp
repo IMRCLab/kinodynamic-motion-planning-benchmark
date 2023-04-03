@@ -19,31 +19,31 @@
 
 BOOST_AUTO_TEST_CASE(parallel_park_1) {
 
-  Options_db options_db;
+  Options_dbastar options_dbastar;
 
   Problem problem("../benchmark/unicycle_first_order_0/parallelpark_0.yaml");
 
-  options_db.motionsFile =
+  options_dbastar.motionsFile =
       "../cloud/motions/unicycle_first_order_0_sorted.msgpack";
-  options_db.max_motions = 2000;
-  options_db.delta = 0.2;
-  options_db.epsilon = 1.;
-  options_db.alpha = 0.3;
-  options_db.filterDuplicates = false;
-  options_db.maxCost = 100;
-  options_db.resolution = 0.1;
-  options_db.cost_delta_factor = 1.;
-  options_db.rebuild_every = 5000;
-  options_db.cut_actions = false;
-  options_db.use_landmarks = false;
-  options_db.num_sample_trials = 1000;
+  options_dbastar.max_motions = 2000;
+  options_dbastar.delta = 0.2;
+  options_dbastar.epsilon = 1.;
+  options_dbastar.alpha = 0.3;
+  options_dbastar.filterDuplicates = false;
+  options_dbastar.maxCost = 100;
+  options_dbastar.resolution = 0.1;
+  options_dbastar.cost_delta_factor = 1.;
+  options_dbastar.rebuild_every = 5000;
+  options_dbastar.cut_actions = false;
+  options_dbastar.use_landmarks = false;
+  options_dbastar.num_sample_trials = 1000;
 
   {
 
-    options_db.heuristic = 0;
+    options_dbastar.heuristic = 0;
     Trajectory traj;
     Out_info_db out_db;
-    dbastar(problem, options_db, traj, out_db);
+    dbastar(problem, options_dbastar, traj, out_db);
     std::cout << "***" << std::endl;
     std::cout << "***" << std::endl;
     BOOST_TEST(out_db.solved);
@@ -54,10 +54,10 @@ BOOST_AUTO_TEST_CASE(parallel_park_1) {
 
   // very slow in debug mode!
   {
-    options_db.heuristic = 1;
+    options_dbastar.heuristic = 1;
     Trajectory traj;
     Out_info_db out_db;
-    dbastar(problem, options_db, traj, out_db);
+    dbastar(problem, options_dbastar, traj, out_db);
     std::cout << "***" << std::endl;
     out_db.print(std::cout);
     std::cout << "***" << std::endl;
@@ -69,31 +69,31 @@ BOOST_AUTO_TEST_CASE(parallel_park_1) {
 
 BOOST_AUTO_TEST_CASE(bugtrap_1) {
 
-  Options_db options_db;
-  options_db.max_motions = 2000;
+  Options_dbastar options_dbastar;
+  options_dbastar.max_motions = 2000;
 
   Problem problem("../benchmark/unicycle_first_order_0/bugtrap_0.yaml");
-  options_db.motionsFile =
+  options_dbastar.motionsFile =
       "../cloud/motions/unicycle_first_order_0_sorted.msgpack";
 
-  options_db.delta = 0.3;
-  options_db.epsilon = 1.;
-  options_db.alpha = 0.3;
-  options_db.filterDuplicates = false;
-  options_db.maxCost = 100;
-  options_db.resolution = 0.1;
-  options_db.cost_delta_factor = 1.;
-  options_db.rebuild_every = 5000;
-  options_db.cut_actions = false;
-  options_db.use_landmarks = false;
+  options_dbastar.delta = 0.3;
+  options_dbastar.epsilon = 1.;
+  options_dbastar.alpha = 0.3;
+  options_dbastar.filterDuplicates = false;
+  options_dbastar.maxCost = 100;
+  options_dbastar.resolution = 0.1;
+  options_dbastar.cost_delta_factor = 1.;
+  options_dbastar.rebuild_every = 5000;
+  options_dbastar.cut_actions = false;
+  options_dbastar.use_landmarks = false;
 
   {
 
-    options_db.heuristic = 0;
+    options_dbastar.heuristic = 0;
 
-  Out_info_db out_db;
+    Out_info_db out_db;
     Trajectory traj;
-    dbastar(problem, options_db, traj, out_db);
+    dbastar(problem, options_dbastar, traj, out_db);
 
     std::cout << "***" << std::endl;
     out_db.print(std::cout);
@@ -104,11 +104,11 @@ BOOST_AUTO_TEST_CASE(bugtrap_1) {
   }
 
   {
-    options_db.heuristic = 1;
+    options_dbastar.heuristic = 1;
 
-  Out_info_db out_db;
+    Out_info_db out_db;
     Trajectory traj;
-    dbastar(problem, options_db, traj, out_db);
+    dbastar(problem, options_dbastar, traj, out_db);
 
     std::cout << "***" << std::endl;
     out_db.print(std::cout);
@@ -121,30 +121,30 @@ BOOST_AUTO_TEST_CASE(bugtrap_1) {
 
 BOOST_AUTO_TEST_CASE(t_kink) {
 
-  Options_db options_db;
-  options_db.max_motions = 200;
+  Options_dbastar options_dbastar;
+  options_dbastar.max_motions = 200;
 
   Problem problem("../benchmark/unicycle_first_order_0/kink_0.yaml");
 
-  options_db.motionsFile =
+  options_dbastar.motionsFile =
       "../cloud/motions/unicycle_first_order_0_sorted.msgpack";
-  options_db.delta = 0.4;
-  options_db.epsilon = 1.;
-  options_db.alpha = 0.3;
-  options_db.filterDuplicates = false;
-  options_db.maxCost = 100;
-  options_db.resolution = 0.1;
-  options_db.cost_delta_factor = 1.;
-  options_db.rebuild_every = 5000;
-  options_db.cut_actions = false;
-  options_db.use_landmarks = false;
-  options_db.num_sample_trials = 5000;
+  options_dbastar.delta = 0.4;
+  options_dbastar.epsilon = 1.;
+  options_dbastar.alpha = 0.3;
+  options_dbastar.filterDuplicates = false;
+  options_dbastar.maxCost = 100;
+  options_dbastar.resolution = 0.1;
+  options_dbastar.cost_delta_factor = 1.;
+  options_dbastar.rebuild_every = 5000;
+  options_dbastar.cut_actions = false;
+  options_dbastar.use_landmarks = false;
+  options_dbastar.num_sample_trials = 5000;
 
   {
-    options_db.heuristic = 0;
+    options_dbastar.heuristic = 0;
     Out_info_db out_db;
     Trajectory traj;
-    dbastar(problem, options_db, traj, out_db);
+    dbastar(problem, options_dbastar, traj, out_db);
 
     std::cout << "***" << std::endl;
     out_db.print(std::cout);
@@ -155,11 +155,11 @@ BOOST_AUTO_TEST_CASE(t_kink) {
   }
 
   {
-    options_db.heuristic = 1;
+    options_dbastar.heuristic = 1;
     Out_info_db out_db;
 
     Trajectory traj;
-    dbastar(problem, options_db, traj, out_db);
+    dbastar(problem, options_dbastar, traj, out_db);
 
     std::cout << "***" << std::endl;
     out_db.print(std::cout);
@@ -172,30 +172,30 @@ BOOST_AUTO_TEST_CASE(t_kink) {
 
 BOOST_AUTO_TEST_CASE(t_parallel2) {
 
-  Options_db options_db;
-  options_db.max_motions = 5000;
+  Options_dbastar options_dbastar;
+  options_dbastar.max_motions = 5000;
 
   Problem problem("../benchmark/unicycle_second_order_0/parallelpark_0.yaml");
-  options_db.motionsFile =
+  options_dbastar.motionsFile =
       "../cloud/motions/unicycle_second_order_0_sorted.msgpack";
 
-  options_db.delta = 0.4;
-  options_db.epsilon = 1.;
-  options_db.alpha = 0.3;
-  options_db.filterDuplicates = false;
-  options_db.maxCost = 100;
-  options_db.resolution = 0.1;
-  options_db.cost_delta_factor = 1.;
-  options_db.rebuild_every = 5000;
-  options_db.cut_actions = false;
-  options_db.use_landmarks = false;
-  options_db.num_sample_trials = 5000;
+  options_dbastar.delta = 0.4;
+  options_dbastar.epsilon = 1.;
+  options_dbastar.alpha = 0.3;
+  options_dbastar.filterDuplicates = false;
+  options_dbastar.maxCost = 100;
+  options_dbastar.resolution = 0.1;
+  options_dbastar.cost_delta_factor = 1.;
+  options_dbastar.rebuild_every = 5000;
+  options_dbastar.cut_actions = false;
+  options_dbastar.use_landmarks = false;
+  options_dbastar.num_sample_trials = 5000;
 
   {
-    options_db.heuristic = 0;
+    options_dbastar.heuristic = 0;
     Out_info_db out_db;
     Trajectory traj;
-    dbastar(problem, options_db, traj, out_db);
+    dbastar(problem, options_dbastar, traj, out_db);
     std::cout << "***" << std::endl;
     out_db.print(std::cout);
     std::cout << "***" << std::endl;
@@ -205,11 +205,11 @@ BOOST_AUTO_TEST_CASE(t_parallel2) {
   }
 
   {
-    options_db.heuristic = 1;
+    options_dbastar.heuristic = 1;
 
     Out_info_db out_db;
     Trajectory traj;
-    dbastar(problem, options_db, traj, out_db);
+    dbastar(problem, options_dbastar, traj, out_db);
 
     std::cout << "***" << std::endl;
     out_db.print(std::cout);
@@ -222,29 +222,29 @@ BOOST_AUTO_TEST_CASE(t_parallel2) {
 
 BOOST_AUTO_TEST_CASE(t_new_modes) {
 
-  Options_db options_db;
-  options_db.max_motions = 200;
+  Options_dbastar options_dbastar;
+  options_dbastar.max_motions = 200;
 
   Problem problem("../benchmark/unicycle_first_order_0/bugtrap_0.yaml");
 
-  options_db.motionsFile =
+  options_dbastar.motionsFile =
       "../cloud/motions/unicycle_first_order_0_sorted.msgpack";
 
-  options_db.delta = 0.4;
-  options_db.epsilon = 1.;
-  options_db.alpha = 0.3;
-  options_db.filterDuplicates = false;
-  options_db.cost_delta_factor = 1.;
-  options_db.rebuild_every = 5000;
-  options_db.num_sample_trials = 2000;
-  options_db.heuristic = 1;
+  options_dbastar.delta = 0.4;
+  options_dbastar.epsilon = 1.;
+  options_dbastar.alpha = 0.3;
+  options_dbastar.filterDuplicates = false;
+  options_dbastar.cost_delta_factor = 1.;
+  options_dbastar.rebuild_every = 5000;
+  options_dbastar.num_sample_trials = 2000;
+  options_dbastar.heuristic = 1;
 
   {
-    options_db.add_node_if_better = true;
+    options_dbastar.add_node_if_better = true;
 
     Out_info_db out_db;
     Trajectory traj;
-    dbastar(problem, options_db, traj, out_db);
+    dbastar(problem, options_dbastar, traj, out_db);
 
     std::cout << "***" << std::endl;
     out_db.print(std::cout);
@@ -255,12 +255,12 @@ BOOST_AUTO_TEST_CASE(t_new_modes) {
     BOOST_TEST(out_db.cost_with_delta_time < 30);
   }
   {
-    options_db.add_node_if_better = false;
-    options_db.add_after_expand = true;
+    options_dbastar.add_node_if_better = false;
+    options_dbastar.add_after_expand = true;
 
     Out_info_db out_db;
     Trajectory traj;
-    dbastar(problem, options_db, traj, out_db);
+    dbastar(problem, options_dbastar, traj, out_db);
 
     std::cout << "***" << std::endl;
     out_db.print(std::cout);
@@ -277,25 +277,25 @@ BOOST_AUTO_TEST_CASE(t_bug2) {
   //
   //
 
-  Options_db options_db;
+  Options_dbastar options_dbastar;
 
   Problem problem("../benchmark/unicycle_second_order_0/bugtrap_0.yaml");
-  options_db.motionsFile =
+  options_dbastar.motionsFile =
       "../cloud/motions/unicycle_second_order_0_sorted.msgpack";
 
-  options_db.max_motions = 1000;
-  options_db.delta = .4;
-  options_db.epsilon = 1.;
-  options_db.alpha = .3;
-  options_db.heuristic = 1;
-  options_db.cost_delta_factor = 1.;
-  options_db.rebuild_every = 5000;
-  options_db.num_sample_trials = 5000;
+  options_dbastar.max_motions = 1000;
+  options_dbastar.delta = .4;
+  options_dbastar.epsilon = 1.;
+  options_dbastar.alpha = .3;
+  options_dbastar.heuristic = 1;
+  options_dbastar.cost_delta_factor = 1.;
+  options_dbastar.rebuild_every = 5000;
+  options_dbastar.num_sample_trials = 5000;
 
   {
     Out_info_db out_db;
     Trajectory traj;
-    dbastar(problem, options_db, traj, out_db);
+    dbastar(problem, options_dbastar, traj, out_db);
     std::cout << "***" << std::endl;
     out_db.print(std::cout);
     std::cout << "***" << std::endl;

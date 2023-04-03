@@ -3,6 +3,10 @@
 // OMPL headers
 #include "croco_macros.hpp"
 #include "robot_models.hpp"
+#include "motions.hpp"
+
+
+
 #include <ompl/control/SpaceInformation.h>
 #include <ompl/control/spaces/RealVectorControlSpace.h>
 
@@ -32,6 +36,10 @@ void copyToRealsControl(std::shared_ptr<ompl::control::SpaceInformation> si,
                         ompl::control::Control *action,
                         std::vector<double> &reals);
 
+void copyFromRealsControl(std::shared_ptr<ompl::control::SpaceInformation> si,
+                          ompl::control::Control *out,
+                          const std::vector<double> &reals);
+
 void state_to_stream(std::ostream &out,
                      std::shared_ptr<ompl::control::SpaceInformation> si,
                      const ompl::base::State *state);
@@ -43,6 +51,10 @@ void state_to_eigen(Eigen::VectorXd &out,
 void control_to_eigen(Eigen::VectorXd &out,
                       std::shared_ptr<ompl::control::SpaceInformation> si,
                       ompl::control::Control *control);
+
+void control_from_eigen(const Eigen::VectorXd &out,
+                        std::shared_ptr<ompl::control::SpaceInformation> si,
+                        ompl::control::Control *control);
 
 struct RobotOmpl {
 
@@ -132,10 +144,6 @@ public:
   // TODO: fix memory leaks!!!
 };
 
-// Factory Method
-std::shared_ptr<RobotOmpl>
-create_robot_ompl(const std::string &robotType,
-                  const ompl::base::RealVectorBounds &positionBounds);
 
 struct RobotStateValidityChecker : public ompl::base::StateValidityChecker {
   std::shared_ptr<RobotOmpl> robot;
@@ -147,18 +155,32 @@ struct RobotStateValidityChecker : public ompl::base::StateValidityChecker {
 
 std::shared_ptr<RobotOmpl> robot_factory_ompl(const Problem &problem);
 
-// this is the good one
-std::vector<size_t> sortMotions3(const std::vector<std::vector<double>> &x0s,
-                                 const std::vector<std::vector<double>> &xfs,
-                                 size_t top_k,
-                                 std::shared_ptr<RobotOmpl> robot_);
+#pragma once
 
-std::vector<size_t> sortMotions(std::shared_ptr<RobotOmpl> robot_,
-                                const std::vector<std::vector<double>> &x0s,
-                                const std::vector<std::vector<double>> &xfs,
-                                size_t top_k);
+#include "ompl/control/StatePropagator.h"
+#include "robots.h"
 
-std::vector<size_t> sortMotions2(const std::vector<std::vector<double>> &x0s,
-                                 const std::vector<std::vector<double>> &xfs,
-                                 size_t top_k,
-                                 std::shared_ptr<RobotOmpl> robot_);
+class RobotOmplStatePropagator : public ompl::control::StatePropagator {
+public:
+  RobotOmplStatePropagator(const ompl::control::SpaceInformationPtr &si,
+                           std::shared_ptr<RobotOmpl> robot)
+      : ompl::control::StatePropagator(si), robot_(robot) {}
+
+  ~RobotOmplStatePropagator() override = default;
+
+  void propagate(const ompl::base::State *state,
+                 const ompl::control::Control *control, double duration,
+                 ompl::base::State *result) const override {
+    // propagate state
+    robot_->propagate(state, control, duration, result);
+  }
+
+  bool canPropagateBackward() const override { return false; }
+
+  bool canSteer() const override { return false; }
+
+protected:
+  std::shared_ptr<RobotOmpl> robot_;
+};
+
+

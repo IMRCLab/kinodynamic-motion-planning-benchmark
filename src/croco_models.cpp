@@ -205,8 +205,8 @@ void Time_linear_reg::calc(Eigen::Ref<Eigen::VectorXd> r,
 
 void Time_linear_reg::calc(Eigen::Ref<Eigen::VectorXd> r,
                            const Eigen::Ref<const Eigen::VectorXd> &x) {
-  (void) r;
-  (void) x;
+  (void)r;
+  (void)x;
 
   ERROR_WITH_INFO("error here! -- we require u and x!");
 }
@@ -590,8 +590,8 @@ void Col_cost::calcDiff(Eigen::Ref<Eigen::VectorXd> Lx,
 //     last_raw_d = raw_d;
 //     d = options_trajopt.collision_weight * (raw_d - margin);
 //     auto grad = std::get<1>(out);
-//     v = options_trajopt.collision_weight * Vxd::Map(grad.data(), grad.size());
-//     if (d <= 0) {
+//     v = options_trajopt.collision_weight * Vxd::Map(grad.data(),
+//     grad.size()); if (d <= 0) {
 //       Jx.block(0, 0, 1, nx_effective) = v.transpose();
 //     } else {
 //       Jx.setZero();

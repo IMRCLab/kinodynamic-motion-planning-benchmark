@@ -28,18 +28,11 @@
 #include <ompl/datastructures/NearestNeighborsGNATNoThreadSafety.h>
 #include <ompl/datastructures/NearestNeighborsSqrtApprox.h>
 
-
-
 // local
-#include "collision_checker.hpp"
-#include "robotStatePropagator.hpp"
+// #include "collision_checker.hpp"
 #include "robots.h"
 
-namespace py = pybind11;
 using namespace pybind11::literals;
-
-namespace ob = ompl::base;
-namespace oc = ompl::control;
 
 struct Key {
   template <class T> const T &operator()(const T &t) const { return t; }
@@ -111,7 +104,8 @@ struct Key2 {
 //   }
 //
 //   std::vector<double> step(const std::vector<double> &state,
-//                            const std::vector<double> &action, double duration) {
+//                            const std::vector<double> &action, double
+//                            duration) {
 //     auto si = robot_->getSpaceInformation();
 //     si->getStateSpace()->copyFromReals(tmp_state_a_, state);
 //
@@ -160,38 +154,37 @@ struct Key2 {
 // };
 //
 PYBIND11_MODULE(motionplanningutils, m) {
-//   pybind11::class_<CollisionChecker>(m, "CollisionChecker")
-//       .def(pybind11::init())
-//       .def("load", &CollisionChecker::load)
-//       .def("distance", &CollisionChecker::distance)
-//       .def("distanceWithFDiffGradient",
-//            &CollisionChecker::distanceWithFDiffGradient);
-//
-//   pybind11::class_<RobotHelper>(m, "RobotHelper")
-//       .def(pybind11::init<const std::string &, float>(), py::arg("robot_type"),
-//            py::arg("pos_limit") = 2)
-//       .def("distance", &RobotHelper::distance)
-//       .def("sampleUniform", &RobotHelper::sampleStateUniform)
-//       .def("sampleControlUniform", &RobotHelper::sampleControlUniform)
-//       .def("step", &RobotHelper::step)
-//       .def("interpolate", &RobotHelper::interpolate)
-//       .def("is2D", &RobotHelper::is2D)
-//       .def("isTranslationInvariant", &RobotHelper::isTranslationInvariant)
-//       .def("sortMotions", &RobotHelper::sortMotions3);
+  //   pybind11::class_<CollisionChecker>(m, "CollisionChecker")
+  //       .def(pybind11::init())
+  //       .def("load", &CollisionChecker::load)
+  //       .def("distance", &CollisionChecker::distance)
+  //       .def("distanceWithFDiffGradient",
+  //            &CollisionChecker::distanceWithFDiffGradient);
+  //
+  //   pybind11::class_<RobotHelper>(m, "RobotHelper")
+  //       .def(pybind11::init<const std::string &, float>(),
+  //       py::arg("robot_type"),
+  //            py::arg("pos_limit") = 2)
+  //       .def("distance", &RobotHelper::distance)
+  //       .def("sampleUniform", &RobotHelper::sampleStateUniform)
+  //       .def("sampleControlUniform", &RobotHelper::sampleControlUniform)
+  //       .def("step", &RobotHelper::step)
+  //       .def("interpolate", &RobotHelper::interpolate)
+  //       .def("is2D", &RobotHelper::is2D)
+  //       .def("isTranslationInvariant", &RobotHelper::isTranslationInvariant)
+  //       .def("sortMotions", &RobotHelper::sortMotions3);
 
   pybind11::class_<Model_robot>(m, "Model_robot")
       .def(pybind11::init())
       .def("setPositionBounds", &Model_robot::setPositionBounds)
-      .def("get_translation_invariance", &Model_robot::get_translation_invariance)
+      .def("get_translation_invariance",
+           &Model_robot::get_translation_invariance)
       .def("get_x_ub", &Model_robot::get_x_ub)
       .def("set_position_ub", &Model_robot::set_position_ub)
       .def("set_position_lb", &Model_robot::set_position_lb)
       .def("get_x_lb", &Model_robot::get_x_lb)
       .def("get_nx", &Model_robot::get_nx)
       .def("get_nu", &Model_robot::get_nu)
-
-
-
 
       .def("get_u_ub", &Model_robot::get_u_ub)
       .def("get_u_lb", &Model_robot::get_u_lb)
@@ -211,8 +204,8 @@ PYBIND11_MODULE(motionplanningutils, m) {
       .def("collision_distance", &Model_robot::collision_distance)
       .def("collision_distance_diff", &Model_robot::collision_distance_diff)
       .def("transformation_collision_geometries",
-           &Model_robot::transformation_collision_geometries)
-      .def("load_env_quim", &Model_robot::load_env_quim);
+           &Model_robot::transformation_collision_geometries);
+  // .def("load_env_quim", &Model_robot::load_env_quim);
 
   m.def("robot_factory", robot_factory);
 

@@ -15,6 +15,7 @@
 #include "croco_macros.hpp"
 // #include "croco_models.hpp"
 #include "general_utils.hpp"
+#include "motions.hpp"
 #include "robot_models.hpp"
 
 #include "crocoddyl/core/action-base.hpp"
@@ -63,17 +64,17 @@ struct Options_trajopt {
   bool interp = false;
 
   void add_options(po::options_description &desc);
-  void print(std::ostream &out) const;
+
+  void __read_from_node(const YAML::Node &node);
+
+  void print(std::ostream &out, const std::string &be = "",
+             const std::string &af = ": ") const;
 
   void read_from_yaml(YAML::Node &node);
   void read_from_yaml(const char *file);
 };
 
 using namespace crocoddyl;
-
-// x - ub  <= 0
-
-extern double accumulated_time;
 
 enum class SOLVER {
   traj_opt = 0,
@@ -128,7 +129,8 @@ struct Generate_params {
 
 ptr<crocoddyl::ShootingProblem>
 generate_problem(const Generate_params &gen_args,
-                 const Options_trajopt &options_trajopt, size_t &nx, size_t &nu);
+                 const Options_trajopt &options_trajopt, size_t &nx,
+                 size_t &nu);
 
 struct File_parser_inout {
   std::string problem_name;
@@ -167,8 +169,8 @@ void convert_traj_with_variable_time(const std::vector<Eigen::VectorXd> &xs,
 struct Result_opti {
   // Note: success is not the same as feasible.
   // Feasible=1 means that the trajectory fulfil all the constraints.
-  // Success=1 means that the trajectory fulfil the constraints imposed by 
-  // the current formulation (e.g. some formulations will solve 
+  // Success=1 means that the trajectory fulfil the constraints imposed by
+  // the current formulation (e.g. some formulations will solve
   // first without bound constraints).
   bool feasible = false;
   bool success = false;
@@ -183,20 +185,22 @@ struct Result_opti {
 };
 
 std::vector<Eigen::VectorXd>
-smooth_traj(const std::vector<Eigen::VectorXd> &us_init);
+smooth_traj(const std::vector<Eigen::VectorXd> &xs_init, const StateQ &state);
 
 void __trajectory_optimization(const Problem &problem,
+                               std::shared_ptr<Model_robot> &model_robot,
                                const Trajectory &init_guess,
-                               Options_trajopt &opti_parms, Trajectory &traj,
-                               Result_opti &opti_out);
+                               const Options_trajopt &options_trajopt,
+                               Trajectory &traj, Result_opti &opti_out);
 
-// void trajectory_optimization(Problem &problem, File_parser_inout &file_inout,
+// void trajectory_optimization(Problem &problem, File_parser_inout
+// &file_inout,
 //                              Result_opti &opti_out);
 
 void trajectory_optimization(const Problem &problem,
                              const Trajectory &init_guess,
-                             Options_trajopt &opti_parms, Trajectory &traj,
-                             Result_opti &opti_out);
+                             const Options_trajopt &opti_parms,
+                             Trajectory &traj, Result_opti &opti_out);
 
 bool check_problem(ptr<crocoddyl::ShootingProblem> problem,
                    ptr<crocoddyl::ShootingProblem> problem2,

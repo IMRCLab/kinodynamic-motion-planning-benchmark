@@ -27,9 +27,8 @@
 // #include <ompl/datastructures/NearestNeighborsSqrtApprox.h>
 //
 #include "fclHelper.hpp"
-#include "fclStateValidityChecker.hpp"
+#include "motions.hpp"
 #include "ompl/base/ScopedState.h"
-#include "robotStatePropagator.hpp"
 #include "robots.h"
 #include <fcl/fcl.h>
 
@@ -158,7 +157,7 @@ public:
 
   size_t idx;
   // std::string name;
-  bool disabled;
+  bool disabled = false;
 };
 
 // forward declaration
@@ -332,7 +331,8 @@ enum class Terminate_status {
   SOLVED = 0,
   MAX_EXPANDS = 1,
   EMPTY_QUEUE = 2,
-  UNKNOWN = 3,
+  MAX_TIME = 3,
+  UNKNOWN = 4,
 };
 
 struct Out_info_db {
@@ -346,14 +346,16 @@ struct Out_info_db {
   // void read_from_yaml(const char *file);
 };
 
-struct Options_db {
+struct Options_dbastar {
 
   float delta = .3;
   float epsilon = 1.;
   float alpha = .5;
   std::string motionsFile = "";
+  std::vector<Motion> *motions_ptr = nullptr; // pointer to loaded motions
   std::string outFile = "out.yaml";
   bool filterDuplicates = true;
+  bool primitives_new_format = true; // (false=Format of IROS 22)
   float maxCost = std::numeric_limits<float>::infinity();
   int heuristic = 0;
   size_t max_motions = std::numeric_limits<int>::max();
@@ -375,10 +377,16 @@ struct Options_db {
   bool propagate_controls =
       false; // TODO: check what happens, in the style of Raul Shome
 
+  double search_timelimit = 1e4; // in ms
+
   void add_options(po::options_description &desc);
 
-  void print(std::ostream &out);
+  void __load_data(void *source, bool boost);
 
+  void print(std::ostream &out, const std::string &be = "",
+             const std::string &af = ": ") const;
+
+  void __read_from_node(const YAML::Node &node);
   void read_from_yaml(YAML::Node &node);
   void read_from_yaml(const char *file);
 };
@@ -486,5 +494,5 @@ struct Heu_roadmap : Heu_fun {
   };
 };
 
-void dbastar(const Problem &problem, Options_db &options_db,
+void dbastar(const Problem &problem, const Options_dbastar &options_dbastar,
              Trajectory &traj_out, Out_info_db &out_info_db);
