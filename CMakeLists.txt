@@ -124,7 +124,7 @@ add_executable(main_idbastar
 
 
 add_executable(test_idbastar
-  src/test_idbastar.cpp
+  unittest/test_idbastar.cpp
   src/idbastar.cpp
 )
 
@@ -134,7 +134,7 @@ add_executable(test_idbastar
 
 
 add_executable(test_ompl_sst
-  src/test_ompl_sst.cpp
+  unittest/test_ompl_sst.cpp
   src/ompl_sst.cpp
 )
 
@@ -167,6 +167,7 @@ target_include_directories(test_idbastar
   PRIVATE ${CROCODDYL_INCLUDE_DIRS}
   PRIVATE ${CMAKE_BINARY_DIR}/deps/fcl/include
   PRIVATE ${CMAKE_SOURCE_DIR}/deps/fcl/include
+  src
 )
 
 
@@ -193,6 +194,7 @@ target_include_directories(test_ompl_sst
   PRIVATE ${CMAKE_BINARY_DIR}/deps/fcl/include
   PRIVATE ${CMAKE_SOURCE_DIR}/deps/fcl/include
   PRIVATE ${CROCODDYL_INCLUDE_DIRS}
+  src
 )
 
 
@@ -285,16 +287,16 @@ add_executable(main_dbastar
 # )
 
 add_executable(test_croco
-  src/test_croco.cpp 
+  unittest/test_croco.cpp 
 )
 
 add_executable(test_db
-  src/test_db.cpp 
+  unittest/test_db.cpp 
 )
 
 
 add_executable(test_ompl_geo
-  src/test_ompl_geo.cpp 
+  unittest/test_ompl_geo.cpp 
   src/ompl_geo.cpp
 )
 
@@ -311,7 +313,7 @@ add_executable(main_primitives
 )
 
 add_executable(test_primitives
-  src/test_primitives.cpp 
+  unittest/test_primitives.cpp 
   src/generate_primitives.cpp 
 )
 
@@ -330,13 +332,16 @@ target_include_directories(main_dbastar
 target_include_directories(test_db
   PRIVATE ${CMAKE_BINARY_DIR}/deps/fcl/include
   PRIVATE ${CMAKE_SOURCE_DIR}/deps/fcl/include
+  src
 )
+
 
 target_include_directories(test_ompl_geo
   PRIVATE ${CMAKE_BINARY_DIR}/deps/fcl/include
   PRIVATE ${CMAKE_SOURCE_DIR}/deps/fcl/include
   PRIVATE ${CMAKE_SOURCE_DIR}/deps/fcl/include
 PRIVATE ${CROCODDYL_INCLUDE_DIRS}
+src
 )
 
 
@@ -418,14 +423,14 @@ ${CROCODDYL_INCLUDE_DIRS}
 
 
 target_include_directories(croco_ocp PRIVATE ${CROCODDYL_INCLUDE_DIRS})
-target_include_directories(test_croco PRIVATE ${CROCODDYL_INCLUDE_DIRS})
+target_include_directories(test_croco PRIVATE ${CROCODDYL_INCLUDE_DIRS} src)
 target_include_directories(dev_manifold PRIVATE ${CROCODDYL_INCLUDE_DIRS} ${PINOCCHIO_INCLUDE_DIRS})
 
 
 
 target_include_directories(croco_main PRIVATE ${CROCODDYL_INCLUDE_DIRS})
 target_include_directories(main_primitives PRIVATE ${CROCODDYL_INCLUDE_DIRS})
-target_include_directories(test_primitives PRIVATE ${CROCODDYL_INCLUDE_DIRS})
+target_include_directories(test_primitives PRIVATE ${CROCODDYL_INCLUDE_DIRS} src)
 
 
 
@@ -538,7 +543,6 @@ target_link_libraries(motionplanningutils PRIVATE
 
 
 
-# add_test( NAME test_a COMMAND test_db)
 
 
 
