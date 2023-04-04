@@ -158,6 +158,9 @@ public:
   size_t idx;
   // std::string name;
   bool disabled = false;
+
+  void print(std::ostream &out,
+             std::shared_ptr<ompl::control::SpaceInformation> &si);
 };
 
 // forward declaration
@@ -496,3 +499,8 @@ struct Heu_roadmap : Heu_fun {
 
 void dbastar(const Problem &problem, const Options_dbastar &options_dbastar,
              Trajectory &traj_out, Out_info_db &out_info_db);
+
+void load_motion_primitives_new(const std::string &motionsFile,
+                                RobotOmpl &robot, std::vector<Motion> &motions,
+                                int max_motions, bool cut_actions,
+                                bool shuffle);
