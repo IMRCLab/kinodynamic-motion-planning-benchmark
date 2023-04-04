@@ -1457,6 +1457,17 @@ void Motion::print(std::ostream &out,
   STRY(disabled, out, "", ": ");
 }
 
+template <typename _T>
+class NearestNeighborsGNATNoThreadSafety_public
+    : public ompl::NearestNeighborsGNATNoThreadSafety<_T> {
+  using Base = ompl::NearestNeighborsGNATNoThreadSafety<_T>;
+
+public:
+  void set_rebuildSize_(int rebuild_size) { Base::rebuildSize_ = rebuild_size; }
+  int get_rebuildSize_() { return Base::rebuildSize_; }
+  virtual ~NearestNeighborsGNATNoThreadSafety_public() = default;
+};
+
 // continue here: cost lower bound for the quadcopter
 void dbastar(const Problem &problem, const Options_dbastar &options_dbastar,
              Trajectory &traj_out, Out_info_db &out_info_db) {
@@ -1572,9 +1583,9 @@ void dbastar(const Problem &problem, const Options_dbastar &options_dbastar,
   ompl::NearestNeighbors<AStarNode *> *T_n;
   if (si->getStateSpace()->isMetricSpace()) {
 
-    T_n = new ompl::NearestNeighborsGNATNoThreadSafety<AStarNode *>();
-    static_cast<ompl::NearestNeighborsGNATNoThreadSafety<AStarNode *> *>(T_n)
-        ->rebuildSize_ = 5000;
+    T_n = new NearestNeighborsGNATNoThreadSafety_public<AStarNode *>();
+    static_cast<NearestNeighborsGNATNoThreadSafety_public<AStarNode *> *>(T_n)
+        ->set_rebuildSize_(5000);
 
   } else {
     T_n = new ompl::NearestNeighborsSqrtApprox<AStarNode *>();
@@ -1752,8 +1763,8 @@ void dbastar(const Problem &problem, const Options_dbastar &options_dbastar,
   time_bench.prepare_time =
       std::chrono::duration<double, std::milli>(tac - tic).count();
 
-  static_cast<ompl::NearestNeighborsGNATNoThreadSafety<AStarNode *> *>(T_n)
-      ->rebuildSize_ = 1e8;
+  static_cast<NearestNeighborsGNATNoThreadSafety_public<AStarNode *> *>(T_n)
+      ->set_rebuildSize_(1e8);
 
   auto start = std::chrono::steady_clock::now();
 
@@ -1831,9 +1842,9 @@ void dbastar(const Problem &problem, const Options_dbastar &options_dbastar,
 
       auto out = timed_fun([&] {
         auto p_derived = static_cast<
-            ompl::NearestNeighborsGNATNoThreadSafety<AStarNode *> *>(T_n);
+            NearestNeighborsGNATNoThreadSafety_public<AStarNode *> *>(T_n);
         p_derived->rebuildDataStructure();
-        p_derived->rebuildSize_ = 1e8;
+        p_derived->set_rebuildSize_(1e8);
         return 0;
       });
       time_bench.time_nearestNode += out.second;
