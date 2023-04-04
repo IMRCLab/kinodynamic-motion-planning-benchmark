@@ -16,3 +16,6 @@
 [submodule "deps/rai"]
 	path = deps/rai
 	url = git@github.com:quimortiz/rai.git
+[submodule "deps/nigh"]
+	path = deps/nigh
+	url = https://github.com/quimortiz/nigh
