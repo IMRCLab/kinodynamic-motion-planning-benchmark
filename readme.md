@@ -7,6 +7,17 @@ Which name do you prefer? Please vote!
 idbA\*: Iterative Discontinuity bounded A*
 KdbA\*: Kinodynamic Discontinuity bounded A*
 
+idb\*: Iterative Discontinuity Bounded (Star)
+Kdb\*: Kinodynamic Discontinuity bounded (Star)
+
+# Dependencies
+
+- Eigen (maths)
+- YAML (config files)
+- BOOST (test, program options, serialization)
+- FCL (collision checking)
+- OMPL (Baseline Planners)
+- Nigh or OMPL (nearest neighbour search in our planner)
 
 # Dynamical Systems
 
@@ -88,6 +99,12 @@ Also, you can use them to learn distance and reachability functions.
 # How to add a new dynamical system?
 
 (lets add a cart-pole) Step by step.
+
+
+# Todo
+
+- Clean the CMakeLists.txt
+
 
 # Future
 
