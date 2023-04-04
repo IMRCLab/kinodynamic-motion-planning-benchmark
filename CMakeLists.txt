@@ -99,7 +99,7 @@ target_include_directories(motion_planning_common
   PRIVATE ${CMAKE_BINARY_DIR}/deps/fcl/include
   PRIVATE ${CMAKE_SOURCE_DIR}/deps/fcl/include
   PRIVATE ${CROCODDYL_INCLUDE_DIRS}
-  PRIVATE nigh/src 
+  PRIVATE deps/nigh/src 
 )
 
 set_property(TARGET motion_planning_common PROPERTY POSITION_INDEPENDENT_CODE ON)
@@ -149,7 +149,7 @@ add_executable(example_nigh
 
 
 
-target_include_directories(example_nigh PRIVATE nigh/src )
+target_include_directories(example_nigh PRIVATE deps/nigh/src )
 
 target_include_directories(robot_models
   PRIVATE ${PINOCCHIO_INCLUDE_DIRS}
@@ -529,7 +529,7 @@ target_include_directories(motionplanningutils
   PRIVATE ${CMAKE_BINARY_DIR}/deps/fcl/include
   PRIVATE ${CMAKE_SOURCE_DIR}/deps/fcl/include
   PRIVATE ${CROCODDYL_INCLUDE_DIRS}
-  PRIVATE nigh/src
+  PRIVATE deps/nigh/src
 )
 
 target_link_libraries(motionplanningutils PRIVATE
