@@ -45,10 +45,7 @@ using Sample_ = ob::State;
 const char *duplicate_detection_str[] = {"NO", "HARD", "SOFT"};
 
 const char *terminate_status_str[] = {
-    "SOLVED",
-    "MAX_EXPANDS",
-    "EMPTY_QUEUE",
-    "UNKNOWN",
+    "SOLVED", "MAX_EXPANDS", "EMPTY_QUEUE", "MAX_TIME", "UNKNOWN",
 };
 
 Heu_roadmap::Heu_roadmap(std::shared_ptr<RobotOmpl> robot,
@@ -1069,12 +1066,20 @@ void traj_to_motion(const Trajectory &traj, RobotOmpl &robot,
 
   auto si = robot.getSpaceInformation();
 
+  motion_out.states.resize(traj.states.size());
+
   std::transform(traj.states.begin(), traj.states.end(),
                  motion_out.states.begin(), [&](auto &x) {
+                   // CSTR_V(x);
                    ob::State *state = si->allocState();
+                   // printState(std::cout, si, state);
                    robot.fromEigen(state, x);
+                   // printState(std::cout, si, state);
                    return state;
                  });
+
+  motion_out.actions.resize(traj.actions.size());
+
   std::transform(traj.actions.begin(), traj.actions.end(),
                  motion_out.actions.begin(), [&](auto &a) {
                    oc::Control *action = si->allocControl();
@@ -1098,17 +1103,30 @@ void load_motion_primitives_new(const std::string &motionsFile,
 
   trajs.load_file_boost(motionsFile.c_str());
 
+  // CSTR_(max_motions);
+  // CSTR_(trajs.data.size());
   if (max_motions < trajs.data.size())
     trajs.data.resize(max_motions);
 
   motions.resize(trajs.data.size());
 
+  CSTR_(trajs.data.size());
   std::transform(trajs.data.begin(), trajs.data.end(), motions.begin(),
                  [&](const auto &traj) {
+                   // traj.to_yaml_format(std::cout, "");
                    Motion m;
                    traj_to_motion(traj, robot, m);
                    return m;
                  });
+
+  CHECK(motions.size(), AT);
+  if (motions.front().cost > 1e5) {
+    std::cout << "WARNING: motions have infinite cost." << std::endl;
+    std::cout << "-- using default cost: TIME" << std::endl;
+    for (auto &m : motions) {
+      m.cost = robot.diff_model->ref_dt * m.actions.size();
+    }
+  }
 
   if (cut_actions) {
     NOT_IMPLEMENTED;
@@ -1420,16 +1438,35 @@ void add_landmarks(ompl::NearestNeighbors<AStarNode *> *T_landmarks,
   T_landmarks->add(landmark_nodes);
 }
 
+void Motion::print(std::ostream &out,
+                   std::shared_ptr<ompl::control::SpaceInformation> &si) {
+
+  out << "states " << std::endl;
+  for (auto &state : states) {
+    printState(out, si, state);
+    out << std::endl;
+  }
+  out << "actions: " << std::endl;
+  for (auto &action : actions) {
+    printAction(std::cout, si, action);
+    out << std::endl;
+  }
+
+  STRY(cost, out, "", ": ");
+  STRY(idx, out, "", ": ");
+  STRY(disabled, out, "", ": ");
+}
+
 // continue here: cost lower bound for the quadcopter
 void dbastar(const Problem &problem, const Options_dbastar &options_dbastar,
              Trajectory &traj_out, Out_info_db &out_info_db) {
+  // TODO:
+  // - disable motions should not be on the search tree!
 
   Options_dbastar options_dbastar_local = options_dbastar;
 
   std::cout << "*** options_dbastar_local ***" << std::endl;
   options_dbastar_local.print(std::cout);
-  std::cout << "***" << std::endl;
-  std::cout << "*** inout_db ***" << std::endl;
   std::cout << "***" << std::endl;
 
   const std::string space6 = "      ";
@@ -1457,8 +1494,6 @@ void dbastar(const Problem &problem, const Options_dbastar &options_dbastar,
   if (options_dbastar_local.motions_ptr) {
     std::cout << "motions have alredy loaded " << std::endl;
     motions = *options_dbastar_local.motions_ptr;
-    if (options_dbastar_local.max_motions < motions.size())
-      motions.resize(options_dbastar_local.max_motions);
 
   } else {
     std::cout << "loading motions ... " << std::endl;
@@ -1467,7 +1502,16 @@ void dbastar(const Problem &problem, const Options_dbastar &options_dbastar,
                            options_dbastar_local.cut_actions, true);
   }
 
+  if (options_dbastar_local.max_motions < motions.size())
+    motions.resize(options_dbastar_local.max_motions);
+
   std::cout << "There are " << motions.size() << " motions!" << std::endl;
+
+  size_t num_print_motions = 10;
+
+  for (size_t i = 0; i < num_print_motions; i++) {
+    motions.at(i).print(std::cout, si);
+  }
 
   // build kd-tree for motion primitives
   ompl::NearestNeighbors<Motion *> *T_m;
@@ -2081,6 +2125,7 @@ void dbastar(const Problem &problem, const Options_dbastar &options_dbastar,
       std::chrono::duration<double, std::milli>(tac - tic).count();
 
   std::cout << "search has ended " << std::endl;
+  CSTR_(time_bench.expands);
   std::cout << "Terminate status: " << static_cast<int>(status) << " "
             << terminate_status_str[static_cast<int>(status)] << std::endl;
 
