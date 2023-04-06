@@ -1082,11 +1082,10 @@ BOOST_AUTO_TEST_CASE(test_jacobians) {
   path.push_back(Eigen::VectorXd::Random(3));
   path.push_back(Eigen::VectorXd::Random(3));
 
-
   std::shared_ptr<Model_robot> model_robot = mks<Model_unicycle1>();
 
   ptr<Interpolator> interpolator =
-      mk<Interpolator>(Eigen::Vector2d({-2., 3.}), path,  model_robot->state );
+      mk<Interpolator>(Eigen::Vector2d({-2., 3.}), path, model_robot->state);
   {
 
     Eigen::VectorXd goal = Eigen::VectorXd::Random(3);
@@ -2262,55 +2261,6 @@ BOOST_AUTO_TEST_CASE(col_acrobot) {
 BOOST_AUTO_TEST_CASE(check_gradient_of_col) { // TODO
 }
 
-Trajectory from_welf_to_quim(const Trajectory &traj_raw, double u_nominal) {
-
-  Trajectory traj;
-  traj.states.resize(traj_raw.states.size());
-  traj.actions.resize(traj_raw.actions.size());
-
-  Eigen::VectorXd tmp(traj_raw.states.front().size());
-
-  std::transform(traj_raw.states.begin(), traj_raw.states.end(),
-                 traj.states.begin(), [&](auto &x) {
-                   from_welf_format(x, tmp);
-                   tmp.segment(3, 4).normalize();
-                   return tmp;
-                 });
-
-  Eigen::VectorXd u_tmp(traj_raw.actions.front().size());
-  std::transform(traj_raw.actions.begin(), traj_raw.actions.end(),
-                 traj.actions.begin(), [&](auto &x) {
-                   u_tmp = x / u_nominal;
-                   return u_tmp;
-                 });
-
-  return traj;
-}
-
-Trajectory from_quim_to_welf(const Trajectory &traj_raw, double u_nominal) {
-
-  Trajectory traj;
-  traj.states.resize(traj_raw.states.size());
-  traj.actions.resize(traj_raw.actions.size());
-
-  Eigen::VectorXd tmp(traj_raw.states.front().size());
-
-  std::transform(traj_raw.states.begin(), traj_raw.states.end(),
-                 traj.states.begin(), [&](auto &x) {
-                   from_quim_format(x, tmp);
-                   tmp.segment(6, 4).normalize();
-                   return tmp;
-                 });
-
-  Eigen::VectorXd u_tmp(traj_raw.actions.front().size());
-  std::transform(traj_raw.actions.begin(), traj_raw.actions.end(),
-                 traj.actions.begin(), [&](auto &x) {
-                   u_tmp = u_nominal * x;
-                   return u_tmp;
-                 });
-
-  return traj;
-}
 
 BOOST_AUTO_TEST_CASE(col_quad3d_v2) {
 
@@ -2605,3 +2555,246 @@ BOOST_AUTO_TEST_CASE(t_serialization) {
   BOOST_TEST(trajs_A.data.at(0).distance(trajs_B.data.at(0)) < 1e-10);
   BOOST_TEST(trajs_A.data.at(1).distance(trajs_B.data.at(1)) < 1e-10);
 }
+
+BOOST_AUTO_TEST_CASE(t_welf_recovery_paper) {
+
+  Problem problem("../benchmark/quadrotor_0/recovery_paper.yaml");
+
+  Trajectory traj_w, traj_q, traj_oq, traj_ow;
+  traj_w.read_from_yaml("../data_welf_yaml/guess_recovery_flight.yaml");
+
+  std::shared_ptr<Model_robot> robot =
+      robot_factory(robot_type_to_path("quad3d_v3").c_str());
+  load_env_quim(*robot, problem);
+
+  std::shared_ptr<Model_quad3d> robot_derived =
+      std::dynamic_pointer_cast<Model_quad3d>(robot);
+
+  traj_q = from_welf_to_quim(traj_w, robot_derived->u_nominal);
+
+  Options_trajopt options_trajopt;
+  options_trajopt.weight_goal = 400;
+  options_trajopt.max_iter = 200;
+
+  Result_opti opti_out;
+
+  trajectory_optimization(problem, traj_q, options_trajopt, traj_oq, opti_out);
+  BOOST_TEST(traj_oq.feasible);
+  BOOST_TEST(opti_out.feasible);
+
+  std::cout << "optimazation done" << std::endl;
+  opti_out.write_yaml(std::cout);
+
+  {
+    std::ofstream tmp("../data_welf_yaml/croco_recovery_q.yaml");
+    traj_oq.to_yaml_format(tmp);
+  }
+
+  traj_ow = from_quim_to_welf(traj_oq, robot_derived->u_nominal);
+  std::ofstream tmp("../data_welf_yaml/croco_recovery.yaml");
+  traj_ow.to_yaml_format(tmp);
+}
+
+BOOST_AUTO_TEST_CASE(t_welf_recovery) {
+
+  Problem problem("../benchmark/quadrotor_0/recovery_paper.yaml");
+
+  Trajectory traj_w, traj_q, traj_oq, traj_ow;
+  traj_w.read_from_yaml("../data_welf_yaml/guess_recovery_flight.yaml");
+
+  std::shared_ptr<Model_robot> robot =
+      robot_factory(robot_type_to_path("quad3d_v3").c_str());
+  load_env_quim(*robot, problem);
+
+  std::shared_ptr<Model_quad3d> robot_derived =
+      std::dynamic_pointer_cast<Model_quad3d>(robot);
+
+  traj_q = from_welf_to_quim(traj_w, robot_derived->u_nominal);
+
+  Options_trajopt options_trajopt;
+  options_trajopt.weight_goal = 400;
+  options_trajopt.max_iter = 200;
+
+  Result_opti opti_out;
+
+  trajectory_optimization(problem, traj_q, options_trajopt, traj_oq, opti_out);
+  BOOST_TEST(traj_oq.feasible);
+  BOOST_TEST(opti_out.feasible);
+
+  std::cout << "optimazation done" << std::endl;
+  opti_out.write_yaml(std::cout);
+
+  {
+    std::ofstream tmp("../data_welf_yaml/croco_recovery_q.yaml");
+    traj_oq.to_yaml_format(tmp);
+  }
+
+  traj_ow = from_quim_to_welf(traj_oq, robot_derived->u_nominal);
+  std::ofstream tmp("../data_welf_yaml/croco_recovery.yaml");
+  traj_ow.to_yaml_format(tmp);
+}
+
+BOOST_AUTO_TEST_CASE(t_welf_simple) {
+
+  Problem problem("../benchmark/quadrotor_0/simple_flight.yaml");
+  Trajectory traj_w, traj_q, traj_oq, traj_ow;
+  traj_w.read_from_yaml("../data_welf_yaml/guess_simple_flight.yaml");
+
+  std::shared_ptr<Model_robot> robot =
+      robot_factory(robot_type_to_path("quad3d_v4").c_str());
+  load_env_quim(*robot, problem);
+
+  std::shared_ptr<Model_quad3d> robot_derived =
+      std::dynamic_pointer_cast<Model_quad3d>(robot);
+
+  traj_q = from_welf_to_quim(traj_w, robot_derived->u_nominal);
+
+  Options_trajopt options_trajopt;
+  options_trajopt.weight_goal = 800;
+  options_trajopt.max_iter = 200;
+
+  Result_opti opti_out;
+
+  trajectory_optimization(problem, traj_q, options_trajopt, traj_oq, opti_out);
+  BOOST_TEST(traj_oq.feasible);
+  BOOST_TEST(opti_out.feasible);
+
+  std::cout << "optimazation done" << std::endl;
+  opti_out.write_yaml(std::cout);
+
+  {
+    std::ofstream tmp("../data_welf_yaml/croco_simple_q.yaml");
+    traj_oq.to_yaml_format(tmp);
+  }
+
+  traj_ow = from_quim_to_welf(traj_oq, robot_derived->u_nominal);
+  std::ofstream tmp("../data_welf_yaml/croco_simple.yaml");
+  traj_ow.to_yaml_format(tmp);
+}
+
+BOOST_AUTO_TEST_CASE(t_welf_flip) {
+
+  // Problem problem("../benchmark/quadrotor_0/flip.yaml");
+  Problem problem("../benchmark/quadrotor_0/flip.yaml");
+  Trajectory traj_w, traj_q, traj_oq, traj_ow;
+  traj_w.read_from_yaml("../data_welf_yaml/result_flip_CASADI.yaml");
+  // traj_w.read_from_yaml("../data_welf_yaml/guess_flip.yaml");
+                        // result_flip_CASADI.yaml"); //
+
+  std::shared_ptr<Model_robot> robot =
+      robot_factory(robot_type_to_path(problem.robotType).c_str());
+  load_env_quim(*robot, problem);
+
+  std::shared_ptr<Model_quad3d> robot_derived =
+      std::dynamic_pointer_cast<Model_quad3d>(robot);
+
+  traj_q = from_welf_to_quim(traj_w, robot_derived->u_nominal);
+
+  traj_q.check(robot);
+
+  {
+    std::ofstream tmp("../data_welf_yaml/guess_flip_q.yaml");
+    traj_q.to_yaml_format(tmp);
+  }
+
+  Options_trajopt options_trajopt;
+  options_trajopt.weight_goal = 200;
+  options_trajopt.max_iter = 200;
+
+  Result_opti opti_out;
+
+  trajectory_optimization(problem, traj_q, options_trajopt, traj_oq, opti_out);
+  BOOST_TEST(traj_oq.feasible);
+  BOOST_TEST(opti_out.feasible);
+
+  std::cout << "optimazation done" << std::endl;
+  opti_out.write_yaml(std::cout);
+
+  {
+    std::ofstream tmp("../data_welf_yaml/croco_flip_q.yaml");
+    traj_oq.to_yaml_format(tmp);
+  }
+
+  traj_ow = from_quim_to_welf(traj_oq, robot_derived->u_nominal);
+  std::ofstream tmp("../data_welf_yaml/croco_flip.yaml");
+  traj_ow.to_yaml_format(tmp);
+}
+
+
+BOOST_AUTO_TEST_CASE(t_welf_loop) {
+
+  // Problem problem("../benchmark/quadrotor_0/flip.yaml");
+  Problem problem("../benchmark/quadrotor_0/loop.yaml");
+  Trajectory traj_w, traj_q, traj_oq, traj_ow;
+  // traj_w.read_from_yaml("../data_welf_yaml/result_flip_CASADI.yaml");
+  traj_w.read_from_yaml("../data_welf_yaml/guess_loop.yaml");
+                        // result_flip_CASADI.yaml"); //
+
+  std::shared_ptr<Model_robot> robot =
+      robot_factory(robot_type_to_path(problem.robotType).c_str());
+  load_env_quim(*robot, problem);
+
+  std::shared_ptr<Model_quad3d> robot_derived =
+      std::dynamic_pointer_cast<Model_quad3d>(robot);
+
+  traj_q = from_welf_to_quim(traj_w, robot_derived->u_nominal);
+
+  traj_q.check(robot);
+
+  {
+    std::ofstream tmp("../data_welf_yaml/guess_loop_q.yaml");
+    traj_q.to_yaml_format(tmp);
+  }
+
+  Options_trajopt options_trajopt;
+  options_trajopt.weight_goal = 200;
+  options_trajopt.max_iter = 200;
+
+  Result_opti opti_out;
+
+  trajectory_optimization(problem, traj_q, options_trajopt, traj_oq, opti_out);
+  BOOST_TEST(traj_oq.feasible);
+  BOOST_TEST(opti_out.feasible);
+
+  std::cout << "optimazation done" << std::endl;
+  opti_out.write_yaml(std::cout);
+
+  {
+    std::ofstream tmp("../data_welf_yaml/croco_loop_q.yaml");
+    traj_oq.to_yaml_format(tmp);
+  }
+
+  traj_ow = from_quim_to_welf(traj_oq, robot_derived->u_nominal);
+  std::ofstream tmp("../data_welf_yaml/croco_loop.yaml");
+  traj_ow.to_yaml_format(tmp);
+}
+
+
+
+BOOST_AUTO_TEST_CASE(load_my) {
+
+
+  Problem problem("../benchmark/quadrotor_0/flip.yaml");
+  Trajectory traj_w, traj_q, traj_oq, traj_ow;
+  traj_w.read_from_yaml("../data_welf_yaml/croco_flip_q.yaml");
+  // traj_w.read_from_yaml("../data_welf_yaml/guess_flip.yaml");
+                        // result_flip_CASADI.yaml"); //
+
+
+  for (auto&s : traj_w.states) {
+    s.segment(3,4).normalize();
+
+
+
+  }
+
+
+  std::shared_ptr<Model_robot> robot =
+      robot_factory(robot_type_to_path(problem.robotType).c_str());
+  load_env_quim(*robot, problem);
+  traj_w.check(robot);
+
+
+
+}
+

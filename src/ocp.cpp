@@ -50,6 +50,7 @@ void Options_trajopt::add_options(po::options_description &desc) {
   set_from_boostop(desc, VAR_WITH_NAME(tsearch_max_rate));
   set_from_boostop(desc, VAR_WITH_NAME(tsearch_min_rate));
   set_from_boostop(desc, VAR_WITH_NAME(tsearch_num_check));
+  set_from_boostop(desc, VAR_WITH_NAME(welf_format));
 }
 
 void Options_trajopt::read_from_yaml(const char *file) {
@@ -60,6 +61,7 @@ void Options_trajopt::read_from_yaml(const char *file) {
 
 void Options_trajopt::__read_from_node(const YAML::Node &node) {
 
+  set_from_yaml(node, VAR_WITH_NAME(welf_format));
   set_from_yaml(node, VAR_WITH_NAME(rollout_warmstart));
   set_from_yaml(node, VAR_WITH_NAME(u_bound_scale));
   set_from_yaml(node, VAR_WITH_NAME(interp));
@@ -100,6 +102,7 @@ void Options_trajopt::read_from_yaml(YAML::Node &node) {
 void Options_trajopt::print(std::ostream &out, const std::string &be,
                             const std::string &af) const {
 
+  out << be << STR(welf_format, af) << std::endl;
   out << be << STR(u_bound_scale, af) << std::endl;
   out << be << STR(interp, af) << std::endl;
   out << be << STR(ref_x0, af) << std::endl;
@@ -338,6 +341,55 @@ generate_problem(const Generate_params &gen_args,
       ptr<Cost> quat_feature = mk<Quaternion_cost>(nx, nu);
       feats_run.push_back(quat_feature);
     }
+    CSTR_(gen_args.name);
+    if (startsWith(gen_args.name, "quad3d_v5") && t == gen_args.N / 2 + 1) {
+      std::cout << "adding special waypoint" << std::endl;
+      Vxd state_weights(13);
+      state_weights.setZero();
+      state_weights.segment(3, 4).array() = 200;
+      Vxd state_ref = Vxd::Zero(13);
+      Eigen::Vector4d ref_quat(1, 0, 0, 0);
+      state_ref.segment(3, 4) = ref_quat;
+
+      CSTR_V(state_weights);
+      CSTR_V(state_ref);
+      // std::cout << state_weights << std::endl;
+      // std::cout << state_ref << std::endl;
+      ptr<Cost> state_feature =
+          mk<State_cost>(nx, nu, nx, state_weights, state_ref);
+      feats_run.push_back(state_feature);
+    }
+
+    if (startsWith(gen_args.name, "quad3d_v6")) {
+      std::cout << "adding special waypoint" << std::endl;
+      Vxd state_weights(13);
+      state_weights.setZero();
+      state_weights.segment(0, 3).array() = 200;
+      Vxd state_ref = Vxd::Zero(13);
+
+      bool add_waypoint = true;
+      // t1 = 20, t2 = 40, t3=60, t4=80
+      if (t == 20) {
+        state_ref.head(3) = Eigen::Vector3d(1, 1, 1.5);
+      } else if (t == 40) {
+        state_ref.head(3) = Eigen::Vector3d(-1, 1, 1.5);
+      } else if (t == 60) {
+        state_ref.head(3) = Eigen::Vector3d(-1, -1, 1.5);
+      } else if (t == 80) {
+        state_ref.head(3) = Eigen::Vector3d(1, -1, 1.5);
+      } else {
+        add_waypoint = false;
+      }
+
+      if (add_waypoint) {
+        CSTR_V(state_weights);
+        CSTR_V(state_ref);
+        ptr<Cost> state_feature =
+            mk<State_cost>(nx, nu, nx, state_weights, state_ref);
+        feats_run.push_back(state_feature);
+      }
+    }
+
     if (startsWith(gen_args.name, "acrobot")) {
       std::cout << "adding regularization on v" << std::endl;
       Vxd state_weights(4);
@@ -956,7 +1008,8 @@ void __trajectory_optimization(const Problem &problem,
                                const Trajectory &init_guess,
                                const Options_trajopt &options_trajopt,
                                Trajectory &traj, Result_opti &opti_out) {
-
+  size_t ddp_iterations = 0;
+  double ddp_time = 0;
   Options_trajopt options_trajopt_local = options_trajopt;
 
   bool check_with_finite_diff = true;
@@ -1659,6 +1712,8 @@ void __trajectory_optimization(const Problem &problem,
                 options_trajopt_local.init_reg);
       double time_i = timer.get_duration();
       size_t iterations_i = ddp.get_iter();
+      ddp_iterations += ddp.get_iter();
+      ddp_time += timer.get_duration();
       if (!options_trajopt_local.use_finite_diff)
         report_problem(problem, ddp.get_xs(), ddp.get_us(), "report-1.yaml");
 
@@ -2060,6 +2115,9 @@ void __trajectory_optimization(const Problem &problem,
     ddp.solve(xs, us, options_trajopt_local.max_iter, false,
               options_trajopt_local.init_reg);
     std::cout << "time: " << timer.get_duration() << std::endl;
+
+    ddp_iterations += ddp.get_iter();
+    ddp_time += timer.get_duration();
     if (!options_trajopt_local.use_finite_diff)
       report_problem(problem, ddp.get_xs(), ddp.get_us(), "report-1.yaml");
 
@@ -2179,6 +2237,10 @@ void __trajectory_optimization(const Problem &problem,
   traj.start = problem.start;
   traj.goal = problem.goal;
   traj.cost = traj.actions.size() * model_robot->ref_dt;
+  traj.info = "\"ddp_iterations=" + std::to_string(ddp_iterations) +
+              ";"
+              "ddp_time=" +
+              std::to_string(ddp_time) + "\"";
   if (opti_out.success) {
 
     double traj_tol = 1e-2;
@@ -2234,6 +2296,14 @@ void trajectory_optimization(const Problem &problem,
 
   Trajectory tmp_init_guess = init_guess;
   Trajectory tmp_solution;
+
+  if (options_trajopt_local.welf_format) {
+    std::shared_ptr<Model_quad3d> robot_derived =
+        std::dynamic_pointer_cast<Model_quad3d>(model_robot);
+    tmp_init_guess = from_welf_to_quim(init_guess, robot_derived->u_nominal);
+
+#
+  }
 
   CSTR_(model_robot->ref_dt);
 
@@ -2618,15 +2688,26 @@ void trajectory_optimization(const Problem &problem,
                                 options_trajopt_local, traj, opti_out);
     }
     CHECK_EQ(traj.feasible, opti_out.feasible, AT);
-  }
-
-  break;
+  } break;
 
   default: {
+    std::cout << AT<< " " << "INFO"<<traj.info << std::endl;
     __trajectory_optimization(problem, model_robot, tmp_init_guess,
                               options_trajopt_local, traj, opti_out);
+    std::cout << AT<< " " <<"INFO"<< traj.info << std::endl;
     CHECK_EQ(traj.feasible, opti_out.feasible, AT);
   }
+  }
+
+  // convert the format if necessary
+
+  if (options_trajopt_local.welf_format) {
+    Trajectory traj_welf;
+    std::shared_ptr<Model_quad3d> robot_derived =
+        std::dynamic_pointer_cast<Model_quad3d>(model_robot);
+    traj_welf = from_quim_to_welf(traj, robot_derived->u_nominal);
+    traj = traj_welf;
+    std::cout << AT<< " " <<"INFO"<< traj.info << std::endl;
   }
 }
 

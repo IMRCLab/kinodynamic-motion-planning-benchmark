@@ -79,31 +79,45 @@ int main(int argc, const char *argv[]) {
   crocoddyl::Timer timer;
   trajectory_optimization(problem, traj_init, options_trajopt, traj_out,
                           result);
+  CHECK_EQ(traj_out.feasible, result.feasible, AT);
   double d = timer.get_duration();
 
-  std::cout << "Result summary " << std::endl;
-  std::cout << STR_(result.feasible) << std::endl;
-  std::cout << STR_(result.cost) << std::endl;
-  std::cout << STR_(result.name) << std::endl;
-  std::cout << STR_(result.name) << std::endl;
-  std::cout << STR_(result.xs_out.size()) << std::endl;
-  std::cout << STR_(result.us_out.size()) << std::endl;
+  {
+    std::cout << AT<< " " <<"INFO"<< traj_out.info << std::endl;
+    std::ofstream fileout(out);
+    std::cout << "writing trajectory to:  " << out << std::endl;
+    traj_out.to_yaml_format(fileout, "");
+  }
 
-  std::cout << "writing results to:" << out << std::endl;
-  std::ofstream file_out(out);
-  result.write_yaml_db(file_out);
+  {
 
-  std::cout << "writing results extended to:" << out_bench << std::endl;
-  std::ofstream ff(out_bench);
-  std::cout << "writing to " << out << std::endl;
-  ff << "solver_name: " << options_trajopt.solver_name << std::endl;
-  ff << "problem_name: " << problem.name << std::endl;
-  ff << "feasible: " << result.feasible << std::endl;
-  ff << "cost: " << result.cost << std::endl;
-  ff << "time_total: " << d << std::endl;
-  ff << "time_stamp: " << get_time_stamp() << std::endl;
-  ff << "solver_file: " << yaml_solver_file << std::endl;
-  ff << "problem_file: " << yaml_problem_file << std::endl;
+    std::cout << "Result summary " << std::endl;
+    std::cout << STR_(result.feasible) << std::endl;
+    std::cout << STR_(result.cost) << std::endl;
+    std::cout << STR_(result.name) << std::endl;
+    std::cout << STR_(result.name) << std::endl;
+    std::cout << STR_(result.xs_out.size()) << std::endl;
+    std::cout << STR_(result.us_out.size()) << std::endl;
+
+    std::string results_old = "results_old.yaml";
+    std::cout << "writing results to:" << results_old << std::endl;
+    std::ofstream file_out(results_old);
+    result.write_yaml_db(file_out);
+  }
+
+  {
+    std::cout << "writing results extended to:" << out_bench << std::endl;
+    std::ofstream ff(out_bench);
+    std::cout << "writing to " << out_bench << std::endl;
+    ff << "solver_name: " << options_trajopt.solver_name << std::endl;
+    ff << "problem_name: " << problem.name << std::endl;
+    ff << "feasible: " << result.feasible << std::endl;
+    ff << "cost: " << result.cost << std::endl;
+    ff << "time_total: " << d << std::endl;
+    ff << "time_stamp: " << get_time_stamp() << std::endl;
+    ff << "solver_file: " << yaml_solver_file << std::endl;
+    ff << "problem_file: " << yaml_problem_file << std::endl;
+  }
 
   if (result.feasible) {
     std::cout << "croco success -- returning " << std::endl;

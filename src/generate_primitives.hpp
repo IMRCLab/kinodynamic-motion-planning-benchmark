@@ -25,6 +25,7 @@ struct Options_primitives {
     STRY(min_length_cut, out, be, af);
     STRY(max_length_cut, out, be, af);
     STRY(max_splits, out, be, af);
+    STRY(ref_time_steps, out, be, af);
   };
 
   void add_options(po::options_description &desc) {
@@ -36,6 +37,7 @@ struct Options_primitives {
     set_from_boostop(desc, VAR_WITH_NAME(min_length_cut));
     set_from_boostop(desc, VAR_WITH_NAME(max_length_cut));
     set_from_boostop(desc, VAR_WITH_NAME(max_splits));
+    set_from_boostop(desc, VAR_WITH_NAME(ref_time_steps));
   }
 };
 
@@ -51,7 +53,11 @@ void split_motion_primitives(const Trajectories &in, size_t num_translation,
 
 void improve_motion_primitives(const Options_trajopt &options_trajopt,
                                const Trajectories &trajs_in,
+                               const std::string& dynamics, 
                                Trajectories &trajs_out);
+
+
+
 
 void generate_primitives(const Options_trajopt &options_trajopt,
                          const Options_primitives &options_primitives,

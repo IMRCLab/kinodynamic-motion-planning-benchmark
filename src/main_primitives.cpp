@@ -78,7 +78,7 @@ int main(int argc, const char *argv[]) {
     // options_trajopt.solver_id =
     //     static_cast<int>(SOLVER::traj_opt_free_time_linear);
 
-    improve_motion_primitives(options_trajopt, trajectories, trajectories_out);
+    improve_motion_primitives(options_trajopt, trajectories, options_primitives.dynamics, trajectories_out);
 
     trajectories_out.save_file_boost((out_file + ".bin").c_str());
     trajectories_out.save_file_yaml((out_file + ".yaml").c_str());

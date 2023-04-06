@@ -920,7 +920,10 @@ Model_quad3d::Model_quad3d(const Quad3d_params &params,
 
 void Model_quad3d::sample_uniform(Eigen::Ref<Eigen::VectorXd> x) {
   (void)x;
-  ERROR_WITH_INFO("not implemented");
+  x = x_lb + (x_ub - x_lb)
+                 .cwiseProduct(.5 * (Eigen::VectorXd::Random(nx) +
+                                     Eigen::VectorXd::Ones(nx)));
+  x.segment(3, 4) = Eigen::Quaterniond::UnitRandom().coeffs();
 }
 
 void Model_quad3d::transformation_collision_geometries(

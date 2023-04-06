@@ -17,23 +17,37 @@ void idbA(const Problem &problem, const Options_idbAStar &options_idbas,
   size_t it = 0;
 
   std::vector<Motion> motions;
-  size_t max_motions_primitives = 1e5;
 
-  std::cout << "Loading motion primitives... " << std::endl;
-
-  if (!options_dbastar.primitives_new_format)
-    {
-      load_motion_primitives(
-        options_dbastar_local.motionsFile, *robot_factory_ompl(problem), motions,
-        max_motions_primitives, options_dbastar_local.cut_actions, true);
-    }
-  else {
-
-
+  std::cout << "Loading motion primitives " << std::endl;
+  if (!options_dbastar_local.primitives_new_format) {
+    load_motion_primitives(options_dbastar_local.motionsFile,
+                           *robot_factory_ompl(problem), motions,
+                           options_idbas.max_motions_primitives,
+                           options_dbastar_local.cut_actions, true);
+  } else {
+    load_motion_primitives_new(options_dbastar_local.motionsFile,
+                               *robot_factory_ompl(problem), motions,
+                               options_idbas.max_motions_primitives,
+                               options_dbastar_local.cut_actions, true);
   }
-  std::cout << "Loading motion primitives -- DONE" << std::endl;
-
   options_dbastar_local.motions_ptr = &motions;
+  std::cout << "Loading motion primitives -- DONE " << std::endl;
+
+  std::vector<Heuristic_node> heu_map;
+  if (options_dbastar.heuristic == 1) {
+
+    if (options_dbastar.heu_map_file.size()) {
+
+      load_heu_map(options_dbastar_local.heu_map_file.c_str(), heu_map);
+
+    } else {
+      std::cout << "not heu map provided. Computing one .... " << std::endl;
+      // there is not
+      generate_heuristic_map(problem, robot_factory_ompl(problem),
+                             options_dbastar_local, heu_map);
+    }
+    options_dbastar_local.heu_map_ptr = &heu_map;
+  }
 
   auto start = std::chrono::steady_clock::now();
 

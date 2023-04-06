@@ -17,6 +17,29 @@
 #define BOOST_TEST_DYN_LINK
 #include <boost/test/unit_test.hpp>
 
+//
+
+BOOST_AUTO_TEST_CASE(test_bugtrap_heu) {
+
+  Problem problem("../benchmark/unicycle_first_order_0/bugtrap_0.yaml");
+  Options_dbastar options_dbastar;
+  options_dbastar.max_motions = 1000;
+  options_dbastar.heuristic = 1;
+  options_dbastar.motionsFile = "../cloud/motionsV2/good/unicycle1_v0/"
+                                "unicycle1_v0__ispso__2023_04_03__14_56_57.bin";
+  options_dbastar.max_size_heu_map = 500;
+  Out_info_db out_info_db;
+  Trajectory traj_out;
+  dbastar(problem, options_dbastar, traj_out, out_info_db);
+  BOOST_TEST(out_info_db.solved);
+  CSTR_(out_info_db.cost);
+  BOOST_TEST(out_info_db.cost < 30.);
+
+  // i have to compute the heuristic...
+  //
+  // i have to
+}
+
 BOOST_AUTO_TEST_CASE(parallel_park_1) {
 
   Options_dbastar options_dbastar;
@@ -31,7 +54,7 @@ BOOST_AUTO_TEST_CASE(parallel_park_1) {
   options_dbastar.alpha = 0.3;
   options_dbastar.filterDuplicates = false;
   options_dbastar.maxCost = 100;
-  options_dbastar.resolution = 0.1;
+  options_dbastar.heu_resolution = 0.1;
   options_dbastar.cost_delta_factor = 1.;
   options_dbastar.rebuild_every = 5000;
   options_dbastar.cut_actions = false;
@@ -81,7 +104,7 @@ BOOST_AUTO_TEST_CASE(bugtrap_1) {
   options_dbastar.alpha = 0.3;
   options_dbastar.filterDuplicates = false;
   options_dbastar.maxCost = 100;
-  options_dbastar.resolution = 0.1;
+  options_dbastar.heu_resolution = 0.1;
   options_dbastar.cost_delta_factor = 1.;
   options_dbastar.rebuild_every = 5000;
   options_dbastar.cut_actions = false;
@@ -133,7 +156,7 @@ BOOST_AUTO_TEST_CASE(t_kink) {
   options_dbastar.alpha = 0.3;
   options_dbastar.filterDuplicates = false;
   options_dbastar.maxCost = 100;
-  options_dbastar.resolution = 0.1;
+  options_dbastar.heu_resolution = 0.1;
   options_dbastar.cost_delta_factor = 1.;
   options_dbastar.rebuild_every = 5000;
   options_dbastar.cut_actions = false;
@@ -184,7 +207,7 @@ BOOST_AUTO_TEST_CASE(t_parallel2) {
   options_dbastar.alpha = 0.3;
   options_dbastar.filterDuplicates = false;
   options_dbastar.maxCost = 100;
-  options_dbastar.resolution = 0.1;
+  options_dbastar.heu_resolution = 0.1;
   options_dbastar.cost_delta_factor = 1.;
   options_dbastar.rebuild_every = 5000;
   options_dbastar.cut_actions = false;

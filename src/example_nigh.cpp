@@ -2,6 +2,7 @@
 #include <iostream>
 #include <random>
 #include <vector>
+#include <cassert>
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-parameter"

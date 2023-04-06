@@ -118,6 +118,7 @@ struct Trajectory {
   double start_distance = -1.;
   double x_bound_distance = -1.;
   double u_bound_distance = -1.;
+  std::string info = "";
 
   Trajectory() = default;
   Trajectory(const char *file) { read_from_yaml(file); }
@@ -201,7 +202,7 @@ void resample_trajectory(std::vector<Eigen::VectorXd> &xs_out,
                          std::vector<Eigen::VectorXd> &us_out,
                          const std::vector<Eigen::VectorXd> &xs,
                          const std::vector<Eigen::VectorXd> &us,
-                         const Eigen::VectorXd &ts, double ref_dt, 
+                         const Eigen::VectorXd &ts, double ref_dt,
                          const std::shared_ptr<StateQ> &state);
 
 struct Info_out {
@@ -221,5 +222,6 @@ struct Info_out {
 
 void load_env_quim(Model_robot &robot, const Problem &problem);
 
+Trajectory from_welf_to_quim(const Trajectory &traj_raw, double u_nominal);
 
-
+Trajectory from_quim_to_welf(const Trajectory &traj_raw, double u_nominal);

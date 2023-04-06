@@ -42,6 +42,8 @@ namespace po = boost::program_options;
 using Sample = std::vector<double>;
 using Sample_ = ob::State;
 
+// nigh interface for OMPL
+
 const char *duplicate_detection_str[] = {"NO", "HARD", "SOFT"};
 
 const char *terminate_status_str[] = {
@@ -49,43 +51,11 @@ const char *terminate_status_str[] = {
 };
 
 Heu_roadmap::Heu_roadmap(std::shared_ptr<RobotOmpl> robot,
-                         size_t num_sample_trials, ob::State *startState,
-                         ob::State *goalState, double resolution)
+                         const std::vector<Heuristic_node> &heu_map)
     : robot(robot) {
 
-  auto si = robot->getSpaceInformation();
-  auto &stateValidityChecker = si->getStateValidityChecker();
-  size_t dim = robot->diff_model->nx;
-
-  auto check_fun = [&](Sample_ *x) { return stateValidityChecker->isValid(x); };
-
-  auto sample_fun = [&](double *x, size_t n) {
-    for (size_t i = 0; i < n; i++) {
-      Eigen::Map<Eigen::VectorXd> s(x, n);
-      robot->diff_model->sample_uniform(s);
-    };
-  };
-
-  generate_batch(sample_fun, check_fun, num_sample_trials, dim, si,
-                 batch_samples);
-  batch_samples.push_back(startState);
-  batch_samples.push_back(goalState);
-
-  {
-    std::ofstream file_out("batch_out.txt");
-    for (auto &x : batch_samples) {
-      printState(file_out, si, x);
-      file_out << std::endl;
-    }
-  }
-
-  double distance_threshold = 1.;
-  build_heuristic_distance(batch_samples /* goal should be last */, robot,
-                           heuristic_map, distance_threshold, resolution);
-
-  write_heuristic_map(heuristic_map, si);
-
-  if (si->getStateSpace()->isMetricSpace()) {
+  // create a heu map
+  if (robot->getSpaceInformation()->getStateSpace()->isMetricSpace()) {
     T_heu =
         std::make_shared<ompl::NearestNeighborsGNATNoThreadSafety<HeuNode *>>();
   } else {
@@ -96,10 +66,17 @@ Heu_roadmap::Heu_roadmap(std::shared_ptr<RobotOmpl> robot,
     return this->robot->getSpaceInformation()->distance(a->state, b->state);
   });
 
-  for (size_t i = 0; i < heuristic_map.size(); i++) {
+  for (size_t i = 0; i < heu_map.size(); i++) {
+    //
+
+    ob::State *tmp;
+    tmp = robot->getSpaceInformation()->allocState();
+    robot->fromEigen(tmp, heu_map.at(i).x);
+
     HeuNode *ptr = new HeuNode; // memory leak, stop bad code
-    ptr->state = heuristic_map[i].x;
-    ptr->dist = heuristic_map[i].dist;
+    ptr->state = tmp;
+    ptr->dist = heu_map[i].d;
+
     T_heu->add(ptr);
   }
 }
@@ -474,6 +451,29 @@ void generate_batch(std::function<void(double *, size_t)> free_sampler,
 
 using HeuristicMap = std::vector<SampleNode>;
 
+void compute_heuristic_map_new(
+    const EdgeList &edge_list, const DistanceList &distance_list,
+    const std::vector<Eigen::VectorXd> &batch_samples,
+    std::vector<Heuristic_node> &heuristic_map) {
+  std::vector<double> distances(batch_samples.size());
+  std::vector<int> parents(batch_samples.size());
+
+  auto out3 = timed_fun([&] {
+    get_distance_all_vertices(edge_list, distance_list, distances.data(),
+                              parents.data(), batch_samples.size(),
+                              batch_samples.size() - 1);
+    return 0;
+  });
+
+  std::cout << "time boost " << out3.second << std::endl;
+
+  heuristic_map.clear();
+  heuristic_map.resize(batch_samples.size());
+  for (size_t i = 0; i < batch_samples.size(); i++) {
+    heuristic_map.at(i) = {batch_samples.at(i), distances.at(i), parents.at(i)};
+  }
+}
+
 void compute_heuristic_map(const EdgeList &edge_list,
                            const DistanceList &distance_list,
                            const std::vector<Sample_ *> &batch_samples,
@@ -537,6 +537,45 @@ void write_heuristic_map(
 //     std::function<bool(const double *, size_t n)> check_fun,
 //     double resolution = .2) {
 
+// ]
+
+// true = no collision
+bool check_edge_at_resolution_new(const Eigen::VectorXd &start,
+                                  const Eigen::VectorXd &goal,
+                                  std::shared_ptr<Model_robot> &robot,
+                                  double resolution) {
+
+  using Segment = std::pair<Eigen::VectorXd, Eigen::VectorXd>;
+
+  std::queue<Segment> queue;
+
+  queue.push(Segment{start, goal});
+
+  Eigen::VectorXd x(robot->nx);
+  while (!queue.empty()) {
+
+    auto [si, gi] = queue.front();
+    queue.pop();
+
+    if (robot->distance(si, gi) > resolution) {
+      // check mid points
+      robot->interpolate(x, si, gi, 0.5);
+
+      if (robot->collision_check(x)) {
+        // collision free.
+        queue.push({si, x});
+        queue.push({x, gi});
+      } else {
+        // collision!
+        return false;
+      }
+
+      ;
+    }
+  }
+  return true;
+}
+
 bool check_edge_at_resolution(const Sample_ *start, const Sample_ *goal,
                               std::shared_ptr<RobotOmpl> robot,
                               double resolution) {
@@ -567,6 +606,40 @@ bool check_edge_at_resolution(const Sample_ *start, const Sample_ *goal,
   }
   robot->getSpaceInformation()->freeState(state);
   return valid_edge;
+}
+
+void build_heuristic_distance_new(
+    const std::vector<Eigen::VectorXd> &batch_samples,
+    std::shared_ptr<Model_robot> &robot,
+    std::vector<Heuristic_node> &heuristic_map, double distance_threshold,
+    double resolution) {
+
+  EdgeList edge_list;
+  DistanceList distance_list;
+
+  auto tic = std::chrono::high_resolution_clock::now();
+
+  auto out = timed_fun([&] {
+    for (size_t i = 0; i < batch_samples.size(); i++) {
+      std::cout << "i " << i << std::endl;
+      for (size_t j = i + 1; j < batch_samples.size(); j++) {
+        auto p1 = batch_samples.at(i);
+        auto p2 = batch_samples.at(j);
+        double d = robot->distance(p1, p2);
+        if (d < distance_threshold &&
+            check_edge_at_resolution_new(p1, p2, robot, resolution)) {
+          edge_list.push_back({i, j});
+          distance_list.push_back(robot->lower_bound_time(p1, p2));
+        }
+      }
+    }
+    return 0;
+  });
+
+  std::cout << "time building distance matrix " << out.second << std::endl;
+
+  compute_heuristic_map_new(edge_list, distance_list, batch_samples,
+                            heuristic_map);
 }
 
 void build_heuristic_distance(const std::vector<Sample_ *> &batch_samples,
@@ -787,15 +860,14 @@ void print_matrix(std::ostream &out,
 
 double heuristicCollisionsTree(ompl::NearestNeighbors<HeuNode *> *T_heu,
                                const ob::State *s,
-                               std::shared_ptr<RobotOmpl> robot) {
+                               std::shared_ptr<RobotOmpl> robot,
+                               double connect_radius_h) {
   HeuNode node;
   node.state = s;
-  // auto out = T_heu->nearest(&node);
   std::vector<HeuNode *> neighbors;
-  double max_distance = 0.5;
   double min = 1e8;
   CHECK(T_heu, AT);
-  T_heu->nearestR(&node, max_distance, neighbors);
+  T_heu->nearestR(&node, connect_radius_h, neighbors);
   for (const auto &p : neighbors) {
     double d = p->dist + robot->cost_lower_bound(p->state, s);
     if (d < min) {
@@ -821,7 +893,10 @@ double heuristicCollisionsTree(ompl::NearestNeighbors<HeuNode *> *T_heu,
 struct Loader {
 
   bool use_boost = true; // boost (true) or yaml (false)
+  bool print = false;
   void *source = nullptr;
+  std::string be = "";
+  std::string af = ": ";
 
   template <typename T> void set(T &x, const char *name) {
 
@@ -831,18 +906,26 @@ struct Loader {
       CHECK(p, AT);
       set_from_boostop(*p, x, name);
     } else {
-      YAML::Node *p = static_cast<YAML::Node *>(source);
-      CHECK(p, AT);
-      set_from_yaml(*p, x, name);
+      if (!print) {
+        YAML::Node *p = static_cast<YAML::Node *>(source);
+        CHECK(p, AT);
+        set_from_yaml(*p, x, name);
+      }
+      if (print) {
+        // use a write method
+        std::ostream *p = static_cast<std::ostream *>(source);
+        *p << be << name << af << x << std::endl;
+      }
     }
   }
 };
 
 // TODO: how to unify: write form boost and write from yaml?
-void Options_dbastar::__load_data(void *source, bool boost) {
+void Options_dbastar::__load_data(void *source, bool boost, bool write) {
 
   Loader loader;
   loader.use_boost = boost;
+  loader.print = write;
   loader.source = source;
 
   loader.set(VAR_WITH_NAME(delta));
@@ -852,7 +935,7 @@ void Options_dbastar::__load_data(void *source, bool boost) {
   loader.set(VAR_WITH_NAME(maxCost));
   loader.set(VAR_WITH_NAME(heuristic));
   loader.set(VAR_WITH_NAME(max_motions));
-  loader.set(VAR_WITH_NAME(resolution));
+  loader.set(VAR_WITH_NAME(heu_resolution));
   loader.set(VAR_WITH_NAME(delta_factor_goal));
   loader.set(VAR_WITH_NAME(cost_delta_factor));
   loader.set(VAR_WITH_NAME(rebuild_every));
@@ -869,65 +952,20 @@ void Options_dbastar::__load_data(void *source, bool boost) {
   loader.set(VAR_WITH_NAME(motionsFile));
   loader.set(VAR_WITH_NAME(outFile));
   loader.set(VAR_WITH_NAME(search_timelimit));
+  loader.set(VAR_WITH_NAME(max_size_heu_map));
+  loader.set(VAR_WITH_NAME(heu_map_file));
+  loader.set(VAR_WITH_NAME(heu_connection_radius));
 }
 
 void Options_dbastar::add_options(po::options_description &desc) {
   __load_data(&desc, true);
-#if 0 
-  set_from_boostop(desc, VAR_WITH_NAME(delta));
-  set_from_boostop(desc, VAR_WITH_NAME(epsilon));
-  set_from_boostop(desc, VAR_WITH_NAME(alpha));
-  set_from_boostop(desc, VAR_WITH_NAME(filterDuplicates));
-  set_from_boostop(desc, VAR_WITH_NAME(maxCost));
-  set_from_boostop(desc, VAR_WITH_NAME(heuristic));
-  set_from_boostop(desc, VAR_WITH_NAME(max_motions));
-  set_from_boostop(desc, VAR_WITH_NAME(resolution));
-  set_from_boostop(desc, VAR_WITH_NAME(delta_factor_goal));
-  set_from_boostop(desc, VAR_WITH_NAME(cost_delta_factor));
-  set_from_boostop(desc, VAR_WITH_NAME(rebuild_every));
-  set_from_boostop(desc, VAR_WITH_NAME(num_sample_trials));
-  set_from_boostop(desc, VAR_WITH_NAME(max_expands));
-  set_from_boostop(desc, VAR_WITH_NAME(cut_actions));
-  set_from_boostop(desc, VAR_WITH_NAME(duplicate_detection_int));
-  set_from_boostop(desc, VAR_WITH_NAME(use_landmarks));
-  set_from_boostop(desc, VAR_WITH_NAME(factor_duplicate_detection));
-  set_from_boostop(desc, VAR_WITH_NAME(epsilon_soft_duplicate));
-  set_from_boostop(desc, VAR_WITH_NAME(add_node_if_better));
-  set_from_boostop(desc, VAR_WITH_NAME(debug));
-  set_from_boostop(desc, VAR_WITH_NAME(add_after_expand));
-  set_from_boostop(desc, VAR_WITH_NAME(motionsFile));
-  set_from_boostop(desc, VAR_WITH_NAME(outFile));
-  set_from_boostop(desc, VAR_WITH_NAME(search_timelimit));
-#endif
 }
 
 void Options_dbastar::print(std::ostream &out, const std::string &be,
                             const std::string &af) const {
 
-  out << be << STR(delta, af) << std::endl;
-  out << be << STR(epsilon, af) << std::endl;
-  out << be << STR(alpha, af) << std::endl;
-  out << be << STR(filterDuplicates, af) << std::endl;
-  out << be << STR(maxCost, af) << std::endl;
-  out << be << STR(heuristic, af) << std::endl;
-  out << be << STR(max_motions, af) << std::endl;
-  out << be << STR(resolution, af) << std::endl;
-  out << be << STR(delta_factor_goal, af) << std::endl;
-  out << be << STR(cost_delta_factor, af) << std::endl;
-  out << be << STR(rebuild_every, af) << std::endl;
-  out << be << STR(num_sample_trials, af) << std::endl;
-  out << be << STR(max_expands, af) << std::endl;
-  out << be << STR(cut_actions, af) << std::endl;
-  out << be << STR(duplicate_detection_int, af) << std::endl;
-  out << be << STR(use_landmarks, af) << std::endl;
-  out << be << STR(factor_duplicate_detection, af) << std::endl;
-  out << be << STR(epsilon_soft_duplicate, af) << std::endl;
-  out << be << STR(add_node_if_better, af) << std::endl;
-  out << be << STR(debug, af) << std::endl;
-  out << be << STR(add_after_expand, af) << std::endl;
-  out << be << STR(motionsFile, af) << std::endl;
-  out << be << STR(outFile, af) << std::endl;
-  out << be << STR(search_timelimit, af) << std::endl;
+  auto ptr = const_cast<Options_dbastar *>(this);
+  ptr->__load_data(&out, false, true);
 }
 
 void Options_dbastar::read_from_yaml(const char *file) {
@@ -945,35 +983,7 @@ void Options_dbastar::read_from_yaml(YAML::Node &node) {
   }
 }
 void Options_dbastar::__read_from_node(const YAML::Node &node) {
-
   __load_data(&const_cast<YAML::Node &>(node), false);
-
-#if 0
-  set_from_yaml(node, VAR_WITH_NAME(delta));
-  set_from_yaml(node, VAR_WITH_NAME(epsilon));
-  set_from_yaml(node, VAR_WITH_NAME(alpha));
-  set_from_yaml(node, VAR_WITH_NAME(filterDuplicates));
-  set_from_yaml(node, VAR_WITH_NAME(maxCost));
-  set_from_yaml(node, VAR_WITH_NAME(heuristic));
-  set_from_yaml(node, VAR_WITH_NAME(max_motions));
-  set_from_yaml(node, VAR_WITH_NAME(resolution));
-  set_from_yaml(node, VAR_WITH_NAME(delta_factor_goal));
-  set_from_yaml(node, VAR_WITH_NAME(cost_delta_factor));
-  set_from_yaml(node, VAR_WITH_NAME(rebuild_every));
-  set_from_yaml(node, VAR_WITH_NAME(num_sample_trials));
-  set_from_yaml(node, VAR_WITH_NAME(max_expands));
-  set_from_yaml(node, VAR_WITH_NAME(cut_actions));
-  set_from_yaml(node, VAR_WITH_NAME(duplicate_detection_int));
-  set_from_yaml(node, VAR_WITH_NAME(use_landmarks));
-  set_from_yaml(node, VAR_WITH_NAME(factor_duplicate_detection));
-  set_from_yaml(node, VAR_WITH_NAME(epsilon_soft_duplicate));
-  set_from_yaml(node, VAR_WITH_NAME(add_node_if_better));
-  set_from_yaml(node, VAR_WITH_NAME(debug));
-  set_from_yaml(node, VAR_WITH_NAME(add_after_expand));
-  set_from_yaml(node, VAR_WITH_NAME(motionsFile));
-  set_from_yaml(node, VAR_WITH_NAME(outFile));
-  set_from_yaml(node, VAR_WITH_NAME(search_timelimit));
-#endif
 }
 
 void Time_benchmark::write(std::ostream &out) {
@@ -1364,8 +1374,9 @@ double automatic_delta(double delta_in, double alpha, RobotOmpl &robot,
   return adjusted_delta;
 }
 
-void filte_duplicates(std::vector<Motion> &motions, double delta, double alpha,
-                      RobotOmpl &robot, ompl::NearestNeighbors<Motion *> &T_m) {
+void filter_duplicates(std::vector<Motion> &motions, double delta, double alpha,
+                       RobotOmpl &robot, ompl::NearestNeighbors<Motion *> &T_m,
+                       double factor) {
 
   auto si = robot.getSpaceInformation();
   size_t num_duplicates = 0;
@@ -1379,14 +1390,14 @@ void filte_duplicates(std::vector<Motion> &motions, double delta, double alpha,
     }
 
     si->copyState(fakeMotion.states[0], m.states[0]);
-    T_m.nearestR(&fakeMotion, delta * alpha, neighbors_m);
+    T_m.nearestR(&fakeMotion, factor * delta * alpha, neighbors_m);
 
     for (Motion *nm : neighbors_m) {
       if (nm == &m || nm->disabled) {
         continue;
       }
       double goal_delta = si->distance(m.states.back(), nm->states.back());
-      if (goal_delta < delta * (1 - alpha)) {
+      if (goal_delta < factor * delta * (1 - alpha)) {
         nm->disabled = true;
         ++num_duplicates;
       }
@@ -1457,6 +1468,37 @@ void Motion::print(std::ostream &out,
   STRY(disabled, out, "", ": ");
 }
 
+void generate_heuristic_map(const Problem &problem,
+                            std::shared_ptr<RobotOmpl> robot_ompl,
+                            const Options_dbastar &options_dbastar,
+                            std::vector<Heuristic_node> &heu_map) {
+  auto robot = robot_ompl->diff_model;
+
+  std::vector<Eigen::VectorXd> samples;
+  Eigen::VectorXd v(robot->nx);
+
+  samples.push_back(problem.start);
+  for (size_t i = 0; i < options_dbastar.num_sample_trials; i++) {
+    // generate one sample
+    //
+    robot->sample_uniform(v);
+    if (robot->collision_check(v)) {
+      samples.push_back(v);
+    }
+
+    if (samples.size() == options_dbastar.max_size_heu_map) {
+      break;
+    }
+  }
+  samples.push_back(problem.goal); // important! goal should be the last one!!
+
+  build_heuristic_distance_new(samples, robot, heu_map,
+                               options_dbastar.heu_connection_radius,
+                               options_dbastar.heu_resolution);
+}
+
+// write heuristic map
+
 template <typename _T>
 class NearestNeighborsGNATNoThreadSafety_public
     : public ompl::NearestNeighborsGNATNoThreadSafety<_T> {
@@ -1473,6 +1515,7 @@ void dbastar(const Problem &problem, const Options_dbastar &options_dbastar,
              Trajectory &traj_out, Out_info_db &out_info_db) {
   // TODO:
   // - disable motions should not be on the search tree!
+  // - use the loaded heuristic map!
 
   Options_dbastar options_dbastar_local = options_dbastar;
 
@@ -1506,20 +1549,35 @@ void dbastar(const Problem &problem, const Options_dbastar &options_dbastar,
     std::cout << "motions have alredy loaded " << std::endl;
     motions = *options_dbastar_local.motions_ptr;
 
+    if (2 * options_dbastar_local.max_motions < motions.size())
+      motions.resize(2 * options_dbastar_local.max_motions);
+
   } else {
     std::cout << "loading motions ... " << std::endl;
-    load_motion_primitives(options_dbastar_local.motionsFile, *robot, motions,
-                           options_dbastar_local.max_motions,
-                           options_dbastar_local.cut_actions, true);
+    load_motion_primitives_new(options_dbastar_local.motionsFile,
+                               *robot_factory_ompl(problem), motions,
+                               options_dbastar.max_motions * 2,
+                               options_dbastar_local.cut_actions, true);
   }
 
-  if (options_dbastar_local.max_motions < motions.size())
-    motions.resize(options_dbastar_local.max_motions);
+  CSTR_(motions.size());
+  double erase_factor = 1.;
+  motions.erase(std::remove_if(motions.begin(), motions.end(),
+                               [&](auto &motion) {
+                                 return si->distance(motion.states.front(),
+                                                     motion.states.back()) <
+                                        erase_factor *
+                                            options_dbastar_local.delta;
+                               }),
+                motions.end());
 
-  std::cout << "There are " << motions.size() << " motions!" << std::endl;
+  std::cout << "after erase short primtivies " << std::endl;
+  CSTR_(motions.size());
 
-  size_t num_print_motions = 10;
+  std::cout << "Using Tentative " << motions.size() << " motions!" << std::endl;
 
+  std::cout << "Printing example motions:" << std::endl;
+  size_t num_print_motions = 2;
   for (size_t i = 0; i < num_print_motions; i++) {
     motions.at(i).print(std::cout, si);
   }
@@ -1557,20 +1615,72 @@ void dbastar(const Problem &problem, const Options_dbastar &options_dbastar,
   }
 
   if (options_dbastar_local.filterDuplicates) {
-    filte_duplicates(motions, options_dbastar_local.delta,
-                     options_dbastar_local.alpha, *robot, *T_m);
+    double factor = 1.0;
+    filter_duplicates(motions, options_dbastar_local.delta,
+                      options_dbastar_local.alpha, *robot, *T_m, factor);
+
+    size_t num_dis = std::count_if(motions.begin(), motions.end(),
+                                   [](auto &m) { return m.disabled; });
+    CSTR_(num_dis);
+
+    motions.erase(std::remove_if(motions.begin(), motions.end(),
+                                 [&](auto &motion) { return motion.disabled; }),
+                  motions.end());
+
+  } else {
+  }
+
+  if (motions.size() > options_dbastar.max_motions)
+    motions.resize(options_dbastar.max_motions);
+
+  // recompute the idx
+  for (size_t idx = 0; idx < motions.size(); ++idx) {
+    motions[idx].idx = idx;
+  }
+
+  std::cout << "Definitive number of motions" << std::endl;
+  CSTR_(motions.size());
+  CSTR_(options_dbastar.max_motions);
+
+  motions_ptr.clear();
+  motions_ptr.resize(motions.size());
+
+  std::transform(motions.begin(), motions.end(), motions_ptr.begin(),
+                 [](auto &s) { return &s; });
+
+  T_m->clear();
+  {
+    auto out = timed_fun([&] {
+      T_m->add(motions_ptr);
+      return 0;
+    });
+    time_bench.time_nearestMotion += out.second;
   }
 
   std::shared_ptr<Heu_fun> h_fun;
 
+  std::vector<Heuristic_node> heu_map;
   switch (options_dbastar_local.heuristic) {
   case 0: {
     h_fun = std::make_shared<Heu_euclidean>(robot, robot->goalState);
   } break;
   case 1: {
-    h_fun = std::make_shared<Heu_roadmap>(
-        robot, options_dbastar_local.num_sample_trials, robot->startState,
-        robot->goalState, options_dbastar_local.resolution);
+    if (options_dbastar_local.heu_map_ptr) {
+      std::cout << "Heuristic map is already loaded" << std::endl;
+    } else {
+      if (options_dbastar.heu_map_file.size()) {
+        std::cout << "loading map from file " << std::endl;
+        load_heu_map(options_dbastar_local.heu_map_file.c_str(), heu_map);
+      } else {
+        std::cout << "not heu map provided. Computing one .... " << std::endl;
+        generate_heuristic_map(problem, robot_factory_ompl(problem),
+                               options_dbastar_local, heu_map);
+      }
+      options_dbastar_local.heu_map_ptr = &heu_map;
+    }
+    h_fun = std::make_shared<Heu_roadmap>(robot,
+                                          *options_dbastar_local.heu_map_ptr);
+
   } break;
   case -1: {
     h_fun = std::make_shared<Heu_blind>();
@@ -2164,6 +2274,7 @@ void dbastar(const Problem &problem, const Options_dbastar &options_dbastar,
   if (options_dbastar_local.debug) {
 
     if (options_dbastar_local.heuristic == 1) {
+#if 0 
       out << "batch:" << std::endl;
       auto fun_d = static_cast<Heu_roadmap *>(h_fun.get());
       for (auto &x : fun_d->batch_samples) {
@@ -2171,6 +2282,7 @@ void dbastar(const Problem &problem, const Options_dbastar &options_dbastar,
         printState(out, si, x);
         out << std::endl;
       }
+#endif
     }
 
     out << "kdtree:" << std::endl;
@@ -2560,4 +2672,42 @@ void Out_info_db::print(std::ostream &out) {
   out << be << STR(cost, af) << std::endl;
   out << be << STR(cost_with_delta_time, af) << std::endl;
   out << be << STR(solved, af) << std::endl;
+}
+
+void write_heu_map(const std::vector<Heuristic_node> &heu_map, const char *file,
+                   const char *header) {
+  std::ofstream out(file);
+
+  if (header) {
+    out << header << std::endl;
+  }
+  const char *four_space = "    ";
+  out << "heu_map:" << std::endl;
+  for (auto &v : heu_map) {
+    out << "  -" << std::endl;
+    out << four_space << "x: " << v.x.format(FMT) << std::endl;
+    out << four_space << "d: " << v.d << std::endl;
+    out << four_space << "p: " << v.p << std::endl;
+  }
+}
+
+void load_heu_map(const char *file, std::vector<Heuristic_node> &heu_map) {
+
+  std::cout << "loading heu map -- file: " << file << std::endl;
+  std::ifstream in(file);
+  CHECK(in.is_open(), AT);
+  YAML::Node node = YAML::LoadFile(file);
+
+  if (node["heu_map"]) {
+
+    for (const auto &state : node["heu_map"]) {
+      std::vector<double> x = state["x"].as<std::vector<double>>();
+      Eigen::VectorXd xe = Eigen::VectorXd::Map(x.data(), x.size());
+      double d = state["d"].as<double>();
+      int p = state["p"].as<double>();
+      heu_map.push_back({xe, d, p});
+    }
+  } else {
+    ERROR_WITH_INFO("missing map key");
+  }
 }

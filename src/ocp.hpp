@@ -62,6 +62,7 @@ struct Options_trajopt {
   int tsearch_num_check = 20;
   bool ref_x0 = false;
   bool interp = false;
+  bool welf_format = false;
 
   void add_options(po::options_description &desc);
 

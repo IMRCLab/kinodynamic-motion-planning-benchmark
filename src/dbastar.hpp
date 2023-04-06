@@ -322,7 +322,8 @@ void print_matrix(std::ostream &out,
 
 double heuristicCollisionsTree(ompl::NearestNeighbors<HeuNode *> *T_heu,
                                const ob::State *s,
-                               std::shared_ptr<RobotOmpl> robot);
+                               std::shared_ptr<RobotOmpl> robot,
+                               double connect_radius_h);
 
 enum class Duplicate_detection {
   NO = 0,
@@ -349,6 +350,14 @@ struct Out_info_db {
   // void read_from_yaml(const char *file);
 };
 
+struct Heuristic_node {
+  Eigen::VectorXd x;
+  double d; // distance
+  int p;    // parent
+};
+
+void load_heu_map(const char *file, std::vector<Heuristic_node> &heu_map);
+
 struct Options_dbastar {
 
   float delta = .3;
@@ -361,12 +370,13 @@ struct Options_dbastar {
   bool primitives_new_format = true; // (false=Format of IROS 22)
   float maxCost = std::numeric_limits<float>::infinity();
   int heuristic = 0;
-  size_t max_motions = std::numeric_limits<int>::max();
-  double resolution = .2;
+  size_t max_motions = 1e4;
+  double heu_resolution = .5;
   double delta_factor_goal = 1;
   double cost_delta_factor = 0;
   int rebuild_every = 5000;
   size_t num_sample_trials = 3000;
+  size_t max_size_heu_map = 1000;
   size_t max_expands = 1e6;
   bool cut_actions = false;
   int duplicate_detection_int = 0;
@@ -375,19 +385,25 @@ struct Options_dbastar {
   double epsilon_soft_duplicate = 1.5;
   bool add_node_if_better = false;
   bool debug = false;
+  std::vector<Heuristic_node> *heu_map_ptr = nullptr;
+  std::string heu_map_file;
   bool add_after_expand = false; // this does not improve cost of closed nodes.
                                  // it is fine if heu is admissible
   bool propagate_controls =
       false; // TODO: check what happens, in the style of Raul Shome
 
   double search_timelimit = 1e4; // in ms
+  double heu_connection_radius = 1;
 
   void add_options(po::options_description &desc);
 
-  void __load_data(void *source, bool boost);
+  void __load_data(void *source, bool boost, bool write = false);
 
   void print(std::ostream &out, const std::string &be = "",
              const std::string &af = ": ") const;
+
+  void print_nonconst(std::ostream &out, const std::string &be = "",
+                      const std::string &af = ": ");
 
   void __read_from_node(const YAML::Node &node);
   void read_from_yaml(YAML::Node &node);
@@ -477,16 +493,14 @@ struct Heu_roadmap : Heu_fun {
 
   std::shared_ptr<RobotOmpl> robot;
   std::shared_ptr<ompl::NearestNeighbors<HeuNode *>> T_heu;
-  std::vector<SampleNode> heuristic_map;
-  std::vector<Sample_ *> batch_samples;
+  double connect_radius_h = 0.5;
 
-  Heu_roadmap(std::shared_ptr<RobotOmpl> robot, size_t num_sample_trials,
-              ob::State *startState, ob::State *goalState,
-              double resolution = .1);
+  Heu_roadmap(std::shared_ptr<RobotOmpl> robot,
+              const std::vector<Heuristic_node> &heu_map);
 
   virtual double h(const ompl::base::State *x) override {
     CHECK(T_heu, AT);
-    return heuristicCollisionsTree(T_heu.get(), x, robot);
+    return heuristicCollisionsTree(T_heu.get(), x, robot, connect_radius_h);
   }
 
   virtual ~Heu_roadmap() override{
@@ -497,6 +511,17 @@ struct Heu_roadmap : Heu_fun {
   };
 };
 
+void build_heuristic_distance_new(
+    const std::vector<Eigen::VectorXd> &batch_samples,
+    std::shared_ptr<Model_robot> &robot,
+    std::vector<Heuristic_node> &heuristic_map, double distance_threshold,
+    double resolution);
+
+bool check_edge_at_resolution_new(const Eigen::VectorXd &start,
+                                  const Eigen::VectorXd &goal,
+                                  std::shared_ptr<Model_robot> &robot,
+                                  double resolution);
+
 void dbastar(const Problem &problem, const Options_dbastar &options_dbastar,
              Trajectory &traj_out, Out_info_db &out_info_db);
 
@@ -504,3 +529,13 @@ void load_motion_primitives_new(const std::string &motionsFile,
                                 RobotOmpl &robot, std::vector<Motion> &motions,
                                 int max_motions, bool cut_actions,
                                 bool shuffle);
+
+void write_heu_map(const std::vector<Heuristic_node> &heu_map, const char *file,
+                   const char *header = nullptr);
+
+void generate_heuristic_map(const Problem &problem,
+                            std::shared_ptr<RobotOmpl> robot_ompl,
+                            const Options_dbastar &options_dbastar,
+                            std::vector<Heuristic_node> &heu_map) ;
+
+

@@ -35,18 +35,17 @@
 // this is the complete algorithm: idbA*
 
 int main(int argc, char *argv[]) {
-  po::options_description desc("Allowed options");
   Options_idbAStar options_idbastar;
   Options_dbastar options_dbastar;
   Options_trajopt options_trajopt;
-  options_idbastar.add_options(desc);
-  options_dbastar.add_options(desc);
-  options_trajopt.add_options(desc);
-
   std::string env_file = "";
   std::string cfg_file = "";
   std::string results_file = "";
 
+  po::options_description desc("Allowed options");
+  options_idbastar.add_options(desc);
+  options_dbastar.add_options(desc);
+  options_trajopt.add_options(desc);
   set_from_boostop(desc, VAR_WITH_NAME(env_file));
   set_from_boostop(desc, VAR_WITH_NAME(cfg_file));
   set_from_boostop(desc, VAR_WITH_NAME(results_file));

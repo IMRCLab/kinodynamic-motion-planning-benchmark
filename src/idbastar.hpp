@@ -50,6 +50,7 @@ struct Options_idbAStar {
   double timelimit = 10; // in seconds
   size_t max_it = 10;
   size_t max_num_sol = 5;
+  size_t max_motions_primitives = 1e4;
   bool new_schedule = true;
 
   void add_options(po::options_description &desc) {
@@ -61,6 +62,7 @@ struct Options_idbAStar {
     set_from_boostop(desc, VAR_WITH_NAME(timelimit));
     set_from_boostop(desc, VAR_WITH_NAME(max_it));
     set_from_boostop(desc, VAR_WITH_NAME(new_schedule));
+    set_from_boostop(desc, VAR_WITH_NAME(max_motions_primitives));
   }
   void print(std::ostream &out, const std::string be = "",
              const std::string af = ": ") {
@@ -72,6 +74,7 @@ struct Options_idbAStar {
     out << be << STR(timelimit, af) << std::endl;
     out << be << STR(max_it, af) << std::endl;
     out << be << STR(new_schedule, af) << std::endl;
+    out << be << STR(max_motions_primitives, af) << std::endl;
   }
 
   void __read_from_node(const YAML::Node &node) {
@@ -83,6 +86,7 @@ struct Options_idbAStar {
     set_from_yaml(node, VAR_WITH_NAME(timelimit));
     set_from_yaml(node, VAR_WITH_NAME(max_it));
     set_from_yaml(node, VAR_WITH_NAME(new_schedule));
+    set_from_yaml(node, VAR_WITH_NAME(max_motions_primitives));
   }
 
   void read_from_yaml(YAML::Node &node) {

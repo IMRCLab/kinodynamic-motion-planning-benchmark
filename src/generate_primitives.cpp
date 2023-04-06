@@ -139,6 +139,7 @@ void split_motion_primitives(const Trajectories &in, size_t num_translation,
 
       new_traj.start = new_traj.states.front();
       new_traj.goal = new_traj.states.back();
+      // TODO: add cost!!
 
       out.data.push_back(new_traj);
     }
@@ -147,9 +148,8 @@ void split_motion_primitives(const Trajectories &in, size_t num_translation,
 
 void improve_motion_primitives(const Options_trajopt &options_trajopt,
                                const Trajectories &trajs_in,
+                               const std::string &dynamics,
                                Trajectories &trajs_out) {
-
-  auto dynamics = "unicycle1_v0";
 
   for (size_t i = 0; i < trajs_in.data.size(); i++) {
 
@@ -222,6 +222,10 @@ void generate_primitives(const Options_trajopt &options_trajopt,
     }
 
     std::cout << "Trying to Generate a path betweeen " << std::endl;
+
+    // start.setZero();
+    // start(6) = 1.;
+
     CSTR_V(start);
     CSTR_V(goal);
 
@@ -230,23 +234,31 @@ void generate_primitives(const Options_trajopt &options_trajopt,
     problem.start = start;
     problem.robotType = options_primitives.dynamics;
 
-    Trajectory init_guess;
-    init_guess.num_time_steps = options_primitives.ref_time_steps;
+    // double try
 
-    Trajectory traj;
-    Result_opti opti_out;
+    std::vector<double> try_rates{.5, 1., 2.};
 
-    trajectory_optimization(problem, init_guess, options_trajopt, traj,
-                            opti_out);
+    for (const auto &try_rate : try_rates) {
+      Trajectory init_guess;
+      init_guess.num_time_steps =
+          int(try_rate * options_primitives.ref_time_steps);
 
-    if (opti_out.feasible) {
-      CHECK(traj.states.size(), AT);
-      traj.start = traj.states.front();
-      traj.goal = traj.states.back();
-      trajectories.data.push_back(traj);
-    } else {
-      if (options_primitives.adapt_infeas_primitives) {
-        ERROR_WITH_INFO("not implemented");
+      Trajectory traj;
+      Result_opti opti_out;
+
+      trajectory_optimization(problem, init_guess, options_trajopt, traj,
+                              opti_out);
+
+      if (opti_out.feasible) {
+        CHECK(traj.states.size(), AT);
+        traj.start = traj.states.front();
+        traj.goal = traj.states.back();
+        trajectories.data.push_back(traj);
+        break;
+      } else {
+        if (options_primitives.adapt_infeas_primitives) {
+          ERROR_WITH_INFO("not implemented");
+        }
       }
     }
 

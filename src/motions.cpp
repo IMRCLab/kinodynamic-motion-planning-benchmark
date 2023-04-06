@@ -113,6 +113,11 @@ void Trajectory::to_yaml_format(std::ostream &out,
       out << prefix << "  - " << times(i) << std::endl;
     }
   }
+  std::cout << AT<< " " <<"INFO"<< info << std::endl;
+  if (info.size()) {
+    std::cout << "hello world " << std::endl;
+    out << "info: " << info << std::endl;
+  }
 };
 
 void Trajectory::update_feasibility(double traj_tol, double goal_tol,
@@ -504,7 +509,7 @@ void Trajectory::save_file_boost(const char *file) const {
 void Trajectory::load_file_boost(const char *file) {
   std::cout << "Traj: load file boost from: " << file << std::endl;
   std::ifstream in(file, std::ios::binary);
-  CHECK(in.is_open() , AT);
+  CHECK(in.is_open(), AT);
   boost::archive::binary_iarchive oi(in);
   oi >> *this;
 }
@@ -522,9 +527,11 @@ void Trajectories::load_file_boost(const char *file) {
   std::cout << "Trajs: load file boost from: " << file << std::endl;
 
   std::ifstream in(file, std::ios::binary);
-  CHECK(in.is_open() , AT);
+  CHECK(in.is_open(), AT);
   boost::archive::binary_iarchive oi(in);
   oi >> *this;
+  std::cout << "Trajs: load file boost from: " << file << " -- DONE"
+            << std::endl;
 }
 
 void load_env_quim(Model_robot &robot, const Problem &problem) {
@@ -561,3 +568,55 @@ void load_env_quim(Model_robot &robot, const Problem &problem) {
   robot.env->registerObjects(obstacles);
   robot.env->setup();
 }
+
+
+Trajectory from_welf_to_quim(const Trajectory &traj_raw, double u_nominal) {
+
+  Trajectory traj = traj_raw;
+  traj.states.resize(traj_raw.states.size());
+  traj.actions.resize(traj_raw.actions.size());
+
+  Eigen::VectorXd tmp(traj_raw.states.front().size());
+
+  std::transform(traj_raw.states.begin(), traj_raw.states.end(),
+                 traj.states.begin(), [&](auto &x) {
+                   from_welf_format(x, tmp);
+                   tmp.segment(3, 4).normalize();
+                   return tmp;
+                 });
+
+  Eigen::VectorXd u_tmp(traj_raw.actions.front().size());
+  std::transform(traj_raw.actions.begin(), traj_raw.actions.end(),
+                 traj.actions.begin(), [&](auto &x) {
+                   u_tmp = x / u_nominal;
+                   return u_tmp;
+                 });
+
+  return traj;
+}
+
+Trajectory from_quim_to_welf(const Trajectory &traj_raw, double u_nominal) {
+
+  Trajectory traj = traj_raw;
+  traj.states.resize(traj_raw.states.size());
+  traj.actions.resize(traj_raw.actions.size());
+
+  Eigen::VectorXd tmp(traj_raw.states.front().size());
+
+  std::transform(traj_raw.states.begin(), traj_raw.states.end(),
+                 traj.states.begin(), [&](auto &x) {
+                   from_quim_format(x, tmp);
+                   tmp.segment(6, 4).normalize();
+                   return tmp;
+                 });
+
+  Eigen::VectorXd u_tmp(traj_raw.actions.front().size());
+  std::transform(traj_raw.actions.begin(), traj_raw.actions.end(),
+                 traj.actions.begin(), [&](auto &x) {
+                   u_tmp = u_nominal * x;
+                   return u_tmp;
+                 });
+
+  return traj;
+}
+
