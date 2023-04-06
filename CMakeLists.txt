@@ -143,13 +143,13 @@ add_executable(dev_manifold
 )
 
 
-add_executable(example_nigh
-  src/example_nigh.cpp
-)
+# add_executable(example_nigh
+#   src/example_nigh.cpp
+# )
 
 
 
-target_include_directories(example_nigh PRIVATE deps/nigh/src )
+# target_include_directories(example_nigh PRIVATE deps/nigh/src )
 
 target_include_directories(robot_models
   PRIVATE ${PINOCCHIO_INCLUDE_DIRS}
