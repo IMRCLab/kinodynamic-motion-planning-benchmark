@@ -1,4 +1,6 @@
 
+#include <memory>
+#include <mutex>
 
 #include <cassert> // bug in /home/quim/stg/wolfgang/kinodynamic-motion-planning-benchmark/nigh/src/nigh/impl/non_atomic.hpp:88:19: erro
 //
