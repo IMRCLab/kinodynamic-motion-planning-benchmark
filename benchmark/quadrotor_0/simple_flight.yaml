@@ -1,0 +1,47 @@
+# def simple_flight(self):
+#
+#     self.name = "simple_flight"
+#
+#     self.x0 = np.array([0., 0., 1.,
+#                         0., 0., 0.,
+#                         1., 0., 0., 0.,
+#                         0., 0., 0.],
+#                         dtype=np.float64)
+#
+#     self.xf = np.array([0., 1., 1.,
+#                         0., 0., 0.,
+#                         1., 0., 0., 0.,
+#                         0., 0., 0.], dtype=np.float64)
+#
+#     self.tf_min = 2.1
+#     self.tf_max = 2.1
+#
+#     self.t_steps_scvx = 30
+#     self.t_steps_komo = 30
+#     self.t_steps_croco = 30
+#     self.t_steps_casadi = 30
+#
+#     self.noise = 0.01
+#
+#     self.t2w = 1.4
+environment:
+  min: [-2, -2, 0]
+  max: [2, 2, 2]
+  obstacles: []
+
+robots:
+  - type: quad3d_v4
+    start: [0, 0, 1.,
+                            0., 0., 0.,
+                            1., 
+                            0., 0., 0.,
+                            0., 0., 0.]
+    goal: [ 0, 1, 1.,
+                            0., 0., 0.,
+                            1., 0., 0., 0.,
+                            0., 0., 0.]
+
+
+
+
+

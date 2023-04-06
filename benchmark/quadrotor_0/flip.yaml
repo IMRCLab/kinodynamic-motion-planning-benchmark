@@ -1,0 +1,71 @@
+# self.name = "flip"
+#
+# self.x0 = np.array([0., 0, 1.,
+#                     0., 0., 0.,
+#                     1, 0, 0., 0.,
+#                     0., 0., 0.],
+#                     dtype=np.float64)
+#
+# self.xf = np.array([0., 1.4, 1.,
+#                     0., 0., 0.,
+#                     1., 0., 0., 0.,
+#                     0., 0., 0.], dtype=np.float64)
+#
+# xm_1 = intermediate_state(["pos"],
+#                         np.array([0., 1., 1.5,
+#                                     0., 0., 1.6,
+#                                     1., 0., 0., 0.,
+#                                     0., 0., 0.], dtype=np.float64),
+#                         45)
+#
+# xm_2 = intermediate_state(["quat"],
+#                         np.array([0., 0.725, 1.5,
+#                                     0., -2, 0.,
+#                                     0., 1., 0., 0.,#.71, .71, 0., 0.,
+#                                     0., 0., 0.], dtype=np.float64),
+#                         50)
+#
+# xm_3 = intermediate_state(["pos"],
+#                         np.array([0., 0.5, 1.5,
+#                                     0., 0., -1.6,
+#                                     0., 1., 0., 0.,
+#                                     0., 0., 0.], dtype=np.float64),
+#                         55)
+#
+# self.intermediate_states = [xm_2]#[xm_1,xm_2,xm_3]
+#
+# self.t_steps_scvx = 100
+# self.t_steps_komo = 100
+# self.t_steps_croco = 100
+# self.t_steps_casadi = 100
+#
+# self.tf_min = 2.7
+# self.tf_max = 2.7
+#
+# self.noise = 0.01
+#
+# self.t2w = 1.4
+#
+#
+
+environment:
+  min: [-2, -2, 0]
+  max: [2, 2, 3]
+  obstacles: []
+
+robots:
+  - type: quad3d_v5
+    start: [0, 0, 1.,
+                            0., 0., 0.,
+                            1., 
+                            0., 0., 0.,
+                            0., 0., 0.]
+
+    goal: [ 0., 1.4, 1.,
+                    0., 0., 0.,
+                    1., 0., 0., 0.,
+                    0., 0., 0.]
+
+
+
+

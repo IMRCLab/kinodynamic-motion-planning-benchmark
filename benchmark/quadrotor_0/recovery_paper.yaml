@@ -1,0 +1,28 @@
+environment:
+  min: [-2, -2, 0] # TODO: add position bounds as constraints?
+  max: [2, 2, 2]
+  obstacles: []
+robots:
+  - type: quad3d_v3
+  # self.x0 = np.array([0., 0., 1.,
+  #                     0., 0., 0.,
+  #                     0.0436194, -0.9990482, 0., 0.,
+  #                     0., 0., 0.],
+  #                     dtype=np.float64)
+  #
+  # self.xf = np.array([0., 0.15 , 1.,
+  #                     0., 0., 0.,
+  #                     1., 0., 0., 0.,
+  #                     0., 0., 0.], dtype=np.float64)
+    start: [0.0, 0.0, 1.0,
+                       -0.9990482, 0., 0., 0.0436194,
+                            0., 0., 0.,
+                            0., 0., 0.]
+    goal: [ 0., 0.15, 1.,
+                            0., 0., 0., 1., 
+                            0., 0., 0.,
+                            0., 0., 0.]
+
+
+
+
