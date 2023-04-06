@@ -1,7 +1,7 @@
 # for welf obstacle flight
 distance_weights: [1. , 1., .1, .1 ] 
 max_vel : 3
-max_angular_vel : 24.5
+max_angular_vel : 10
 motor_control : true # True = controls are forces in the motors
 m:  0.034
 max_f:  1.4
