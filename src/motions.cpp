@@ -113,7 +113,6 @@ void Trajectory::to_yaml_format(std::ostream &out,
       out << prefix << "  - " << times(i) << std::endl;
     }
   }
-  std::cout << AT<< " " <<"INFO"<< info << std::endl;
   if (info.size()) {
     std::cout << "hello world " << std::endl;
     out << "info: " << info << std::endl;

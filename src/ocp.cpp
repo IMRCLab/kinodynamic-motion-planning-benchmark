@@ -2691,10 +2691,8 @@ void trajectory_optimization(const Problem &problem,
   } break;
 
   default: {
-    std::cout << AT<< " " << "INFO"<<traj.info << std::endl;
     __trajectory_optimization(problem, model_robot, tmp_init_guess,
                               options_trajopt_local, traj, opti_out);
-    std::cout << AT<< " " <<"INFO"<< traj.info << std::endl;
     CHECK_EQ(traj.feasible, opti_out.feasible, AT);
   }
   }
@@ -2707,7 +2705,6 @@ void trajectory_optimization(const Problem &problem,
         std::dynamic_pointer_cast<Model_quad3d>(model_robot);
     traj_welf = from_quim_to_welf(traj, robot_derived->u_nominal);
     traj = traj_welf;
-    std::cout << AT<< " " <<"INFO"<< traj.info << std::endl;
   }
 }
 
