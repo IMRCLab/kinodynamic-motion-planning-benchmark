@@ -638,7 +638,10 @@ void Control_cost::calcDiff(Eigen::Ref<Eigen::VectorXd> Lx,
                             const Eigen::Ref<const Eigen::VectorXd> &x,
                             const Eigen::Ref<const Eigen::VectorXd> &u) {
   check_input_calcDiff(Lx, Lu, Lxx, Luu, Lxu, x, u);
+  // CSTR_(u_weight);
+  // CSTR_V(Lu);
   Lu += (u - u_ref).cwiseProduct(u_weight).cwiseProduct(u_weight);
+  // CSTR_V(Lu);
   Luu.diagonal() += u_weight.cwiseProduct(u_weight);
 }
 
@@ -1196,6 +1199,63 @@ void Quaternion_cost::calcDiff(Eigen::Ref<Eigen::VectorXd> Lx,
   calcDiff(Lx, Lxx, x);
 }
 
+Quad3d_acceleration_cost::Quad3d_acceleration_cost(
+    const std::shared_ptr<Model_robot> &model_robot)
+    : Cost(13, 4, 6), model(model_robot) {
+  name = "accel_quad3d";
+
+  acc_u.setZero();
+  acc_x.setZero();
+  Jv_x.setZero();
+  Jv_u.setZero();
+  f.setZero();
+}
+
+void Quad3d_acceleration_cost::calc(
+    Eigen::Ref<Eigen::VectorXd> r, const Eigen::Ref<const Eigen::VectorXd> &x,
+    const Eigen::Ref<const Eigen::VectorXd> &u) {
+
+  model->calcV(f, x, u);
+  acc = f.tail<6>();
+  r = k_acc * acc;
+}
+
+void Quad3d_acceleration_cost::calcDiff(
+    Eigen::Ref<Eigen::VectorXd> Lx, Eigen::Ref<Eigen::VectorXd> Lu,
+    Eigen::Ref<Eigen::MatrixXd> Lxx, Eigen::Ref<Eigen::MatrixXd> Luu,
+    Eigen::Ref<Eigen::MatrixXd> Lxu, const Eigen::Ref<const Eigen::VectorXd> &x,
+    const Eigen::Ref<const Eigen::VectorXd> &u) {
+
+  model->calcV(f, x, u);
+  acc = f.tail<6>();
+  model->calcDiffV(Jv_x, Jv_u, x, u);
+
+  // CSTR_V(acc);
+  // std::cout << "Jv_x\n" << Jv_x << std::endl;
+  // std::cout << "Jv_u\n" << Jv_u <<  std::endl;
+
+  CHECK_EQ(f.size(), 12, AT);
+  CHECK_EQ(acc.size(), 6, AT);
+  CHECK_EQ(Jv_x.cols(), 13, AT);
+  CHECK_EQ(Jv_u.cols(), 4, AT);
+
+  CHECK_EQ(Jv_x.rows(), 12, AT);
+  CHECK_EQ(Jv_u.rows(), 12, AT);
+
+  acc_x = Jv_x.block<6, 13>(6, 0);
+  acc_u = Jv_u.block<6, 4>(6, 0);
+
+  double k_acc_sq = k_acc * k_acc;
+  Lx += k_acc_sq * acc.transpose() * acc_x;
+  // CSTR_(Lu);
+  Lu += k_acc_sq * acc.transpose() * acc_u;
+  // CSTR_(Lu);
+
+  Lxx += k_acc_sq * acc_x.transpose() * acc_x;
+  Luu += k_acc_sq * acc_u.transpose() * acc_u;
+  Lxu += k_acc_sq * acc_x.transpose() * acc_u;
+}
+
 Acceleration_cost_acrobot::Acceleration_cost_acrobot(size_t nx, size_t nu)
     : Cost(nx, nu, 2) {
   name = "acceleration";
@@ -1510,4 +1570,52 @@ void Min_time_linear::calcDiff(Eigen::Ref<Eigen::VectorXd> Lx,
 {
   check_input_calcDiff(Lx, Lxx, x);
   ERROR_WITH_INFO("should not be here");
+}
+
+Diff_angle_cost::Diff_angle_cost(size_t nx, size_t nu,
+                                 std::shared_ptr<Model_car_with_trailers> car)
+    : Cost(nx, nu, 2), car(car) {}
+
+void Diff_angle_cost::calc(Eigen::Ref<Eigen::VectorXd> r,
+                           const Eigen::Ref<const Eigen::VectorXd> &x) {
+  Eigen::Vector2d __u(0, 0);
+  car->constraintsIneq(r, x, __u);
+  r = r.cwiseMax(0) * k_diff_angle;
+}
+
+void Diff_angle_cost::calc(Eigen::Ref<Eigen::VectorXd> r,
+                           const Eigen::Ref<const Eigen::VectorXd> &x,
+                           const Eigen::Ref<const Eigen::VectorXd> &u) {
+  (void)u;
+  calc(r, x);
+}
+
+void Diff_angle_cost::calcDiff(Eigen::Ref<Eigen::VectorXd> Lx,
+                               Eigen::Ref<Eigen::MatrixXd> Lxx,
+                               const Eigen::Ref<const Eigen::VectorXd> &x) {
+
+  Eigen::Vector2d __u(0, 0);
+  car->constraintsIneq(f, x, __u);
+
+  Eigen::Matrix<bool, Eigen::Dynamic, 1> result = f.array() >= 0;
+
+  if (f.cwiseMax(0).sum() < 1e-12) {
+    ;
+  } else {
+    const double k_diff_angle2 = k_diff_angle * k_diff_angle;
+    car->constraintsIneqDiff(Jx, Ju, x, __u);
+    Jx = Jx.array().colwise() * result.cast<double>().array();
+    Lx += k_diff_angle2 * f.cwiseMax(0.).transpose() * Jx;
+    Lxx += k_diff_angle2 * Jx.transpose() * Jx;
+  }
+}
+
+void Diff_angle_cost::calcDiff(Eigen::Ref<Eigen::VectorXd> Lx,
+                               Eigen::Ref<Eigen::VectorXd> Lu,
+                               Eigen::Ref<Eigen::MatrixXd> Lxx,
+                               Eigen::Ref<Eigen::MatrixXd> Luu,
+                               Eigen::Ref<Eigen::MatrixXd> Lxu,
+                               const Eigen::Ref<const Eigen::VectorXd> &x,
+                               const Eigen::Ref<const Eigen::VectorXd> &u) {
+  calcDiff(Lx, Lxx, x);
 }

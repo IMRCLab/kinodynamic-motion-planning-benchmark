@@ -375,12 +375,17 @@ struct Cost {
     throw std::runtime_error(AT);
   }
   virtual std::string get_name() const { return name; }
+
+  virtual ~Cost() = default;
 };
 
 struct Quaternion_cost : Cost {
 
   double k_quat = 1.;
+
   Quaternion_cost(size_t nx, size_t nu);
+
+  virtual ~Quaternion_cost() = default;
 
   virtual void calc(Eigen::Ref<Eigen::VectorXd> r,
                     const Eigen::Ref<const Eigen::VectorXd> &x) override;
@@ -402,6 +407,74 @@ struct Quaternion_cost : Cost {
                         const Eigen::Ref<const Eigen::VectorXd> &u) override;
 };
 
+struct Diff_angle_cost : Cost {
+
+  double k_diff_angle = 20.;
+
+  Eigen::Matrix<double, 2, 1> f = Eigen::Matrix<double, 1, 2>::Zero();
+  Eigen::Matrix<double, 2, 4> Jx = Eigen::Matrix<double, 2, 4>::Zero();
+  Eigen::Matrix<double, 2, 2> Ju = Eigen::Matrix<double, 2, 2>::Zero();
+
+  std::shared_ptr<Model_car_with_trailers> car;
+  Diff_angle_cost(size_t nx, size_t nu,
+                  std::shared_ptr<Model_car_with_trailers> car);
+
+  virtual ~Diff_angle_cost() = default;
+
+  virtual void calc(Eigen::Ref<Eigen::VectorXd> r,
+                    const Eigen::Ref<const Eigen::VectorXd> &x) override;
+
+  virtual void calc(Eigen::Ref<Eigen::VectorXd> r,
+                    const Eigen::Ref<const Eigen::VectorXd> &x,
+                    const Eigen::Ref<const Eigen::VectorXd> &u) override;
+
+  virtual void calcDiff(Eigen::Ref<Eigen::VectorXd> Lx,
+                        Eigen::Ref<Eigen::MatrixXd> Lxx,
+                        const Eigen::Ref<const Eigen::VectorXd> &x) override;
+
+  virtual void calcDiff(Eigen::Ref<Eigen::VectorXd> Lx,
+                        Eigen::Ref<Eigen::VectorXd> Lu,
+                        Eigen::Ref<Eigen::MatrixXd> Lxx,
+                        Eigen::Ref<Eigen::MatrixXd> Luu,
+                        Eigen::Ref<Eigen::MatrixXd> Lxu,
+                        const Eigen::Ref<const Eigen::VectorXd> &x,
+                        const Eigen::Ref<const Eigen::VectorXd> &u) override;
+};
+
+struct Quad3d_acceleration_cost : Cost {
+
+  using Vector6d = Eigen::Matrix<double, 6, 1>;
+  using Vector13d = Eigen::Matrix<double, 13, 1>;
+  using Vector12d = Eigen::Matrix<double, 12, 1>;
+
+  std::shared_ptr<Model_robot> model;
+
+  double k_acc = 1;
+  Vector12d f;
+  Vector6d acc;
+  Eigen::Matrix<double, 6, 4> acc_u;
+  Eigen::Matrix<double, 6, 13> acc_x;
+
+  Eigen::Matrix<double, 12, 13> Jv_x;
+  Eigen::Matrix<double, 12, 4> Jv_u;
+
+  Quad3d_acceleration_cost(const std::shared_ptr<Model_robot> &model_robot);
+
+  virtual void calc(Eigen::Ref<Eigen::VectorXd> r,
+                    const Eigen::Ref<const Eigen::VectorXd> &x,
+                    const Eigen::Ref<const Eigen::VectorXd> &u) override;
+
+  virtual void calcDiff(Eigen::Ref<Eigen::VectorXd> Lx,
+                        Eigen::Ref<Eigen::VectorXd> Lu,
+                        Eigen::Ref<Eigen::MatrixXd> Lxx,
+                        Eigen::Ref<Eigen::MatrixXd> Luu,
+                        Eigen::Ref<Eigen::MatrixXd> Lxu,
+                        const Eigen::Ref<const Eigen::VectorXd> &x,
+                        const Eigen::Ref<const Eigen::VectorXd> &u) override;
+
+  virtual ~Quad3d_acceleration_cost() = default;
+};
+
 struct Acceleration_cost_acrobot : Cost {
 
   Model_acrobot model;
@@ -416,6 +489,8 @@ struct Acceleration_cost_acrobot : Cost {
   Eigen::Matrix<double, 4, 1> Jv_u;
 
   Acceleration_cost_acrobot(size_t nx, size_t nu);
+
+  virtual ~Acceleration_cost_acrobot() = default;
 
   virtual void calc(Eigen::Ref<Eigen::VectorXd> r,
                     const Eigen::Ref<const Eigen::VectorXd> &x,
@@ -453,6 +528,8 @@ struct Contour_cost_alpha_x : Cost {
   virtual void calcDiff(Eigen::Ref<Eigen::VectorXd> Lx,
                         Eigen::Ref<Eigen::MatrixXd> Lxx,
                         const Eigen::Ref<const Eigen::VectorXd> &x) override;
+
+  virtual ~Contour_cost_alpha_x() = default;
 };
 
 struct Time_linear_reg : Cost {
@@ -479,6 +556,8 @@ struct Time_linear_reg : Cost {
   virtual void calcDiff(Eigen::Ref<Eigen::VectorXd> Lx,
                         Eigen::Ref<Eigen::MatrixXd> Lxx,
                         const Eigen::Ref<const Eigen::VectorXd> &x) override;
+
+  virtual ~Time_linear_reg() = default;
 };
 
 struct Min_time_linear : Cost {
@@ -486,6 +565,7 @@ struct Min_time_linear : Cost {
 
   double k = 5; // bigger than 0
   Min_time_linear(size_t nx, size_t nu);
+  virtual ~Min_time_linear() = default;
 
   virtual void calc(Eigen::Ref<Eigen::VectorXd> r,
                     const Eigen::Ref<const Eigen::VectorXd> &x,
@@ -511,6 +591,7 @@ struct Contour_cost_alpha_u : Cost {
 
   double k = 1.5; // bigger than 0
   Contour_cost_alpha_u(size_t nx, size_t nu);
+  virtual ~Contour_cost_alpha_u() = default;
 
   virtual void calc(Eigen::Ref<Eigen::VectorXd> r,
                     const Eigen::Ref<const Eigen::VectorXd> &x,
@@ -580,6 +661,8 @@ struct Contour_cost : Cost {
 
   Contour_cost(size_t nx, size_t nu, ptr<Interpolator> path);
 
+  virtual ~Contour_cost() = default;
+
   virtual void calc(Eigen::Ref<Eigen::VectorXd> r,
                     const Eigen::Ref<const Eigen::VectorXd> &x,
                     const Eigen::Ref<const Eigen::VectorXd> &u) override;
@@ -624,6 +707,8 @@ struct Col_cost : Cost {
 
   Col_cost(size_t nx, size_t nu, size_t nr, std::shared_ptr<Model_robot> model,
            double weight = 100.);
+
+  virtual ~Col_cost() = default;
 
   virtual void calc(Eigen::Ref<Eigen::VectorXd> r,
                     const Eigen::Ref<const Eigen::VectorXd> &x,
@@ -671,6 +756,8 @@ struct Control_cost : Cost {
   Control_cost(size_t nx, size_t nu, size_t nr, const Eigen::VectorXd &u_weight,
                const Eigen::VectorXd &u_ref);
 
+  virtual ~Control_cost() = default;
+
   virtual void calc(Eigen::Ref<Eigen::VectorXd> r,
                     const Eigen::Ref<const Eigen::VectorXd> &x,
                     const Eigen::Ref<const Eigen::VectorXd> &u);
@@ -711,6 +798,8 @@ struct State_bounds : Cost {
 
   State_bounds(size_t nx, size_t nu, size_t nr, const Eigen::VectorXd &ub,
                const Eigen::VectorXd &weight);
+
+  virtual ~State_bounds() = default;
 
   virtual void calc(Eigen::Ref<Eigen::VectorXd> r,
                     const Eigen::Ref<const Eigen::VectorXd> &x,
@@ -787,6 +876,8 @@ struct State_cost_model : Cost {
   State_cost_model(const std::shared_ptr<Model_robot> &model_robot, size_t nx,
                    size_t nu, const Eigen::VectorXd &x_weight,
                    const Eigen::VectorXd &ref);
+
+  virtual ~State_cost_model() = default;
 
   virtual void calc(Eigen::Ref<Eigen::VectorXd> r,
                     const Eigen::Ref<const Eigen::VectorXd> &x,

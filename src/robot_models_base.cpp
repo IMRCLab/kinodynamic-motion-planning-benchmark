@@ -185,11 +185,12 @@ void RnSOn::integrate(const Eigen::Ref<const Eigen::VectorXd> &x,
   xout = x + dx;
   for (auto &i : so2_indices) {
     auto &so2_x = xout(i);
-    if (so2_x > M_PI) {
-      so2_x -= 2 * M_PI;
-    } else if (so2_x < -M_PI) {
-      so2_x += 2 * M_PI;
-    }
+    so2_x = wrap_angle(so2_x);
+    // if (so2_x > M_PI) {
+    //   so2_x -= 2 * M_PI;
+    // } else if (so2_x < -M_PI) {
+    //   so2_x += 2 * M_PI;
+    // }
   }
 }
 
@@ -238,6 +239,9 @@ Model_robot::Model_robot(std::shared_ptr<StateQ> state, size_t nu)
 
   u_ub.setConstant(1e8);
   u_lb.setConstant(-1e8);
+
+  x_weightb.resize(nx);
+  x_weightb.setZero();
 
   x_ub.resize(nx);
   x_lb.resize(nx);

@@ -124,7 +124,7 @@ struct Generate_params {
   bool linear_contour = true;
   bool goal_cost = true;
   bool collisions = true;
-
+  double penalty  = 1; // penalty for the constraints
   void print(std::ostream &out) const;
 };
 

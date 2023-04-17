@@ -125,7 +125,6 @@ std::vector<size_t> create_vector_so2_for_car(size_t num_trailers) {
 }
 
 Model_car_with_trailers::Model_car_with_trailers(const Car_params &params,
-
                                                  const Eigen::VectorXd &p_lb,
                                                  const Eigen::VectorXd &p_ub)
     : Model_robot(std::make_shared<RnSOn>(
@@ -133,6 +132,10 @@ Model_car_with_trailers::Model_car_with_trailers(const Car_params &params,
                       create_vector_so2_for_car(params.num_trailers)),
                   2),
       params(params) {
+
+  nr_reg = 2;
+  nr_ineq = 2 + params.num_trailers;
+
   name = "car_with_trailers";
 
   std::cout << "Robot name " << name << std::endl;
@@ -142,6 +145,8 @@ Model_car_with_trailers::Model_car_with_trailers(const Car_params &params,
 
   translation_invariance = 2;
   nx_col = 3 + params.num_trailers;
+
+  nx_pr = 3 + params.num_trailers;
 
   is_2d = true;
   ref_dt = params.dt;
@@ -185,12 +190,53 @@ Model_car_with_trailers::Model_car_with_trailers(const Car_params &params,
   }
 }
 
+void Model_car_with_trailers::constraintsIneq(
+    Eigen::Ref<Eigen::VectorXd> r, const Eigen::Ref<const Eigen::VectorXd> &x,
+    const Eigen::Ref<const Eigen::VectorXd> &u) {
+
+  (void)u;
+  CHECK_EQ(r.size(), 2, AT);
+  double diff = x(2) - x(3);
+
+  if (diff > M_PI) {
+    diff -= 2 * M_PI;
+  } else if (diff < -M_PI) {
+    diff += 2 * M_PI;
+  }
+
+  //  -diff_max_abs < diff < diff_max_abs
+  const double r1 = diff - params.diff_max_abs;
+  const double r2 = -params.diff_max_abs - diff;
+  r(0) = r1;
+  r(1) = r2;
+};
+
+void Model_car_with_trailers::constraintsIneqDiff(
+    Eigen::Ref<Eigen::MatrixXd> Jx, Eigen::Ref<Eigen::MatrixXd> Ju,
+    const Eigen::Ref<const Eigen::VectorXd> x,
+    const Eigen::Ref<const Eigen::VectorXd> &u) {
+  (void)u;
+  CHECK_EQ(static_cast<size_t>(Jx.cols()), nx, AT);
+  CHECK_EQ(static_cast<size_t>(Jx.rows()), 2, AT);
+
+  Jx(0, 2) = 1;
+  Jx(0, 3) = -1;
+  Jx(1, 2) = -1;
+  Jx(1, 3) = 1;
+}
+
 void Model_car_with_trailers::sample_uniform(Eigen::Ref<Eigen::VectorXd> x) {
   x = x_lb + (x_ub - x_lb)
                  .cwiseProduct(.5 * (Eigen::VectorXd::Random(nx) +
                                      Eigen::VectorXd::Ones(nx)));
+
   x(2) = (M_PI * Eigen::Matrix<double, 1, 1>::Random())(0);
-  x(3) = (M_PI * Eigen::Matrix<double, 1, 1>::Random())(0);
+  if (params.num_trailers == 1) {
+    double diff =
+        params.diff_max_abs * Eigen::Matrix<double, 1, 1>::Random()(0);
+    x(3) = x(2) + diff;
+    x(3) = wrap_angle(x(3));
+  }
 }
 
 void Model_car_with_trailers::transformation_collision_geometries(
@@ -245,6 +291,20 @@ void Model_car_with_trailers::calcV(
   }
 }
 
+void Model_car_with_trailers::regularization_cost(
+    Eigen::Ref<Eigen::VectorXd> r, const Eigen::Ref<const Eigen::VectorXd> &x,
+    const Eigen::Ref<const Eigen::VectorXd> &u) {
+  CHECK_EQ(r.size(), 2, AT);
+  r = u;
+}
+
+void Model_car_with_trailers::regularization_cost_diff(
+    Eigen::Ref<Eigen::MatrixXd> Jx, Eigen::Ref<Eigen::MatrixXd> Ju,
+    const Eigen::Ref<const Eigen::VectorXd> &x,
+    const Eigen::Ref<const Eigen::VectorXd> &u) {
+  Ju.diagonal().setOnes();
+}
+
 void Model_car_with_trailers::calcDiffV(
     Eigen::Ref<Eigen::MatrixXd> Jv_x, Eigen::Ref<Eigen::MatrixXd> Jv_u,
     const Eigen::Ref<const Eigen::VectorXd> &x,
@@ -289,8 +349,8 @@ void Model_car_with_trailers::calcDiffV(
 double
 Model_car_with_trailers::distance(const Eigen::Ref<const Eigen::VectorXd> &x,
                                   const Eigen::Ref<const Eigen::VectorXd> &y) {
-  assert(x.size() == 3);
-  assert(y.size() == 3);
+  CHECK_EQ(x.size(), 4, AT);
+  CHECK_EQ(y.size(), 4, AT);
   assert(y(2) <= M_PI && y(2) >= -M_PI);
   assert(x(2) <= M_PI && x(2) >= -M_PI);
   double d = params.distance_weights(0) * (x.head<2>() - y.head<2>()).norm() +
@@ -331,6 +391,11 @@ double Model_car_with_trailers::lower_bound_time(
   return m;
 }
 
+double lower_bound_time_vel(const Eigen::Ref<const Eigen::VectorXd> &x,
+                            const Eigen::Ref<const Eigen::VectorXd> &y) {
+  return 0;
+}
+
 // Model_acrobot(
 //   const Acrobot_params & acrobot_params = Acrobot_params());
 
@@ -347,9 +412,9 @@ Model_acrobot::Model_acrobot(const Acrobot_params &acrobot_params,
   std::cout << "Parameters" << std::endl;
   this->params.write(std::cout);
   std::cout << "***" << std::endl;
-
   translation_invariance = 0;
   nx_col = 2;
+  nx_pr = 2;
   distance_weights.resize(4);
   distance_weights = params.distance_weights;
 
@@ -698,6 +763,7 @@ Model_unicycle1::Model_unicycle1(const Unicycle1_params &params,
       params(params) {
   is_2d = true;
   nx_col = 3;
+  nx_pr = 3;
   translation_invariance = 2;
 
   u_ref << 0, 0;
@@ -830,6 +896,7 @@ Model_quad3d::Model_quad3d(const Quad3d_params &params,
 
   translation_invariance = 3;
   nx_col = 7;
+  nx_pr = 7;
   is_2d = false;
   u_0 << 1., 1., 1., 1.;
 
@@ -935,48 +1002,25 @@ void Model_quad3d::transformation_collision_geometries(
   ts.at(0) = result;
 }
 
-void Model_quad3d::step(Eigen::Ref<Eigen::VectorXd> xnext,
-                        const Eigen::Ref<const Eigen::VectorXd> &x,
-                        const Eigen::Ref<const Eigen::VectorXd> &u, double dt) {
+void Model_quad3d::calcV(Eigen::Ref<Eigen::VectorXd> ff,
+                         const Eigen::Ref<const Eigen::VectorXd> &x,
+                         const Eigen::Ref<const Eigen::VectorXd> &u) {
 
   Eigen::Vector4d f = u_nominal * u;
-  // const double &f1 = u_nominal * u(0);
-  // const double &f2 = u_nominal * u(1);
-
-  // CSTR_(dt)
   Eigen::Vector3d f_u;
   Eigen::Vector3d tau_u;
 
   if (params.motor_control) {
     Eigen::Vector4d eta = B0 * f;
     f_u << 0, 0, eta(0);
-
-    // f_u
-    // [ 0, 0, 0, 0]   [eta(0)]    =
-    // [ 0, 0, 0, 0]   [eta(1)]
-    // [ 1, 0, 0, 0]   [eta(2)]
-    //                 [eta(3)]
-
-    // tau_u
-    // [ 0, 1, 0, 0]   [eta(0)]    =
-    // [ 0, 0, 1, 0]   [eta(1)]
-    // [ 0, 0, 0, 1]   [eta(2)]
-    //                 [eta(3)]
-
     tau_u << eta(1), eta(2), eta(3);
   } else {
     CHECK(false, AT);
   }
 
-  Eigen::Vector3d pos = x.head(3).head<3>();
   Eigen::Vector4d q = x.segment(3, 4).head<4>().normalized();
   Eigen::Vector3d vel = x.segment(7, 3).head<3>();
   Eigen::Vector3d w = x.segment(10, 3).head<3>();
-
-  Eigen::Ref<Eigen::Vector3d> pos_next = xnext.head(3);
-  Eigen::Ref<Eigen::Vector4d> q_next = xnext.segment(3, 4);
-  Eigen::Ref<Eigen::Vector3d> vel_next = xnext.segment(7, 3);
-  Eigen::Ref<Eigen::Vector3d> w_next = xnext.segment(10, 3);
 
   auto fa_v = Eigen::Vector3d(0, 0, 0); // drag model
                                         //
@@ -987,28 +1031,138 @@ void Model_quad3d::step(Eigen::Ref<Eigen::VectorXd> xnext,
 
   Eigen::Vector3d a =
       m_inv * (grav_v + Eigen::Quaterniond(q)._transformVector(f_u) + fa_v);
-  // easy to get derivatives :)
-  // see (174)
-  // and 170
-  //
-  // d a / d fu = m_inv * R
 
-  pos_next = pos + dt * vel;
-  vel_next = vel + dt * a;
-
-  // w is in body frame.
-
-  Eigen::Vector4d deltaQ;
-  __get_quat_from_ang_vel_time(w * dt, deltaQ, nullptr);
-
-  quat_product(q, deltaQ, q_next, nullptr, nullptr);
-
-  // q_next = __q_next;
-
-  w_next =
-      w + dt * inverseJ_v.cwiseProduct((J_v.cwiseProduct(w)).cross(w) + tau_u);
+  ff.head<3>() = vel;
+  ff.segment<3>(3) = w;
+  ff.segment<3>(7 - 1) = a;
+  ff.segment<3>(10 - 1) =
+      inverseJ_v.cwiseProduct((J_v.cwiseProduct(w)).cross(w) + tau_u);
 }
 
+void Model_quad3d::calcDiffV(Eigen::Ref<Eigen::MatrixXd> Jv_x,
+                             Eigen::Ref<Eigen::MatrixXd> Jv_u,
+                             const Eigen::Ref<const Eigen::VectorXd> &x,
+                             const Eigen::Ref<const Eigen::VectorXd> &u) {
+
+  // x = [ p , q , v , w ]
+
+  Eigen::Vector4d f = u_nominal * u;
+  Eigen::Vector3d f_u;
+  Eigen::Vector3d tau_u;
+
+  if (params.motor_control) {
+    Eigen::Vector4d eta = B0 * f;
+    f_u << 0, 0, eta(0);
+    tau_u << eta(1), eta(2), eta(3);
+  } else {
+    CHECK(false, AT);
+  }
+
+  const Eigen::Vector4d &xq = x.segment<4>(3);
+  Eigen::Ref<const Eigen::Vector3d> w = x.segment(10, 3).head<3>();
+  Eigen::Vector3d y;
+  auto const &J_v = params.J_v;
+  Eigen::Vector4d q = x.segment(3, 4).head<4>().normalized();
+  Eigen::Matrix3d R = Eigen::Quaterniond(q).toRotationMatrix();
+
+  rotate_with_q(xq, f_u, y, data.Jx, data.Ja);
+
+  Jv_x.block<3, 3>(0, 7).diagonal() = Eigen::Vector3d::Ones(); // dp / dv
+  //
+  //
+  //
+  // std::cout << "data.Jx\n" << data.Jx << std::endl;
+
+  Jv_x.block<3, 4>(7 - 1, 3).noalias() = m_inv * data.Jx; // da / dq
+  Jv_x.block<3, 3>(10 - 1, 10).noalias() =
+      inverseJ_M * (Skew(J_v.cwiseProduct(w)) - Skew(w) * J_M); // daa / dw
+
+  Jv_u.block<3, 4>(7 - 1, 0).noalias() =
+      u_nominal * m_inv * R * Fu_selection_B0; // da / df
+  Jv_u.block<3, 4>(10 - 1, 0).noalias() =
+      u_nominal * inverseJ_M * Ftau_selection_B0; // daa / df
+  //
+  //
+  // std::cout << "Jv_x \n" << Jv_x << std::endl;
+}
+
+void Model_quad3d::step(Eigen::Ref<Eigen::VectorXd> xnext,
+                        const Eigen::Ref<const Eigen::VectorXd> &x,
+                        const Eigen::Ref<const Eigen::VectorXd> &u, double dt) {
+
+  calcV(ff, x, u);
+
+  Eigen::Ref<const Eigen::Vector3d> pos = x.head(3).head<3>();
+  Eigen::Vector4d q = x.segment(3, 4).head<4>().normalized();
+  Eigen::Ref<const Eigen::Vector3d> vel = x.segment(7, 3).head<3>();
+  Eigen::Ref<const Eigen::Vector3d> w = x.segment(10, 3).head<3>();
+
+  Eigen::Ref<Eigen::Vector3d> pos_next = xnext.head(3);
+  Eigen::Ref<Eigen::Vector4d> q_next = xnext.segment(3, 4);
+  Eigen::Ref<Eigen::Vector3d> vel_next = xnext.segment(7, 3);
+  Eigen::Ref<Eigen::Vector3d> w_next = xnext.segment(10, 3);
+
+  pos_next = pos + dt * ff.segment<3>(0);
+  vel_next = vel + dt * ff.segment<3>(6);
+
+  Eigen::Vector4d deltaQ;
+  __get_quat_from_ang_vel_time(ff.segment<3>(3) * dt, deltaQ, nullptr);
+  quat_product(q, deltaQ, q_next, nullptr, nullptr);
+  w_next = w + dt * ff.segment<3>(9);
+}
+
+void Model_quad3d::stepDiff(Eigen::Ref<Eigen::MatrixXd> Fx,
+                            Eigen::Ref<Eigen::MatrixXd> Fu,
+                            const Eigen::Ref<const Eigen::VectorXd> &x,
+                            const Eigen::Ref<const Eigen::VectorXd> &u,
+                            double dt) {
+
+  calcDiffV(Jv_x, Jv_u, x, u);
+  Fx.block<3, 3>(0, 0).diagonal() = Eigen::Vector3d::Ones();        // dp / dp
+  Fx.block<3, 3>(0, 7) = dt * Jv_x.block<3, 3>(0, 7);               // dp / dv
+  Fx.block<3, 3>(7, 7).diagonal() = Eigen::Vector3d::Ones();        // dv / dv
+  Fx.block<3, 4>(7, 3).noalias() = dt * Jv_x.block<3, 4>(7 - 1, 3); // dv / dq
+  Fx.block<3, 3>(10, 10).diagonal().setOnes();
+  Fx.block<3, 3>(10, 10).noalias() += dt * Jv_x.block<3, 3>(10 - 1, 10);
+
+  Fu.block<3, 4>(7, 0).noalias() = dt * Jv_u.block<3, 4>(7 - 1, 0);
+  Fu.block<3, 4>(10, 0).noalias() = dt * Jv_u.block<3, 4>(10 - 1, 0);
+
+  // Eigen::Vector3d y;
+  // const Eigen::Vector4d &xq = x.segment<4>(3);
+  //
+  // rotate_with_q(xq, data.f_u, y, data.Jx, data.Ja);
+  //
+  // Fx.block<3, 4>(7, 3).noalias() = dt * m_inv * data.Jx;
+  //
+  // const Eigen::Vector3d &w = x.segment<3>(10);
+
+  // q_next = qintegrate(Eigen::Quaterniond(q), w, dt).coeffs();
+  // Eigen::Quaterniond deltaQ = get_quat_from_ang_vel_time(w *
+  // dt);
+
+  Eigen::Matrix<double, 4, 3> Jexp(4, 3);
+  Eigen::Vector4d deltaQ;
+  Eigen::Vector4d xq_normlized;
+  Eigen::Matrix4d Jqnorm;
+  Eigen::Matrix4d J1;
+  Eigen::Matrix4d J2;
+  Eigen::Vector4d yy;
+
+  // QUATERNION....
+  const Eigen::Vector4d &xq = x.segment<4>(3);
+  Eigen::Ref<const Eigen::Vector3d> w = x.segment(10, 3).head<3>();
+
+  __get_quat_from_ang_vel_time(w * dt, deltaQ, &Jexp);
+
+  normalize(xq, xq_normlized, Jqnorm);
+  quat_product(xq_normlized, deltaQ, yy, &J1, &J2);
+
+  Fx.block<4, 4>(3, 3).noalias() = J1 * Jqnorm;
+  Fx.block<4, 3>(3, 10) = J2 * Jexp * dt;
+}
+
+#if 0
 void Model_quad3d::stepDiff(Eigen::Ref<Eigen::MatrixXd> Fx,
                             Eigen::Ref<Eigen::MatrixXd> Fu,
                             const Eigen::Ref<const Eigen::VectorXd> &x,
@@ -1103,16 +1257,19 @@ void Model_quad3d::stepDiff(Eigen::Ref<Eigen::MatrixXd> Fx,
   Fu.block<3, 4>(10, 0).noalias() =
       u_nominal * dt * inverseJ_M * Ftau_selection_B0;
 }
+#endif
 
 double Model_quad3d::distance(const Eigen::Ref<const Eigen::VectorXd> &x,
                               const Eigen::Ref<const Eigen::VectorXd> &y) {
   assert(x.size() == 13);
   assert(y.size() == 13);
+  // std::cout << "quad3d distance" << std::endl;
   Eigen::Vector4d raw_d((x.head<3>() - y.head<3>()).norm(),
                         so3_distance(x.segment<4>(3), y.segment<4>(3)),
                         (x.segment<3>(7) - y.segment<3>(7)).norm(),
                         (x.segment<3>(10) - y.segment<3>(10)).norm());
 
+  CSTR_V(raw_d);
   return raw_d.dot(params.distance_weights);
 }
 
@@ -1172,6 +1329,7 @@ Model_quad2d::Model_quad2d(const Quad2d_params &params,
   std::cout << "***" << std::endl;
 
   nx_col = 3;
+  nx_pr = 3;
   x_desc = {"x [m]",      "y [m]",      "yaw[rad]",
             "xdot [m/s]", "ydot [m/s]", "w[rad/s]"};
   u_desc = {"f1 []", "f2 []"};
@@ -1352,6 +1510,7 @@ Model_unicycle2::Model_unicycle2(const Unicycle2_params &params,
 
   distance_weights = params.distance_weights;
   nx_col = 3;
+  nx_pr = 3;
 
   translation_invariance = 2;
   ref_dt = params.dt;
@@ -1486,6 +1645,30 @@ Model_unicycle2::lower_bound_time(const Eigen::Ref<const Eigen::VectorXd> &x,
   return *it;
 }
 
+double Model_unicycle2::lower_bound_time_pr(
+    const Eigen::Ref<const Eigen::VectorXd> &x,
+    const Eigen::Ref<const Eigen::VectorXd> &y) {
+
+  std::array<double, 2> maxs = {
+      (x.head<2>() - y.head<2>()).norm() / params.max_vel,
+      so2_distance(x(2), y(2)) / params.max_angular_vel};
+
+  auto it = std::max_element(maxs.cbegin(), maxs.cend());
+  return *it;
+}
+
+double Model_unicycle2::lower_bound_time_vel(
+    const Eigen::Ref<const Eigen::VectorXd> &x,
+    const Eigen::Ref<const Eigen::VectorXd> &y) {
+
+  std::array<double, 2> maxs = {std::abs(x(3) - y(3)) / params.max_acc_abs,
+                                std::abs(x(4) - y(4)) /
+                                    params.max_angular_acc_abs};
+
+  auto it = std::max_element(maxs.cbegin(), maxs.cend());
+  return *it;
+}
+
 //
 // refactor yaml and boost stuff.
 //
@@ -1536,6 +1719,7 @@ void Car_params::read_from_yaml(YAML::Node &node) {
   set_from_yaml(node, VAR_WITH_NAME(shape));
   set_from_yaml(node, VAR_WITH_NAME(shape_trailer));
   set_from_yaml(node, VAR_WITH_NAME(dt));
+  set_from_yaml(node, VAR_WITH_NAME(diff_max_abs));
 
   set_from_yaml_eigen(node, VAR_WITH_NAME(size));
   set_from_yaml_eigen(node, VAR_WITH_NAME(size_trailer));
@@ -1562,6 +1746,7 @@ Model_car2::Model_car2(const Car2_params &params, const Eigen::VectorXd &p_lb,
   ref_dt = params.dt;
 
   u_weight = V2d(.5, .5);
+  nx_pr = 3;
 
   x_lb << RM_low__, RM_low__, RM_low__, params.min_vel,
       -params.max_steering_abs;
@@ -1591,8 +1776,10 @@ double Model_car2::distance(const Eigen::Ref<const Eigen::VectorXd> &x,
 
   CHECK_EQ(x.size(), 5, AT);
   CHECK_EQ(y.size(), 5, AT);
-  CHECK((y(2) <= M_PI && y(2) >= -M_PI), AT);
-  CHECK((x(2) <= M_PI && x(2) >= -M_PI), AT);
+  CHECK_LEQ(y(2), M_PI, AT);
+  CHECK_GEQ(y(2), -M_PI, AT);
+  CHECK_LEQ(x(2), M_PI, AT);
+  CHECK_GEQ(x(2), -M_PI, AT);
   CHECK_EQ(params.distance_weights.size(), 4, AT);
   double d = params.distance_weights(0) * (x.head<2>() - y.head<2>()).norm() +
              params.distance_weights(1) * so2_distance(x(2), y(2)) +

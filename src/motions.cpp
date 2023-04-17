@@ -114,8 +114,7 @@ void Trajectory::to_yaml_format(std::ostream &out,
     }
   }
   if (info.size()) {
-    std::cout << "hello world " << std::endl;
-    out << "info: " << info << std::endl;
+    out << prefix << "info: " << info << std::endl;
   }
 };
 

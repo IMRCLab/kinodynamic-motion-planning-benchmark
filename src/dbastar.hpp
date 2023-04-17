@@ -137,11 +137,14 @@ struct HeuNodeWithIndex {
   int index;
   const ob::State *state;
   double dist;
+  const ob::State *get_first_state() { return state; }
 };
 
 struct HeuNode {
   const ob::State *state;
   double dist;
+
+  const ob::State *get_first_state() { return state; }
 };
 
 class Motion {
@@ -154,13 +157,17 @@ public:
   std::vector<fcl::CollisionObjectd *> collision_objects;
 
   double cost;
-
   size_t idx;
   // std::string name;
   bool disabled = false;
 
   void print(std::ostream &out,
              std::shared_ptr<ompl::control::SpaceInformation> &si);
+
+  const ob::State *get_first_state() {
+    assert(states.size());
+    return states.front();
+  }
 };
 
 // forward declaration
@@ -191,6 +198,8 @@ struct AStarNode {
   open_t::handle_type handle;
   bool is_in_open = false;
   bool valid = true;
+
+  const ob::State *get_first_state() { return state; }
 };
 
 float heuristic(std::shared_ptr<RobotOmpl> robot, const ob::State *s,
@@ -394,6 +403,7 @@ struct Options_dbastar {
 
   double search_timelimit = 1e4; // in ms
   double heu_connection_radius = 1;
+  bool use_nigh_nn = false;
 
   void add_options(po::options_description &desc);
 
@@ -494,20 +504,40 @@ struct Heu_roadmap : Heu_fun {
   std::shared_ptr<RobotOmpl> robot;
   std::shared_ptr<ompl::NearestNeighbors<HeuNode *>> T_heu;
   double connect_radius_h = 0.5;
+  ob::State *goal;
+  ob::State *__x_zero_vel;
+  // ob::State *__tmp_vel;
 
   Heu_roadmap(std::shared_ptr<RobotOmpl> robot,
-              const std::vector<Heuristic_node> &heu_map);
+              const std::vector<Heuristic_node> &heu_map, ob::State *goal);
 
   virtual double h(const ompl::base::State *x) override {
     CHECK(T_heu, AT);
-    return heuristicCollisionsTree(T_heu.get(), x, robot, connect_radius_h);
+
+    auto si = robot->getSpaceInformation()->getStateSpace();
+    const auto &locations = si->getValueLocations();
+
+    CHECK_EQ(locations.size(), robot->nx, AT);
+    CHECK_LEQ(robot->nx_pr, locations.size(), AT);
+
+    for (std::size_t i = 0; i < robot->nx_pr; ++i) {
+      *si->getValueAddressAtLocation(__x_zero_vel, locations[i]) =
+          *si->getValueAddressAtLocation(x, locations[i]);
+    }
+
+    double pos_h = heuristicCollisionsTree(T_heu.get(), __x_zero_vel, robot,
+                                           connect_radius_h);
+    double vel_h = robot->cost_lower_bound_vel(x, goal);
+
+    return std::max(vel_h, pos_h);
   }
 
-  virtual ~Heu_roadmap() override{
+  virtual ~Heu_roadmap() override {
 
-      // I have to delete stuff!!!
-      // TODO: memory leak
+    robot->getSpaceInformation()->freeState(__x_zero_vel);
 
+    // TODO: memory leak
+    // I have to delete more stuff!!!
   };
 };
 
@@ -536,6 +566,4 @@ void write_heu_map(const std::vector<Heuristic_node> &heu_map, const char *file,
 void generate_heuristic_map(const Problem &problem,
                             std::shared_ptr<RobotOmpl> robot_ompl,
                             const Options_dbastar &options_dbastar,
-                            std::vector<Heuristic_node> &heu_map) ;
-
-
+                            std::vector<Heuristic_node> &heu_map);

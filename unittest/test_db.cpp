@@ -5,6 +5,8 @@
 #include <iostream>
 #include <limits>
 
+// TODO: how to compute the heuristic map for systems with velocities in the state space?
+
 // #include <boost/test/unit_test_suite.hpp>
 // #define BOOST_TEST_DYN_LINK
 // #include <boost/test/unit_test.hpp>
@@ -17,27 +19,43 @@
 #define BOOST_TEST_DYN_LINK
 #include <boost/test/unit_test.hpp>
 
-//
+// test the second order!
+BOOST_AUTO_TEST_CASE(test_bugtrap_second) {
 
+  Problem problem("../benchmark/unicycle_second_order_0/bugtrap_0.yaml");
+  Options_dbastar options_dbastar;
+  options_dbastar.search_timelimit = 1e5; // in ms
+  options_dbastar.max_motions = 500;
+  options_dbastar.heuristic = 1;
+  options_dbastar.motionsFile = "../cloud/motionsV2/good/unicycle2_v0/"
+                                "unicycle2_v0__ispso__2023_04_03__15_36_01.bin";
+  options_dbastar.use_nigh_nn = 1; // both seem to work!!
+  Out_info_db out_info_db;
+  Trajectory traj_out;
+  dbastar(problem, options_dbastar, traj_out, out_info_db);
+  BOOST_TEST(out_info_db.solved);
+  CSTR_(out_info_db.cost);
+  BOOST_TEST(out_info_db.cost < 32.);
+}
+
+// GOOD
 BOOST_AUTO_TEST_CASE(test_bugtrap_heu) {
 
   Problem problem("../benchmark/unicycle_first_order_0/bugtrap_0.yaml");
   Options_dbastar options_dbastar;
+  options_dbastar.search_timelimit = 1e5; // in ms
   options_dbastar.max_motions = 1000;
-  options_dbastar.heuristic = 1;
+  options_dbastar.heuristic = 0;
   options_dbastar.motionsFile = "../cloud/motionsV2/good/unicycle1_v0/"
                                 "unicycle1_v0__ispso__2023_04_03__14_56_57.bin";
   options_dbastar.max_size_heu_map = 500;
+  options_dbastar.use_nigh_nn = 0;
   Out_info_db out_info_db;
   Trajectory traj_out;
   dbastar(problem, options_dbastar, traj_out, out_info_db);
   BOOST_TEST(out_info_db.solved);
   CSTR_(out_info_db.cost);
   BOOST_TEST(out_info_db.cost < 30.);
-
-  // i have to compute the heuristic...
-  //
-  // i have to
 }
 
 BOOST_AUTO_TEST_CASE(parallel_park_1) {

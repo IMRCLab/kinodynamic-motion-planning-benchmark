@@ -226,6 +226,7 @@ void Generate_params::print(std::ostream &out) const {
   out << pre << STR(contour_control, after) << std::endl;
   out << pre << STR(max_alpha, after) << std::endl;
   out << STR(goal_cost, after) << std::endl;
+  STRY(penalty, out, pre, after);
 
   out << pre << "goal" << after << goal.transpose() << std::endl;
   out << pre << "start" << after << start.transpose() << std::endl;
@@ -271,7 +272,7 @@ generate_problem(const Generate_params &gen_args,
   } else {
     control_mode = Control_Mode::default_mode;
   }
-  std::cout << "control_mode" << static_cast<int>(control_mode) << std::endl;
+  std::cout << "control_mode:" << static_cast<int>(control_mode) << std::endl;
 
   ptr<Dynamics> dyn = create_dynamics(gen_args.model_robot, control_mode);
 
@@ -311,6 +312,18 @@ generate_problem(const Generate_params &gen_args,
             ->set_nx_effective(nx - 1);
     }
     //
+
+    if (startsWith(gen_args.name, "car1")) {
+
+      auto ptr_derived = std::dynamic_pointer_cast<Model_car_with_trailers>(
+          gen_args.model_robot);
+
+      CHECK(ptr_derived, AT);
+      std::cout << "adding diff angle cost" << std::endl;
+      ptr<Cost> state_feature = mk<Diff_angle_cost>(nx, nu, ptr_derived);
+      feats_run.push_back(state_feature);
+    }
+
     if (startsWith(gen_args.name, "quad2d")) {
       std::cout << "adding regularization on w and v" << std::endl;
 
@@ -324,11 +337,13 @@ generate_problem(const Generate_params &gen_args,
       feats_run.push_back(state_feature);
     }
     if (startsWith(gen_args.name, "quad3d")) {
-      std::cout << "adding regularization on w and v" << std::endl;
+      std::cout << "adding regularization on w and v, q" << std::endl;
       Vxd state_weights(13);
       state_weights.setOnes();
-      state_weights *= .01;
-      state_weights.segment(0, 7).setZero();
+      state_weights *= 0.01;
+      state_weights.segment(0, 3).setZero();
+      state_weights.segment(3, 4).setConstant(0.1);
+
       Vxd state_ref = Vxd::Zero(13);
       state_ref(6) = 1.;
 
@@ -336,12 +351,19 @@ generate_problem(const Generate_params &gen_args,
           mk<State_cost>(nx, nu, nx, state_weights, state_ref);
       feats_run.push_back(state_feature);
 
-      std::cout << "adding regularization on quaternion " << std::endl;
-
+      std::cout << "adding cost on quaternion norm" << std::endl;
       ptr<Cost> quat_feature = mk<Quaternion_cost>(nx, nu);
+      boost::static_pointer_cast<Quaternion_cost>(quat_feature)->k_quat = 1.;
       feats_run.push_back(quat_feature);
+
+      std::cout << "adding regularization on acceleration" << std::endl;
+      ptr<Cost> acc_feature =
+          mk<Quad3d_acceleration_cost>(gen_args.model_robot);
+      boost::static_pointer_cast<Quad3d_acceleration_cost>(acc_feature)->k_acc =
+          .005;
+
+      feats_run.push_back(acc_feature);
     }
-    CSTR_(gen_args.name);
     if (startsWith(gen_args.name, "quad3d_v5") && t == gen_args.N / 2 + 1) {
       std::cout << "adding special waypoint" << std::endl;
       Vxd state_weights(13);
@@ -475,8 +497,8 @@ generate_problem(const Generate_params &gen_args,
   }
 
   // Terminal
-
   if (gen_args.contour_control) {
+    // TODO: add penalty here!
     CHECK(gen_args.linear_contour, AT);
     ptr<Cost> state_bounds =
         mk<State_bounds>(nx, nu, nx, dyn->x_ub, dyn->x_weightb);
@@ -495,10 +517,11 @@ generate_problem(const Generate_params &gen_args,
 
     CHECK_EQ(static_cast<size_t>(gen_args.goal.size()),
              gen_args.model_robot->nx, AT);
-    ptr<Cost> state_feature = mk<State_cost_model>(
-        gen_args.model_robot, nx, nu,
-        options_trajopt.weight_goal * Vxd::Ones(gen_args.model_robot->nx),
-        gen_args.goal);
+    ptr<Cost> state_feature =
+        mk<State_cost_model>(gen_args.model_robot, nx, nu,
+                             gen_args.penalty * options_trajopt.weight_goal *
+                                 Vxd::Ones(gen_args.model_robot->nx),
+                             gen_args.goal);
 
     feats_terminal.push_back(state_feature);
   }
@@ -963,6 +986,8 @@ bool check_problem(ptr<crocoddyl::ShootingProblem> problem,
   for (size_t i = 0; i < data_running_diff.size(); i++) {
     auto &d = data_running.at(i);
     auto &d_diff = data_running_diff.at(i);
+    CSTR_V(xs.at(i));
+    CSTR_V(us.at(i));
     check = check_equal(d_diff->Fx, d->Fx, tol, tol);
     if (!check)
       equal = false;
@@ -2044,82 +2069,105 @@ void __trajectory_optimization(const Problem &problem,
     size_t nx, nu;
 
     std::cout << "gen problem " << STR_(AT) << std::endl;
-    ptr<crocoddyl::ShootingProblem> problem =
-        generate_problem(gen_args, options_trajopt_local, nx, nu);
 
-    // check gradient
-
-    std::vector<Vxd> xs(N + 1, gen_args.start);
-    std::vector<Vxd> us(N, Vxd::Zero(nu));
-
-    if (options_trajopt_local.use_warmstart) {
-      xs = xs_init;
-      us = us_init;
-    }
-
-    if (!options_trajopt_local.use_finite_diff && check_with_finite_diff) {
-
-      std::cout << "Checking with finite diff " << std::endl;
-      options_trajopt_local.use_finite_diff = true;
-      options_trajopt_local.disturbance = 1e-6;
-      std::cout << "gen problem " << STR_(AT) << std::endl;
-      ptr<crocoddyl::ShootingProblem> problem_fdiff =
+    auto fun = [](auto &gen_args, auto &options_trajopt_local,
+                  const std::vector<Eigen::VectorXd> &xs_init,
+                  const std::vector<Eigen::VectorXd> &us_init, size_t &nx,
+                  size_t &nu, bool check_with_finite_diff, size_t N,
+                  const std::string &name, size_t &ddp_iterations,
+                  double &ddp_time, std::vector<Eigen::VectorXd> &xs_out,
+                  std::vector<Eigen::VectorXd> &us_out) {
+      ptr<crocoddyl::ShootingProblem> problem =
           generate_problem(gen_args, options_trajopt_local, nx, nu);
 
-      // std::cout << "xs" << std::endl;
-      // for (auto &x : xs) {
-      //   CSTR_V(x);
-      //   CSTR_(x.size());
-      // }
-      // std::cout << "us" << std::endl;
-      // for (auto &u : us) {
-      //
-      //   CSTR_(u.size());
-      //   CSTR_V(u);
-      // }
+      // check gradient
 
-      check_problem(problem, problem_fdiff, xs, us);
-      options_trajopt_local.use_finite_diff = false;
-    }
+      std::vector<Vxd> xs(N + 1, gen_args.start);
+      std::vector<Vxd> us(N, Vxd::Zero(nu));
 
-    if (options_trajopt_local.noise_level > 0.) {
-      for (size_t i = 0; i < xs.size(); i++) {
-        CHECK_EQ(static_cast<size_t>(xs.at(i).size()), nx, AT);
-        xs.at(i) += options_trajopt_local.noise_level * Vxd::Random(nx);
-        if (name == "quadrotor_0") {
-          xs.at(i).segment(3, 4).normalize();
+      if (options_trajopt_local.use_warmstart) {
+        xs = xs_init;
+        us = us_init;
+      }
+
+      if (!options_trajopt_local.use_finite_diff && check_with_finite_diff) {
+
+        std::cout << "Checking with finite diff " << std::endl;
+        options_trajopt_local.use_finite_diff = true;
+        options_trajopt_local.disturbance = 1e-6;
+        std::cout << "gen problem " << STR_(AT) << std::endl;
+        ptr<crocoddyl::ShootingProblem> problem_fdiff =
+            generate_problem(gen_args, options_trajopt_local, nx, nu);
+
+        check_problem(problem, problem_fdiff, xs, us);
+        options_trajopt_local.use_finite_diff = false;
+      }
+
+      if (options_trajopt_local.noise_level > 0.) {
+        for (size_t i = 0; i < xs.size(); i++) {
+          CHECK_EQ(static_cast<size_t>(xs.at(i).size()), nx, AT);
+          xs.at(i) += options_trajopt_local.noise_level * Vxd::Random(nx);
+          if (name == "quadrotor_0") {
+            xs.at(i).segment(3, 4).normalize();
+          }
+        }
+
+        for (size_t i = 0; i < us.size(); i++) {
+          CHECK_EQ(static_cast<size_t>(us.at(i).size()), nu, AT);
+          us.at(i) += options_trajopt_local.noise_level * Vxd::Random(nu);
         }
       }
 
-      for (size_t i = 0; i < us.size(); i++) {
-        CHECK_EQ(static_cast<size_t>(us.at(i).size()), nu, AT);
-        us.at(i) += options_trajopt_local.noise_level * Vxd::Random(nu);
+      crocoddyl::SolverBoxFDDP ddp(problem);
+      ddp.set_th_stop(options_trajopt_local.th_stop);
+      ddp.set_th_acceptnegstep(options_trajopt_local.th_acceptnegstep);
+
+      if (options_trajopt_local.CALLBACKS) {
+        std::vector<ptr<crocoddyl::CallbackAbstract>> cbs;
+        cbs.push_back(mk<crocoddyl::CallbackVerbose>());
+        ddp.setCallbacks(cbs);
       }
+
+      crocoddyl::Timer timer;
+
+      if (!options_trajopt_local.use_finite_diff)
+        report_problem(problem, xs, us, "report-0.yaml");
+      std::cout << "solving with croco " << std::endl;
+      ddp.solve(xs, us, options_trajopt_local.max_iter, false,
+                options_trajopt_local.init_reg);
+      std::cout << "time: " << timer.get_duration() << std::endl;
+
+      ddp_iterations += ddp.get_iter();
+      ddp_time += timer.get_duration();
+
+      xs_out = ddp.get_xs();
+      us_out = ddp.get_us();
+
+      if (!options_trajopt_local.use_finite_diff)
+        report_problem(problem, xs_out, us_out, "report-1.yaml");
+    };
+
+    std::vector<Eigen::VectorXd> _xs_out, _us_out, xs_init_p, us_init_p;
+
+    xs_init_p = xs_init;
+    us_init_p = us_init;
+    size_t penalty_iterations = 1;
+    CSTR_(penalty_iterations);
+    for (size_t i = 0; i < penalty_iterations; i++) {
+      std::cout << "PENALTY iteration " << i << std::endl;
+      gen_args.penalty = std::pow(10., double(i) / 2.);
+
+      if (i > 0) {
+        options_trajopt_local.noise_level = 0;
+      }
+
+      fun(gen_args, options_trajopt_local, xs_init_p, us_init_p, nx, nu,
+          check_with_finite_diff, N, name, ddp_iterations, ddp_time, _xs_out,
+          _us_out);
+
+      xs_init_p = _xs_out;
+      us_init_p = _us_out;
     }
-
-    crocoddyl::SolverBoxFDDP ddp(problem);
-    ddp.set_th_stop(options_trajopt_local.th_stop);
-    ddp.set_th_acceptnegstep(options_trajopt_local.th_acceptnegstep);
-
-    if (options_trajopt_local.CALLBACKS) {
-      std::vector<ptr<crocoddyl::CallbackAbstract>> cbs;
-      cbs.push_back(mk<crocoddyl::CallbackVerbose>());
-      ddp.setCallbacks(cbs);
-    }
-
-    crocoddyl::Timer timer;
-
-    if (!options_trajopt_local.use_finite_diff)
-      report_problem(problem, xs, us, "report-0.yaml");
-    std::cout << "solving with croco " << std::endl;
-    ddp.solve(xs, us, options_trajopt_local.max_iter, false,
-              options_trajopt_local.init_reg);
-    std::cout << "time: " << timer.get_duration() << std::endl;
-
-    ddp_iterations += ddp.get_iter();
-    ddp_time += timer.get_duration();
-    if (!options_trajopt_local.use_finite_diff)
-      report_problem(problem, ddp.get_xs(), ddp.get_us(), "report-1.yaml");
 
     // check the distance to the goal:
     // ptr<Col_cost> feat_col = mk<Col_cost>(nx, nu, 1, model_robot);
@@ -2131,8 +2179,8 @@ void __trajectory_optimization(const Problem &problem,
     bool __free_time = solver == SOLVER::traj_opt_free_time_proxi ||
                        solver == SOLVER::traj_opt_free_time_proxi_linear;
 
-    std::vector<Eigen::VectorXd> __xs_out = ddp.get_xs();
-    std::vector<Eigen::VectorXd> __us_out = ddp.get_us();
+    std::vector<Eigen::VectorXd> __xs_out = _xs_out;
+    std::vector<Eigen::VectorXd> __us_out = _us_out;
 
     Eigen::VectorXd dt_check(__us_out.size());
     std::vector<Eigen::VectorXd> xs_check(__xs_out.size());
@@ -2165,28 +2213,26 @@ void __trajectory_optimization(const Problem &problem,
 
     success = col_free && feasible_traj && reaches_goal;
 
-    std::cout << "feasible is " << success << std::endl;
-
-    std::cout << "cost: " << problem->calc(xs, us) << std::endl;
+    CSTR_(success);
 
     if (__in({SOLVER::traj_opt_free_time_proxi,
               SOLVER::traj_opt_free_time_proxi_linear},
              solver)) {
 
-      std::vector<Eigen::VectorXd> xs(ddp.get_xs().size());
-      std::vector<Eigen::VectorXd> us(ddp.get_us().size());
+      std::vector<Eigen::VectorXd> xs(_xs_out.size());
+      std::vector<Eigen::VectorXd> us(_us_out.size());
 
-      std::transform(ddp.get_xs().begin(), ddp.get_xs().end(), xs.begin(),
+      std::transform(_xs_out.begin(), _xs_out.end(), xs.begin(),
                      [&](auto &o) { return o.head(model_robot->nx); });
 
-      std::transform(ddp.get_us().begin(), ddp.get_us().end(), us.begin(),
+      std::transform(_us_out.begin(), _us_out.end(), us.begin(),
                      [&](auto &o) { return o.head(model_robot->nu); });
 
       Eigen::VectorXd ts(xs.size());
       ts(0) = 0.;
 
       for (size_t i = 0; i < us.size(); i++) {
-        ts(i + 1) = ts(i) + ddp.get_us().at(i).tail(1)(0) * model_robot->ref_dt;
+        ts(i + 1) = ts(i) + _us_out.at(i).tail(1)(0) * model_robot->ref_dt;
       }
 
       CSTR_(ts.tail(1)(0))
@@ -2202,8 +2248,8 @@ void __trajectory_optimization(const Problem &problem,
                 << max_rollout_error(model_robot, xs_out, us_out) << std::endl;
 
     } else {
-      xs_out = ddp.get_xs();
-      us_out = ddp.get_us();
+      xs_out = _xs_out;
+      us_out = _us_out;
     }
 
     debug_file_yaml << "xsOPT: " << std::endl;

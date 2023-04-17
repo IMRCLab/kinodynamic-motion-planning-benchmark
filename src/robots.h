@@ -2,10 +2,8 @@
 
 // OMPL headers
 #include "croco_macros.hpp"
-#include "robot_models.hpp"
 #include "motions.hpp"
-
-
+#include "robot_models.hpp"
 
 #include <ompl/control/SpaceInformation.h>
 #include <ompl/control/spaces/RealVectorControlSpace.h>
@@ -67,8 +65,9 @@ struct RobotOmpl {
 
   // Eigen wrappers...
 
-  size_t nx; // dim state
-  size_t nu; // dim control
+  size_t nx;    // dim state
+  size_t nx_pr; // dim positon-rotation
+  size_t nu;    // dim control
 
   Eigen::VectorXd xx; // data
   Eigen::VectorXd zz; // data
@@ -85,6 +84,12 @@ struct RobotOmpl {
 
   virtual double cost_lower_bound(const ompl::base::State *x,
                                   const ompl::base::State *y);
+
+  double cost_lower_bound_pr(const ompl::base::State *x,
+                             const ompl::base::State *y);
+
+  double cost_lower_bound_vel(const ompl::base::State *x,
+                              const ompl::base::State *y);
 
   virtual void toEigen(const ompl::base::State *x_ompl,
                        Eigen::Ref<Eigen::VectorXd> x_eigen) {
@@ -144,7 +149,6 @@ public:
   // TODO: fix memory leaks!!!
 };
 
-
 struct RobotStateValidityChecker : public ompl::base::StateValidityChecker {
   std::shared_ptr<RobotOmpl> robot;
   mutable Eigen::VectorXd x_eigen;
@@ -182,5 +186,3 @@ public:
 protected:
   std::shared_ptr<RobotOmpl> robot_;
 };
-
-

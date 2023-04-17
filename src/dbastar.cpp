@@ -22,6 +22,7 @@
 #include <ompl/datastructures/NearestNeighborsSqrtApprox.h>
 
 #include "motions.hpp"
+#include "nigh/impl/kdtree_median/strategy.hpp"
 #include "ompl/base/ScopedState.h"
 #include "robot_models.hpp"
 #include "robots.h"
@@ -34,6 +35,12 @@
 #include <boost/property_map/property_map.hpp>
 
 #include "general_utils.hpp"
+
+#include <nigh/kdtree_batch.hpp>
+#include <nigh/kdtree_median.hpp>
+#include <nigh/se3_space.hpp>
+#include <nigh/so2_space.hpp>
+#include <nigh/so3_space.hpp>
 
 namespace ob = ompl::base;
 namespace oc = ompl::control;
@@ -51,8 +58,13 @@ const char *terminate_status_str[] = {
 };
 
 Heu_roadmap::Heu_roadmap(std::shared_ptr<RobotOmpl> robot,
-                         const std::vector<Heuristic_node> &heu_map)
-    : robot(robot) {
+                         const std::vector<Heuristic_node> &heu_map,
+                         ob::State *goal)
+    : robot(robot), goal(goal) {
+
+  // __x_zero_vel = robot->getSpaceInformation()->allocState();
+  std::vector<double> xx(robot->nx, 0.);
+  __x_zero_vel = _allocAndFillState(robot->getSpaceInformation(), xx);
 
   // create a heu map
   if (robot->getSpaceInformation()->getStateSpace()->isMetricSpace()) {
@@ -955,6 +967,7 @@ void Options_dbastar::__load_data(void *source, bool boost, bool write) {
   loader.set(VAR_WITH_NAME(max_size_heu_map));
   loader.set(VAR_WITH_NAME(heu_map_file));
   loader.set(VAR_WITH_NAME(heu_connection_radius));
+  loader.set(VAR_WITH_NAME(use_nigh_nn));
 }
 
 void Options_dbastar::add_options(po::options_description &desc) {
@@ -1477,11 +1490,21 @@ void generate_heuristic_map(const Problem &problem,
   std::vector<Eigen::VectorXd> samples;
   Eigen::VectorXd v(robot->nx);
 
-  samples.push_back(problem.start);
+  size_t nx_pr = robot->nx_pr;
+  size_t nx = robot->nx;
+
+  Eigen::VectorXd __start = problem.start;
+  __start.segment(nx_pr, nx - nx_pr).setZero();
+
+  samples.push_back(__start);
   for (size_t i = 0; i < options_dbastar.num_sample_trials; i++) {
     // generate one sample
     //
     robot->sample_uniform(v);
+
+    // set the velocity components to zero
+    v.segment(robot->nx_pr, robot->nx - robot->nx_pr).setZero();
+
     if (robot->collision_check(v)) {
       samples.push_back(v);
     }
@@ -1490,7 +1513,9 @@ void generate_heuristic_map(const Problem &problem,
       break;
     }
   }
-  samples.push_back(problem.goal); // important! goal should be the last one!!
+  Eigen::VectorXd __goal = problem.goal;
+  __goal.segment(nx_pr, nx - nx_pr).setZero();
+  samples.push_back(__goal); // important! goal should be the last one!!
 
   build_heuristic_distance_new(samples, robot, heu_map,
                                options_dbastar.heu_connection_radius,
@@ -1509,6 +1534,148 @@ public:
   int get_rebuildSize_() { return Base::rebuildSize_; }
   virtual ~NearestNeighborsGNATNoThreadSafety_public() = default;
 };
+
+namespace nigh = unc::robotics::nigh;
+
+// using Key = Eigen::Vector3d;
+
+using Space = nigh::CartesianSpace<
+    nigh::L2Space<double, 2>,
+    nigh::ScaledSpace<nigh::SO2Space<double>, std::ratio<1, 2>>>;
+
+using SpaceUni2 = nigh::CartesianSpace<
+    nigh::L2Space<double, 2>,
+    nigh::ScaledSpace<nigh::SO2Space<double>, std::ratio<1, 2>>,
+    nigh::ScaledSpace<nigh::L2Space<double, 1>, std::ratio<1, 4>>,
+    nigh::ScaledSpace<nigh::L2Space<double, 1>, std::ratio<1, 4>>>;
+
+template <typename _T, typename Space>
+struct NearestNeighborsNigh : public ompl::NearestNeighbors<_T> {
+
+  using Key = typename Space::Type;
+
+  struct Functor {
+    std::vector<Key> *keys;
+    Functor(std::vector<Key> *keys) : keys(keys) {}
+    const Key &operator()(const std::size_t &i) const { return keys->at(i); }
+  };
+
+  using Tree = nigh::Nigh<size_t, Space, Functor, nigh::NoThreadSafety,
+                          nigh::KDTreeBatch<>>;
+
+  // unc::robotics::nigh::KDTreeBatch<>>;
+  std::function<Key(_T const &)> data_to_key;
+  std::vector<_T> __data{};
+  std::vector<Key> __keys{};
+  std::vector<size_t> __idxs{};
+
+  Functor functor;
+  Tree tree;
+
+  NearestNeighborsNigh()
+      : functor(&this->__keys), tree(Tree(Space{}, functor)) {}
+
+  NearestNeighborsNigh(std::function<Key(_T const &)> data_to_key)
+      : data_to_key(data_to_key), functor(&this->__keys),
+        tree(Tree(Space{}, functor)) {}
+
+  virtual void add(const _T &data) override {
+    __data.push_back(data);
+    __keys.push_back(data_to_key.operator()(data));
+    __idxs.push_back(__idxs.size());
+    tree.insert(__idxs.back());
+  }
+
+  virtual void add(const std::vector<_T> &data) override {
+    for (auto &d : data) {
+      add(d);
+    }
+  }
+
+  virtual bool reportsSortedResults() const override { ERROR_WITH_INFO(AT); };
+
+  virtual void clear() override {
+    tree.clear();
+    __data.clear();
+    __keys.clear();
+    __idxs.clear();
+  };
+
+  bool remove(const _T &) override { ERROR_WITH_INFO(AT); }
+
+  virtual _T nearest(const _T &data) const override {
+    Key key = data_to_key.operator()(data);
+    std::optional<std::pair<size_t, double>> pt = tree.nearest(key);
+    if (pt) {
+      return __data.at(pt.value().first);
+    } else {
+      ERROR_WITH_INFO(AT);
+    }
+  }
+
+  virtual void nearestK(const _T &data, std::size_t k,
+                        std::vector<_T> &nbh) const override {
+    std::vector<std::pair<size_t, double>> __nbh;
+
+    Key key = data_to_key.operator()(data);
+    tree.nearest(__nbh, key, k);
+    nbh.resize(__nbh.size());
+    std::transform(__nbh.begin(), __nbh.end(), nbh.begin(),
+                   [this](const auto &x) { return __data.at(x.first); });
+  }
+
+  virtual void nearestR(const _T &data, double radius,
+                        std::vector<_T> &nbh) const override {
+    size_t max_k = 1e6; // max number of possible neighbours
+    std::vector<std::pair<size_t, double>> __nbh;
+
+    Key key = data_to_key.operator()(data);
+    tree.nearest(__nbh, key, max_k, radius);
+
+    nbh.resize(__nbh.size());
+    std::transform(__nbh.begin(), __nbh.end(), nbh.begin(),
+                   [this](auto &x) { return __data.at(x.first); });
+  }
+
+  virtual std::size_t size() const override { return __data.size(); }
+
+  virtual void list(std::vector<_T> &data) const override { data = __data; }
+};
+
+template <typename _T>
+ompl::NearestNeighbors<_T> *
+nigh_factory(const std::string &name, const std::shared_ptr<RobotOmpl> &robot) {
+  ompl::NearestNeighbors<_T> *out = nullptr;
+  if (startsWith(name, "unicycle1")) {
+
+    auto data_to_key = [robot](_T const &m) {
+      const ob::State *s = m->get_first_state();
+      Eigen::Vector3d __x;
+      robot->toEigen(s, __x);
+      return std::tuple(Eigen::Vector2d(__x.head(2)), __x(2));
+    };
+
+    out = new NearestNeighborsNigh<_T, Space>(data_to_key);
+
+  } else if (startsWith(name, "unicycle2")) {
+
+    auto data_to_key = [robot](_T const &m) {
+      using Vector5d = Eigen::Matrix<double, 5, 1>;
+      using Vector1d = Eigen::Matrix<double, 1, 1>;
+      const ob::State *s = m->get_first_state();
+      Vector5d __x;
+      robot->toEigen(s, __x);
+      return std::tuple(Eigen::Vector2d(__x.head(2)), __x(2), Vector1d(__x(3)),
+                        Vector1d(__x(4)));
+    };
+
+    out = new NearestNeighborsNigh<_T, SpaceUni2>(data_to_key);
+  } else {
+    NOT_IMPLEMENTED;
+  }
+  CHECK(out, AT);
+  return out;
+}
 
 // continue here: cost lower bound for the quadcopter
 void dbastar(const Problem &problem, const Options_dbastar &options_dbastar,
@@ -1605,6 +1772,86 @@ void dbastar(const Problem &problem, const Options_dbastar &options_dbastar,
     time_bench.time_nearestMotion += out.second;
   }
 
+  // evaluate motions
+
+  Eigen::VectorXd __x(3);
+
+  struct Getkey {
+    const ob::State *operator()(Motion *m) { return m->states.front(); };
+    const ob::State *operator()(AStarNode *n) { return n->state; };
+  };
+
+  auto f1 = [](Motion *m) { return m->states.front(); };
+  auto f2 = [](AStarNode *m) { return m->state; };
+
+  // std::variant<Motion *, AStarNode *> node;
+  // std::visit(Getkey(), node);
+  //
+  // std::function<Space::Type(Motion *const &)> data_to_key_m =
+  //     [&](Motion *const &m) {
+  //       robot->toEigen(m->states.front(), __x);
+  //       return std::tuple(Eigen::Vector2d(__x.head(2)), __x(2));
+  //     };
+
+  if (options_dbastar_local.use_nigh_nn) {
+    // auto T_mm = nigh_factory<Motion *>(problem.robotType, &data_to_key_m);
+    auto T_mm = nigh_factory<Motion *>(problem.robotType, robot);
+
+    // NearestNeighborsNigh<Motion *, Space>(&data_to_key_m);
+
+    T_mm->add(motions_ptr);
+
+    // evaluate
+
+    for (const auto &motion : motions_ptr) {
+      auto out = T_mm->nearest(motion);
+      printState(std::cout, si, out->states.front());
+      printState(std::cout, si, motion->states.front());
+      CHECK_LEQ(si->distance(out->states.front(), motion->states.front()),
+                1e-10, AT);
+    }
+    // compare against T_mm
+
+    double radius = 2 * options_dbastar_local.delta;
+
+    for (size_t i = 0; i < motions_ptr.size(); i++) {
+      std::vector<Motion *> motions_nbh1;
+      std::vector<Motion *> motions_nbh2;
+      T_mm->nearestR(motions_ptr.at(i), radius, motions_nbh1);
+      T_m->nearestR(motions_ptr.at(i), radius, motions_nbh2);
+      CHECK_EQ(motions_nbh1.size(), motions_nbh2.size(), AT);
+    }
+
+    // TODO: check as drop in replacement!
+    {
+      auto out = timed_fun([&] {
+        for (size_t i = 0; i < motions_ptr.size(); i++) {
+          auto &motion = motions_ptr.at(i);
+          std::vector<Motion *> motions_nbh;
+          T_mm->nearestR(motion, radius, motions_nbh);
+        }
+        return true;
+      });
+      std::cout << "T_mm:" << out.second << std::endl; // 43
+    }
+
+    {
+      auto out = timed_fun([&] {
+        for (size_t i = 0; i < motions_ptr.size(); i++) {
+          auto &motion = motions_ptr.at(i);
+          std::vector<Motion *> motions_nbh;
+          T_m->nearestR(motion, radius, motions_nbh);
+        }
+        return true;
+      });
+
+      std::cout << "T_m:" << out.second << std::endl; // 126
+    }
+
+    T_m = T_mm;
+  }
+  // CHECK(false, AT);
+
   if (options_dbastar_local.alpha <= 0 || options_dbastar_local.alpha >= 1) {
     ERROR_WITH_INFO("Alpha needs to be between 0 and 1!");
   }
@@ -1675,11 +1922,12 @@ void dbastar(const Problem &problem, const Options_dbastar &options_dbastar,
         std::cout << "not heu map provided. Computing one .... " << std::endl;
         generate_heuristic_map(problem, robot_factory_ompl(problem),
                                options_dbastar_local, heu_map);
+        write_heu_map(heu_map, "tmp_heu_map.yaml");
       }
       options_dbastar_local.heu_map_ptr = &heu_map;
     }
-    h_fun = std::make_shared<Heu_roadmap>(robot,
-                                          *options_dbastar_local.heu_map_ptr);
+    h_fun = std::make_shared<Heu_roadmap>(
+        robot, *options_dbastar_local.heu_map_ptr, robot->goalState);
 
   } break;
   case -1: {
@@ -1692,7 +1940,6 @@ void dbastar(const Problem &problem, const Options_dbastar &options_dbastar,
 
   ompl::NearestNeighbors<AStarNode *> *T_n;
   if (si->getStateSpace()->isMetricSpace()) {
-
     T_n = new NearestNeighborsGNATNoThreadSafety_public<AStarNode *>();
     static_cast<NearestNeighborsGNATNoThreadSafety_public<AStarNode *> *>(T_n)
         ->set_rebuildSize_(5000);
@@ -1703,6 +1950,16 @@ void dbastar(const Problem &problem, const Options_dbastar &options_dbastar,
   T_n->setDistanceFunction([si](const AStarNode *a, const AStarNode *b) {
     return si->distance(a->state, b->state);
   });
+
+  std::function<Space::Type(AStarNode *const &)> fu = [&](AStarNode *const &m) {
+    CHECK(robot, AT);
+    robot->toEigen(m->state, __x);
+    return std::tuple(Eigen::Vector2d(__x.head(2)), __x(2));
+  };
+
+  if (options_dbastar_local.use_nigh_nn) {
+    T_n = nigh_factory<AStarNode *>(problem.robotType, robot);
+  }
 
   std::vector<const Sample_ *> expanded;
   std::vector<std::vector<double>> found_nn;
@@ -1753,7 +2010,6 @@ void dbastar(const Problem &problem, const Options_dbastar &options_dbastar,
   // clock start
 
   if (options_dbastar_local.use_landmarks) {
-
     T_landmarks = new ompl::NearestNeighborsGNATNoThreadSafety<AStarNode *>();
     add_landmarks(T_landmarks, ptrs, robot,
                   options_dbastar_local.num_sample_trials);
@@ -1872,9 +2128,10 @@ void dbastar(const Problem &problem, const Options_dbastar &options_dbastar,
   auto tac = std::chrono::high_resolution_clock::now();
   time_bench.prepare_time =
       std::chrono::duration<double, std::milli>(tac - tic).count();
-
+#if 0
   static_cast<NearestNeighborsGNATNoThreadSafety_public<AStarNode *> *>(T_n)
       ->set_rebuildSize_(1e8);
+#endif
 
   auto start = std::chrono::steady_clock::now();
 
@@ -1886,7 +2143,6 @@ void dbastar(const Problem &problem, const Options_dbastar &options_dbastar,
   };
 
   while (true) {
-
     if (static_cast<size_t>(time_bench.expands) >=
         options_dbastar_local.max_expands) {
       status = Terminate_status::MAX_EXPANDS;
@@ -1951,10 +2207,12 @@ void dbastar(const Problem &problem, const Options_dbastar &options_dbastar,
         !options_dbastar_local.use_landmarks) {
 
       auto out = timed_fun([&] {
+#if 0
         auto p_derived = static_cast<
             NearestNeighborsGNATNoThreadSafety_public<AStarNode *> *>(T_n);
         p_derived->rebuildDataStructure();
         p_derived->set_rebuildSize_(1e8);
+#endif
         return 0;
       });
       time_bench.time_nearestNode += out.second;
@@ -2156,15 +2414,17 @@ void dbastar(const Problem &problem, const Options_dbastar &options_dbastar,
             }
 
             // AStarNode* entry = nearest;
-            assert(si->distance(entry->state, tmpState) <=
-                   options_dbastar_local.delta);
+
+            CHECK_LEQ(si->distance(entry->state, tmpState),
+                      options_dbastar_local.delta, AT);
             double extra_time_to_reach =
                 options_dbastar_local.cost_delta_factor *
                 robot->cost_lower_bound(entry->state, tmpState);
             double tentative_gScore_ = tentative_gScore + extra_time_to_reach;
             double delta_score = entry->gScore - tentative_gScore_;
             // double old_fscore = entry->fScore;
-            // std::cout  << "time to reach " << time_to_reach << std::endl;
+            // std::cout  << "time to reach " << time_to_reach <<
+            // std::endl;
 
             if (delta_score > 0) {
 
@@ -2173,8 +2433,8 @@ void dbastar(const Problem &problem, const Options_dbastar &options_dbastar,
                   continue;
                 if (!added) {
 
-                  // std::cout << "adding state that is close"  << std::endl;
-                  // si->printState(tmpState);
+                  // std::cout << "adding state that is close"  <<
+                  // std::endl; si->printState(tmpState);
 
                   auto node = new AStarNode();
                   node->state = si->cloneState(tmpState);
@@ -2212,8 +2472,10 @@ void dbastar(const Problem &problem, const Options_dbastar &options_dbastar,
                 entry->used_motion = motion->idx;
                 entry->used_offset = computed_offset;
                 if (entry->is_in_open) {
-                  // std::cout << "improve score  -- old: " << old_fscore
-                  //           << " -- new -- " << entry->fScore << std::endl;
+                  // std::cout << "improve score  -- old: " <<
+                  // old_fscore
+                  //           << " -- new -- " << entry->fScore <<
+                  //           std::endl;
                   open.update(entry->handle); // increase?
                 } else {
                   auto handle = open.push(entry);
@@ -2272,7 +2534,6 @@ void dbastar(const Problem &problem, const Options_dbastar &options_dbastar,
   time_bench.write(out);
 
   if (options_dbastar_local.debug) {
-
     if (options_dbastar_local.heuristic == 1) {
 #if 0 
       out << "batch:" << std::endl;
@@ -2658,7 +2919,6 @@ void dbastar(const Problem &problem, const Options_dbastar &options_dbastar,
     out_info_db.cost = solution->gScore;
     out_info_db.cost_with_delta_time = cost_with_jumps;
   } else {
-
     out_info_db.cost = -1;
     out_info_db.cost_with_delta_time = -1;
   }

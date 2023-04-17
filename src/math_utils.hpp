@@ -221,7 +221,7 @@ void inline __get_quat_from_ang_vel_time(
   Eigen::Vector3d u = v / theta;
   //
   //
-  double threshold_use_taylor = 1e-12;
+  double threshold_use_taylor = 1e-6;
   if (theta < threshold_use_taylor) {
     std::cout << "very small theta " << theta << std::endl;
     q.head<3>() = v * (.5 - theta * theta / 48.);
@@ -390,8 +390,6 @@ void inline rotate_with_q(const Eigen::Ref<const Eigen::Vector4d> &x,
   }
 }
 
-
-
 double inline diff_angle(double angle1, double angle2) {
   return atan2(sin(angle1 - angle2), cos(angle1 - angle2));
 }
@@ -502,8 +500,6 @@ void inline so2_interpolation(double &state, double from, double to, double t) {
 
 double inline so3_distance(Eigen::Vector4d x, Eigen::Vector4d y) {
   double max_quaternion_norm_error = 1e-7;
-  std::cout << STR_V(x) << std::endl;
-  std::cout << STR_V(y) << std::endl;
   assert(std::abs(x.norm() - 1) < max_quaternion_norm_error);
   assert(std::abs(y.norm() - 1) < max_quaternion_norm_error);
   double dq = std::fabs(x.dot(y));

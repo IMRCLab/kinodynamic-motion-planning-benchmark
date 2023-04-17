@@ -207,7 +207,11 @@ struct Model_robot {
 
   size_t nx;
   size_t nu;
+  size_t nx_pr; // the first nx_pr components are about position/orientation
   size_t nx_col = 0; // only the first nx_col variables have non zero gradient
+
+  size_t nr_reg;
+  size_t nr_ineq;
 
   bool is_2d;
   size_t translation_invariance = 0; // e.g. 1, 2 , 3, ...
@@ -223,6 +227,24 @@ struct Model_robot {
 
   Eigen::VectorXd x_ub;
   Eigen::VectorXd x_lb;
+
+  // TODO: transition towards this API. The robot model should include
+  // regularization features/ineqs...
+  virtual void regularization_cost(Eigen::Ref<Eigen::VectorXd> r,
+                                   const Eigen::Ref<const Eigen::VectorXd> &x,
+                                   const Eigen::Ref<const Eigen::VectorXd> &u) {
+
+    NOT_IMPLEMENTED;
+  }
+
+  virtual void
+  regularization_cost_diff(Eigen::Ref<Eigen::MatrixXd> Jx,
+                           Eigen::Ref<Eigen::MatrixXd> Ju,
+                           const Eigen::Ref<const Eigen::VectorXd> &x,
+                           const Eigen::Ref<const Eigen::VectorXd> &u) {
+
+    NOT_IMPLEMENTED;
+  }
 
   // State
   std::shared_ptr<StateQ> state;
@@ -314,6 +336,30 @@ struct Model_robot {
                         const Eigen::Ref<const Eigen::VectorXd> &x,
                         const Eigen::Ref<const Eigen::VectorXd> &u, double dt);
 
+  virtual void constraintsIneq(Eigen::Ref<Eigen::VectorXd> r,
+                               const Eigen::Ref<const Eigen::VectorXd> &x,
+                               const Eigen::Ref<const Eigen::VectorXd> &u) {
+
+    (void)r;
+    (void)x;
+    (void)u;
+
+    NOT_IMPLEMENTED;
+  }
+
+  virtual void constraintsIneqDiff(Eigen::Ref<Eigen::MatrixXd> Jx,
+                                   Eigen::Ref<Eigen::MatrixXd> Ju,
+                                   const Eigen::Ref<const Eigen::VectorXd> x,
+                                   const Eigen::Ref<const Eigen::VectorXd> &u) {
+
+    (void)Jx;
+    (void)Ju;
+    (void)x;
+    (void)u;
+
+    NOT_IMPLEMENTED;
+  }
+
   // virtual void stepDiffdt(Eigen::Ref<Eigen::MatrixXd> Fx,
   //                         Eigen::Ref<Eigen::MatrixXd> Fu,
   //                         const Eigen::Ref<const Eigen::VectorXd> &x,
@@ -376,6 +422,24 @@ struct Model_robot {
 
   virtual double lower_bound_time(const Eigen::Ref<const Eigen::VectorXd> &x,
                                   const Eigen::Ref<const Eigen::VectorXd> &y);
+
+  virtual double
+  lower_bound_time_vel(const Eigen::Ref<const Eigen::VectorXd> &x,
+                       const Eigen::Ref<const Eigen::VectorXd> &y) {
+
+    (void)x;
+    (void)y;
+    NOT_IMPLEMENTED;
+  }
+
+  virtual double
+  lower_bound_time_pr(const Eigen::Ref<const Eigen::VectorXd> &x,
+                      const Eigen::Ref<const Eigen::VectorXd> &y) {
+
+    (void)x;
+    (void)y;
+    NOT_IMPLEMENTED;
+  }
 
   std::vector<std::shared_ptr<fcl::CollisionGeometryd>> collision_geometries;
   std::shared_ptr<fcl::BroadPhaseCollisionManagerd> env;

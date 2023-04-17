@@ -32,6 +32,7 @@ struct Car_params {
   double min_vel = -.1;
   double max_steering_abs = M_PI / 3.;
   double max_angular_vel = 10;
+  double diff_max_abs = M_PI / 4;
 
   std::string shape = "box";
   std::string shape_trailer = "box";
@@ -60,6 +61,7 @@ struct Car_params {
     out << be << STR(shape, af) << std::endl;
     out << be << STR(shape_trailer, af) << std::endl;
     out << be << STR(filename, af) << std::endl;
+    out << be << STR(diff_max_abs, af) << std::endl;
 
     out << be << STR_VV(size, af) << std::endl;
     out << be << STR_VV(size_trailer, af) << std::endl;
@@ -77,6 +79,9 @@ inline Eigen::Matrix<double, 5, 1> mk_v5(double x0, double x1, double x2,
 
   return out;
 }
+// TODO: I should be able to check if goal is inside the  bounds
+// Each model shoudl have: "state_constraints"
+// and "state_constraints_diff"
 
 struct Car2_params {
 
@@ -89,9 +94,9 @@ struct Car2_params {
   double max_vel = .5;
   double min_vel = -.1;
   double max_steering_abs = M_PI / 3.;
-  double max_angular_vel = 10;
-  double max_acc_abs = .1;
-  double max_steer_vel_abs = M_PI;
+  double max_angular_vel = 10; // for bounds
+  double max_acc_abs = 2.;
+  double max_steer_vel_abs = 2 * M_PI;
 
   std::string shape = "box";
   std::string shape_trailer = "box";
@@ -128,9 +133,6 @@ struct Model_car2 : Model_robot {
   virtual ~Model_car2() = default;
 
   Car2_params params;
-
-  // Model_car_with_trailers(const char *file)
-  //     : Model_car_with_trailers(Car_params(file)) {}
 
   Model_car2(const Car2_params &params = Car2_params(),
              const Eigen::VectorXd &p_lb = Eigen::VectorXd(),
@@ -176,6 +178,24 @@ struct Model_car2 : Model_robot {
 
     ERROR_WITH_INFO("not implemented");
   }
+
+  virtual double
+  lower_bound_time_vel(const Eigen::Ref<const Eigen::VectorXd> &x,
+                       const Eigen::Ref<const Eigen::VectorXd> &y) override {
+
+    (void)x;
+    (void)y;
+    NOT_IMPLEMENTED;
+  }
+
+  virtual double
+  lower_bound_time_pr(const Eigen::Ref<const Eigen::VectorXd> &x,
+                      const Eigen::Ref<const Eigen::VectorXd> &y) override {
+
+    (void)x;
+    (void)y;
+    NOT_IMPLEMENTED;
+  }
 };
 
 struct Model_car_with_trailers : Model_robot {
@@ -198,6 +218,30 @@ struct Model_car_with_trailers : Model_robot {
                      const Eigen::Ref<const Eigen::VectorXd> &x,
                      const Eigen::Ref<const Eigen::VectorXd> &u) override;
 
+  // r <= 0 means feasible
+  virtual void
+  constraintsIneq(Eigen::Ref<Eigen::VectorXd> r,
+                  const Eigen::Ref<const Eigen::VectorXd> &x,
+                  const Eigen::Ref<const Eigen::VectorXd> &u) override;
+
+  virtual void
+  constraintsIneqDiff(Eigen::Ref<Eigen::MatrixXd> Jx,
+                      Eigen::Ref<Eigen::MatrixXd> Ju,
+                      const Eigen::Ref<const Eigen::VectorXd> x,
+                      const Eigen::Ref<const Eigen::VectorXd> &u) override;
+
+  // r (the cost is then .5 r^2)
+  virtual void
+  regularization_cost(Eigen::Ref<Eigen::VectorXd> r,
+                      const Eigen::Ref<const Eigen::VectorXd> &x,
+                      const Eigen::Ref<const Eigen::VectorXd> &u) override;
+
+  virtual void
+  regularization_cost_diff(Eigen::Ref<Eigen::MatrixXd> Jx,
+                           Eigen::Ref<Eigen::MatrixXd> Ju,
+                           const Eigen::Ref<const Eigen::VectorXd> &x,
+                           const Eigen::Ref<const Eigen::VectorXd> &u) override;
+
   virtual void calcDiffV(Eigen::Ref<Eigen::MatrixXd> Jv_x,
                          Eigen::Ref<Eigen::MatrixXd> Jv_u,
                          const Eigen::Ref<const Eigen::VectorXd> &x,
@@ -214,6 +258,22 @@ struct Model_car_with_trailers : Model_robot {
   virtual double
   lower_bound_time(const Eigen::Ref<const Eigen::VectorXd> &x,
                    const Eigen::Ref<const Eigen::VectorXd> &y) override;
+
+  virtual double
+  lower_bound_time_pr(const Eigen::Ref<const Eigen::VectorXd> &x,
+                      const Eigen::Ref<const Eigen::VectorXd> &y) override {
+
+    return lower_bound_time(x, y);
+  }
+
+  virtual double
+  lower_bound_time_vel(const Eigen::Ref<const Eigen::VectorXd> &x,
+                       const Eigen::Ref<const Eigen::VectorXd> &y) override {
+
+    (void)x;
+    (void)y;
+    return 0;
+  }
 
   virtual void transformation_collision_geometries(
       const Eigen::Ref<const Eigen::VectorXd> &x,
@@ -316,6 +376,24 @@ struct Model_acrobot : Model_robot {
   virtual double
   lower_bound_time(const Eigen::Ref<const Eigen::VectorXd> &x,
                    const Eigen::Ref<const Eigen::VectorXd> &y) override;
+
+  virtual double
+  lower_bound_time_pr(const Eigen::Ref<const Eigen::VectorXd> &x,
+                      const Eigen::Ref<const Eigen::VectorXd> &y) override {
+
+    (void)x;
+    (void)y;
+    NOT_IMPLEMENTED;
+  }
+
+  virtual double
+  lower_bound_time_vel(const Eigen::Ref<const Eigen::VectorXd> &x,
+                       const Eigen::Ref<const Eigen::VectorXd> &y) override {
+
+    (void)x;
+    (void)y;
+    NOT_IMPLEMENTED;
+  }
 };
 
 // struct Model_unicycle1_se2 : Model_robot {
@@ -419,6 +497,22 @@ struct Model_unicycle1 : Model_robot {
   virtual double
   lower_bound_time(const Eigen::Ref<const Eigen::VectorXd> &x,
                    const Eigen::Ref<const Eigen::VectorXd> &y) override;
+
+  virtual double
+  lower_bound_time_pr(const Eigen::Ref<const Eigen::VectorXd> &x,
+                      const Eigen::Ref<const Eigen::VectorXd> &y) override {
+
+    return lower_bound_time(x, y);
+  }
+
+  virtual double
+  lower_bound_time_vel(const Eigen::Ref<const Eigen::VectorXd> &x,
+                       const Eigen::Ref<const Eigen::VectorXd> &y) override {
+
+    (void)x;
+    (void)y;
+    return 0;
+  }
 };
 
 struct Quad3d_params {
@@ -479,9 +573,10 @@ struct Quad3d_params {
 
 struct Model_quad3d : Model_robot {
 
-  virtual ~Model_quad3d() = default;
-
+  using Vector12d = Eigen::Matrix<double, 12, 1>;
   using Matrix34 = Eigen::Matrix<double, 3, 4>;
+
+  virtual ~Model_quad3d() = default;
 
   struct Data {
     Eigen::Vector3d f_u;
@@ -491,7 +586,12 @@ struct Model_quad3d : Model_robot {
     Eigen::Matrix3d Ja;
   } data;
 
+  Vector12d ff;
   Quad3d_params params;
+
+  Eigen::Matrix<double, 12, 13> Jv_x;
+  Eigen::Matrix<double, 12, 4> Jv_u;
+
   double arm;
   double g = 9.81;
 
@@ -515,6 +615,8 @@ struct Model_quad3d : Model_robot {
   Matrix34 Fu_selection_B0;
   Matrix34 Ftau_selection_B0;
 
+  Model_quad3d(const Model_quad3d &) = default;
+
   Model_quad3d(const char *file,
                const Eigen::VectorXd &p_lb = Eigen::VectorXd(),
                const Eigen::VectorXd &p_ub = Eigen::VectorXd())
@@ -534,6 +636,15 @@ struct Model_quad3d : Model_robot {
     out(6) = 1.;
     return out;
   }
+
+  virtual void calcV(Eigen::Ref<Eigen::VectorXd> f,
+                     const Eigen::Ref<const Eigen::VectorXd> &x,
+                     const Eigen::Ref<const Eigen::VectorXd> &u) override;
+
+  virtual void calcDiffV(Eigen::Ref<Eigen::MatrixXd> Jv_x,
+                         Eigen::Ref<Eigen::MatrixXd> Jv_u,
+                         const Eigen::Ref<const Eigen::VectorXd> &x,
+                         const Eigen::Ref<const Eigen::VectorXd> &u) override;
 
   virtual void step(Eigen::Ref<Eigen::VectorXd> xnext,
                     const Eigen::Ref<const Eigen::VectorXd> &x,
@@ -563,6 +674,24 @@ struct Model_quad3d : Model_robot {
   virtual double
   lower_bound_time(const Eigen::Ref<const Eigen::VectorXd> &x,
                    const Eigen::Ref<const Eigen::VectorXd> &y) override;
+
+  virtual double
+  lower_bound_time_pr(const Eigen::Ref<const Eigen::VectorXd> &x,
+                      const Eigen::Ref<const Eigen::VectorXd> &y) override {
+
+    (void)x;
+    (void)y;
+    NOT_IMPLEMENTED;
+  }
+
+  virtual double
+  lower_bound_time_vel(const Eigen::Ref<const Eigen::VectorXd> &x,
+                       const Eigen::Ref<const Eigen::VectorXd> &y) override {
+
+    (void)x;
+    (void)y;
+    NOT_IMPLEMENTED;
+  }
 };
 
 struct Quad2d_params {
@@ -684,6 +813,24 @@ struct Model_quad2d : Model_robot {
   virtual double
   lower_bound_time(const Eigen::Ref<const Eigen::VectorXd> &x,
                    const Eigen::Ref<const Eigen::VectorXd> &y) override;
+
+  virtual double
+  lower_bound_time_pr(const Eigen::Ref<const Eigen::VectorXd> &x,
+                      const Eigen::Ref<const Eigen::VectorXd> &y) override {
+
+    (void)x;
+    (void)y;
+    NOT_IMPLEMENTED;
+  }
+
+  virtual double
+  lower_bound_time_vel(const Eigen::Ref<const Eigen::VectorXd> &x,
+                       const Eigen::Ref<const Eigen::VectorXd> &y) override {
+
+    (void)x;
+    (void)y;
+    NOT_IMPLEMENTED;
+  }
 };
 
 struct Unicycle2_params {
@@ -753,6 +900,14 @@ struct Model_unicycle2 : Model_robot {
   virtual double
   lower_bound_time(const Eigen::Ref<const Eigen::VectorXd> &x,
                    const Eigen::Ref<const Eigen::VectorXd> &y) override;
+
+  virtual double
+  lower_bound_time_pr(const Eigen::Ref<const Eigen::VectorXd> &x,
+                      const Eigen::Ref<const Eigen::VectorXd> &y) override;
+
+  virtual double
+  lower_bound_time_vel(const Eigen::Ref<const Eigen::VectorXd> &x,
+                       const Eigen::Ref<const Eigen::VectorXd> &y) override;
 };
 
 std::unique_ptr<Model_robot> robot_factory(const char *file);

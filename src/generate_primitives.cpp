@@ -196,15 +196,14 @@ void generate_primitives(const Options_trajopt &options_trajopt,
       robot_factory(robot_type_to_path(options_primitives.dynamics).c_str());
 
   size_t num_translation = robot_model->get_translation_invariance();
-  Eigen::VectorXd p_lb(num_translation);
-  Eigen::VectorXd p_ub(num_translation);
-
-  p_lb.setOnes();
-  p_lb *= -1;
-
-  p_ub.setOnes();
-
-  robot_model->setPositionBounds(p_lb, p_ub);
+  if (num_translation) {
+    Eigen::VectorXd p_lb(num_translation);
+    Eigen::VectorXd p_ub(num_translation);
+    p_lb.setOnes();
+    p_lb *= -1;
+    p_ub.setOnes();
+    robot_model->setPositionBounds(p_lb, p_ub);
+  }
 
   auto time_start = std::chrono::steady_clock::now();
   size_t attempts = 0;
@@ -280,6 +279,6 @@ void generate_primitives(const Options_trajopt &options_trajopt,
 
   CSTR_(attempts);
   CSTR_(trajectories.data.size());
-  double success_rate = double(attempts) / trajectories.data.size();
+  double success_rate = double(trajectories.data.size()) / attempts;
   CSTR_(success_rate);
 }

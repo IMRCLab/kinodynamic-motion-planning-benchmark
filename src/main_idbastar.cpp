@@ -96,7 +96,7 @@ int main(int argc, char *argv[]) {
 
   std::ofstream results(results_file);
 
-  results << "alg: ompl_geo" << std::endl;
+  results << "alg: idbastar" << std::endl;
   results << "time_stamp: " << get_time_stamp() << std::endl;
 
   results << "options_idbastar:" << std::endl;

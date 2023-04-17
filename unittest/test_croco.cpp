@@ -1,6 +1,8 @@
+#include "generate_primitives.hpp"
 #include "robot_models.hpp"
 #include <algorithm>
 #include <cmath>
+#include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <limits>
@@ -462,6 +464,13 @@ BOOST_AUTO_TEST_CASE(quad2d) {
 
     auto dyn_free_time = mk<Dynamics>(model, Control_Mode::free_time);
     check_dyn(dyn_free_time, tol, x, u);
+  }
+}
+
+BOOST_AUTO_TEST_CASE(t_car2) {
+  {
+    ptr<Dynamics> dyn = mk<Dynamics>(mks<Model_car2>());
+    check_dyn(dyn, 1e-5);
   }
 }
 
@@ -1055,6 +1064,12 @@ BOOST_AUTO_TEST_CASE(jac_quadrotor) {
 
       BOOST_CHECK(check_equal(d_diff->Lx, d->Lx, tol, tol));
       BOOST_CHECK(check_equal(d_diff->Lu, d->Lu, tol, tol));
+
+      std::cout << "d->Lu" << std::endl;
+      std::cout << d->Lu << std::endl;
+      std::cout << "d->Lu diff" << std::endl;
+      std::cout << d_diff->Lu << std::endl;
+
       BOOST_CHECK(check_equal(d_diff->Fx, d->Fx, tol, tol));
       BOOST_CHECK(check_equal(d_diff->Fu, d->Fu, tol, tol));
       std::cout << "d_diff->Lxx" << std::endl;
@@ -1899,8 +1914,9 @@ BOOST_AUTO_TEST_CASE(quadrotor_0_recovery) {
   options_trajopt.use_warmstart = 1;
   options_trajopt.weight_goal = 300;
   options_trajopt.max_iter = 400;
-  options_trajopt.noise_level = 1e-3;
+  options_trajopt.noise_level = 1e-6;
   options_trajopt.ref_x0 = 1;
+  options_trajopt.use_finite_diff = 0;
 
   Result_opti result;
   Trajectory sol;
@@ -2261,7 +2277,6 @@ BOOST_AUTO_TEST_CASE(col_acrobot) {
 BOOST_AUTO_TEST_CASE(check_gradient_of_col) { // TODO
 }
 
-
 BOOST_AUTO_TEST_CASE(col_quad3d_v2) {
 
   Problem problem("../benchmark/quadrotor_0/obstacle_flight.yaml");
@@ -2562,7 +2577,8 @@ BOOST_AUTO_TEST_CASE(t_welf_recovery_paper) {
 
   Trajectory traj_w, traj_q, traj_oq, traj_ow;
   traj_w.read_from_yaml("../data_welf_yaml/guess_recovery_flight.yaml");
-
+  // traj_w.read_from_yaml("../data_welf_yaml/guesses/guess_low_noise/"
+  //                       "initial_guess_recovery_flight_7.yaml");
   std::shared_ptr<Model_robot> robot =
       robot_factory(robot_type_to_path("quad3d_v3").c_str());
   load_env_quim(*robot, problem);
@@ -2572,9 +2588,16 @@ BOOST_AUTO_TEST_CASE(t_welf_recovery_paper) {
 
   traj_q = from_welf_to_quim(traj_w, robot_derived->u_nominal);
 
+  {
+    std::ofstream out("init_guess.yaml");
+    traj_q.to_yaml_format(out);
+  }
+
   Options_trajopt options_trajopt;
-  options_trajopt.weight_goal = 400;
+  options_trajopt.weight_goal = 400; // 200-400
   options_trajopt.max_iter = 200;
+  options_trajopt.smooth_traj = true;
+  options_trajopt.noise_level = 1e-7;
 
   Result_opti opti_out;
 
@@ -2679,7 +2702,7 @@ BOOST_AUTO_TEST_CASE(t_welf_flip) {
   Trajectory traj_w, traj_q, traj_oq, traj_ow;
   traj_w.read_from_yaml("../data_welf_yaml/result_flip_CASADI.yaml");
   // traj_w.read_from_yaml("../data_welf_yaml/guess_flip.yaml");
-                        // result_flip_CASADI.yaml"); //
+  // result_flip_CASADI.yaml"); //
 
   std::shared_ptr<Model_robot> robot =
       robot_factory(robot_type_to_path(problem.robotType).c_str());
@@ -2720,7 +2743,6 @@ BOOST_AUTO_TEST_CASE(t_welf_flip) {
   traj_ow.to_yaml_format(tmp);
 }
 
-
 BOOST_AUTO_TEST_CASE(t_welf_loop) {
 
   // Problem problem("../benchmark/quadrotor_0/flip.yaml");
@@ -2728,7 +2750,7 @@ BOOST_AUTO_TEST_CASE(t_welf_loop) {
   Trajectory traj_w, traj_q, traj_oq, traj_ow;
   // traj_w.read_from_yaml("../data_welf_yaml/result_flip_CASADI.yaml");
   traj_w.read_from_yaml("../data_welf_yaml/guess_loop.yaml");
-                        // result_flip_CASADI.yaml"); //
+  // result_flip_CASADI.yaml"); //
 
   std::shared_ptr<Model_robot> robot =
       robot_factory(robot_type_to_path(problem.robotType).c_str());
@@ -2769,32 +2791,160 @@ BOOST_AUTO_TEST_CASE(t_welf_loop) {
   traj_ow.to_yaml_format(tmp);
 }
 
-
-
 BOOST_AUTO_TEST_CASE(load_my) {
-
 
   Problem problem("../benchmark/quadrotor_0/flip.yaml");
   Trajectory traj_w, traj_q, traj_oq, traj_ow;
   traj_w.read_from_yaml("../data_welf_yaml/croco_flip_q.yaml");
   // traj_w.read_from_yaml("../data_welf_yaml/guess_flip.yaml");
-                        // result_flip_CASADI.yaml"); //
+  // result_flip_CASADI.yaml"); //
 
-
-  for (auto&s : traj_w.states) {
-    s.segment(3,4).normalize();
-
-
-
+  for (auto &s : traj_w.states) {
+    s.segment(3, 4).normalize();
   }
-
 
   std::shared_ptr<Model_robot> robot =
       robot_factory(robot_type_to_path(problem.robotType).c_str());
   load_env_quim(*robot, problem);
   traj_w.check(robot);
+}
 
+BOOST_AUTO_TEST_CASE(t_data_for_alex) {
 
+  CSTR_("hello wordld");
+  auto file = "../data_alex/starting_config.yaml";
+  YAML::Node node = YAML::LoadFile(file);
+
+  // x,y,theat,v,phi,vg,phig
+  std::vector<Eigen::VectorXd> alex_starts;
+
+  for (const auto &n : node["start_configs"]) {
+    auto v = n.as<std::vector<double>>();
+    alex_starts.push_back(Eigen::VectorXd::Map(v.data(), v.size()));
+  }
+
+  const char *dynamics = "car2_v0";
+
+  std::vector<Eigen::VectorXd> starts(alex_starts.size());
+  std::vector<Eigen::VectorXd> goals(alex_starts.size());
+
+  std::transform(alex_starts.begin(), alex_starts.end(), starts.begin(),
+                 [](auto &v) {
+                   Eigen::VectorXd out(5);
+                   out = v.head(5);
+                   out(2) = wrap_angle(out(2));
+                   return out;
+                 });
+
+  std::transform(alex_starts.begin(), alex_starts.end(), goals.begin(),
+                 [](auto &v) {
+                   Eigen::VectorXd out(5);
+                   out.setZero();
+                   out.tail(2) = v.tail(2);
+                   return out;
+                 });
+
+  int ref_time_steps = 100;
+  Options_trajopt options_trajopt;
+  Trajectories trajectories, trajs_opt;
+
+  CSTR_(starts.size());
+  // solve the problem
+  for (size_t i = 0; i < starts.size(); i++) {
+    Eigen::VectorXd &goal = goals.at(i);
+    Eigen::VectorXd &start = starts.at(i);
+
+    CSTR_V(start);
+    CSTR_V(goal);
+
+    Problem problem;
+    problem.goal = goal;
+    problem.start = start;
+    problem.robotType = dynamics;
+
+    Trajectory init_guess;
+    init_guess.num_time_steps = int(ref_time_steps);
+
+    Trajectory traj;
+    Result_opti opti_out;
+
+    trajectory_optimization(problem, init_guess, options_trajopt, traj,
+                            opti_out);
+    if (opti_out.feasible) {
+      CHECK(traj.states.size(), AT);
+      traj.start = traj.states.front();
+      traj.goal = traj.states.back();
+      trajectories.data.push_back(traj);
+    }
+  }
+
+  trajectories.save_file_yaml("car2_v0_alex_100.yaml");
+  CSTR_(trajectories.data.size());
+
+  options_trajopt.solver_id = 14;
+  improve_motion_primitives(options_trajopt, trajectories, dynamics, trajs_opt);
+
+  trajs_opt.save_file_yaml("car2_v0_alex_opt.yaml");
+  CSTR_(trajs_opt.data.size());
+}
+
+BOOST_AUTO_TEST_CASE(check_all_init_guess) {
+
+  //
+
+  // load init guess
+
+  namespace fs = std::filesystem;
+
+  auto path = "../data_welf_yaml/guesses/guess_low_noise/";
+  // auto path = "../data_welf_yaml/guesses/guess_middle_noise/";
+  // auto path = "../data_welf_yaml/guesses/guess_high_noise/";
+    // guess_middle_noise/";
+    // guess_low_noise/";
+
+  std::vector<std::string> paths;
+
+  Problem problem("../benchmark/quadrotor_0/recovery_paper.yaml");
+
+  for (const auto &entry : fs::directory_iterator(path)) {
+    paths.push_back(entry.path());
+  }
+
+  Options_trajopt options_trajopt;
+  options_trajopt.welf_format = true;
+  options_trajopt.max_iter = 350;
+  options_trajopt.weight_goal = 300;
+  options_trajopt.smooth_traj = true; // important: set to true, because the guess are bad!
+
+  size_t solved = 0;
+  size_t trials = 0;
+
+  for (const auto &p : paths) {
+
+    Trajectory traj_in, traj_out;
+    Result_opti opti_out;
+    std::cout << "using init guess " << std::endl;
+    traj_in.read_from_yaml(p.c_str());
+    trajectory_optimization(problem, traj_in, options_trajopt, traj_out,
+                            opti_out);
+    trials++;
+    if (traj_out.feasible) {
+      solved++;
+    }
+  }
+
+  CSTR_(solved);
+  CSTR_(trials);
+  CSTR_(double(solved) / trials);
+}
+
+BOOST_AUTO_TEST_CASE(t_diff_angle) {
+  // TODO
 
 }
+//
+//
+// }
+
+
 

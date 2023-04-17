@@ -139,7 +139,7 @@ double distance_angle(double a, double b) {
 }
 
 RobotOmpl::RobotOmpl(std::shared_ptr<Model_robot> diff_model)
-    : diff_model(diff_model), nx(diff_model->nx), nu(diff_model->nu) {
+    : diff_model(diff_model), nx(diff_model->nx), nx_pr(diff_model->nx_pr), nu(diff_model->nu)  {
 
   xx.resize(nx); // data
   zz.resize(nx); // data
@@ -194,6 +194,22 @@ double RobotOmpl::cost_lower_bound(const ompl::base::State *x,
   return diff_model->lower_bound_time(xx, yy);
 }
 
+double RobotOmpl::cost_lower_bound_pr(const ompl::base::State *x,
+                                   const ompl::base::State *y) {
+  toEigen(x, xx);
+  toEigen(y, yy);
+  return diff_model->lower_bound_time_pr(xx, yy);
+}
+
+double RobotOmpl::cost_lower_bound_vel(const ompl::base::State *x,
+                                   const ompl::base::State *y) {
+  toEigen(x, xx);
+  toEigen(y, yy);
+  return diff_model->lower_bound_time_vel(xx, yy);
+}
+
+
+
 class RobotUnicycleFirstOrder : public RobotOmpl {
   using StateSpace = ob::SE2StateSpace;
 
@@ -202,6 +218,7 @@ public:
 
   RobotUnicycleFirstOrder(std::shared_ptr<Model_unicycle1> diff_model)
       : RobotOmpl(diff_model) {
+
 
     auto space(std::make_shared<StateSpace>());
     auto cspace(std::make_shared<oc::RealVectorControlSpace>(space, 2));
@@ -286,6 +303,24 @@ public:
     stateTyped->setX(position(0));
     stateTyped->setY(position(1));
   }
+
+  // virtual void copyVelocity(ompl::base::State *state,
+  //                           const ompl::base::State *ref) override {
+  //
+  //
+  //
+  // }
+  //
+  //
+  //
+  //                          const fcl::Vector3d position) override {
+  //   auto stateTyped = state->as<StateSpace::StateType>();
+  //   stateTyped->setX(position(0));
+  //   stateTyped->setY(position(1));
+  // }
+
+
+
 };
 
 class RobotUnicycleSecondOrder : public RobotOmpl {
@@ -376,7 +411,7 @@ public:
   fromEigen(ompl::base::State *x_ompl,
             const Eigen::Ref<const Eigen::VectorXd> &x_eigen) override {
 
-    assert(x_eigen.size() == 4);
+    assert(x_eigen.size() == 5);
     auto x_typed = x_ompl->as<StateSpace::StateType>();
 
     x_typed->setX(x_eigen(0));
@@ -1025,6 +1060,7 @@ public:
 
   Quad2d(std::shared_ptr<Model_quad2d> t_diff_model) : RobotOmpl(t_diff_model) {
 
+
     auto space(std::make_shared<StateSpace>(t_diff_model->distance_weights));
     auto cspace(std::make_shared<oc::RealVectorControlSpace>(space, 2));
     ob::RealVectorBounds cbounds(2);
@@ -1630,6 +1666,7 @@ public:
   Acrobot(std::shared_ptr<Model_acrobot> t_diff_model)
       : RobotOmpl(t_diff_model) {
 
+
     auto space(std::make_shared<StateSpace>(t_diff_model->distance_weights));
     ob::RealVectorBounds vel_bounds(2);
     vel_bounds.setLow(-t_diff_model->params.max_angular_vel);
@@ -2067,6 +2104,7 @@ class RobotQuadrotor : public RobotOmpl {
 public:
   virtual ~RobotQuadrotor() {}
   RobotQuadrotor(std::shared_ptr<Model_quad3d> t_model) : RobotOmpl(t_model) {
+
 
     auto space(std::make_shared<StateSpace>(t_model->distance_weights));
 
@@ -2507,4 +2545,3 @@ std::shared_ptr<RobotOmpl> robot_factory_ompl(const Problem &problem) {
 
   return out;
 }
-

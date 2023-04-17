@@ -1,10 +1,13 @@
 
 
-enum class PRIMITIVE_MODE { generate = 0, improve, split, sort, all };
+enum class PRIMITIVE_MODE { generate = 0, improve = 1, split = 2, sort = 3, merge = 4 };
 
 #include "generate_primitives.hpp"
 
 int main(int argc, const char *argv[]) {
+
+  std::cout << "seed with time " << std::endl;
+  srand((unsigned int)time(0));
 
   CSTR_(__FILE__);
   CSTR_(argc);
@@ -16,7 +19,7 @@ int main(int argc, const char *argv[]) {
 
   std::string in_file;
   std::string out_file;
-  int mode_gen_id = 0 ;
+  int mode_gen_id = 0;
   std::string cfg_file = "";
   Options_trajopt options_trajopt;
   Options_primitives options_primitives;
@@ -56,8 +59,13 @@ int main(int argc, const char *argv[]) {
 
   PRIMITIVE_MODE mode = static_cast<PRIMITIVE_MODE>(mode_gen_id);
 
+
   std::shared_ptr<Model_robot> robot_model =
       robot_factory(robot_type_to_path(options_primitives.dynamics).c_str());
+
+
+
+
 
   if (mode == PRIMITIVE_MODE::generate) {
 
@@ -65,8 +73,8 @@ int main(int argc, const char *argv[]) {
 
     generate_primitives(options_trajopt, options_primitives, trajectories);
 
-    trajectories.save_file_boost((out_file + ".bin").c_str());
-    trajectories.save_file_yaml((out_file + ".yaml").c_str());
+    trajectories.save_file_boost(out_file.c_str());
+    trajectories.save_file_yaml((out_file + ".yaml").c_str(), 1000);
   }
 
   if (mode == PRIMITIVE_MODE::improve) {
@@ -78,10 +86,11 @@ int main(int argc, const char *argv[]) {
     // options_trajopt.solver_id =
     //     static_cast<int>(SOLVER::traj_opt_free_time_linear);
 
-    improve_motion_primitives(options_trajopt, trajectories, options_primitives.dynamics, trajectories_out);
+    improve_motion_primitives(options_trajopt, trajectories,
+                              options_primitives.dynamics, trajectories_out);
 
-    trajectories_out.save_file_boost((out_file + ".bin").c_str());
-    trajectories_out.save_file_yaml((out_file + ".yaml").c_str());
+    trajectories_out.save_file_boost(out_file.c_str());
+    trajectories_out.save_file_yaml((out_file + ".yaml").c_str(), 1000);
   }
 
   if (mode == PRIMITIVE_MODE::split) {
@@ -90,7 +99,8 @@ int main(int argc, const char *argv[]) {
     trajectories.load_file_boost(in_file.c_str());
     size_t num_translation = robot_model->get_translation_invariance();
 
-    split_motion_primitives(trajectories, num_translation, trajectories_out, options_primitives);
+    split_motion_primitives(trajectories, num_translation, trajectories_out,
+                            options_primitives);
 
     for (auto &traj : trajectories_out.data) {
       traj.check(robot_model);
@@ -98,15 +108,16 @@ int main(int argc, const char *argv[]) {
       CHECK(traj.feasible, AT);
     }
 
-    trajectories_out.save_file_boost((out_file + ".bin").c_str());
+    trajectories_out.save_file_boost(out_file.c_str());
 
-    trajectories_out.save_file_yaml((out_file + ".yaml").c_str());
+    trajectories_out.save_file_yaml((out_file + ".yaml").c_str(), 1000);
   }
 
   if (mode == PRIMITIVE_MODE::sort) {
 
     Trajectories trajectories, trajectories_out;
     trajectories.load_file_boost(in_file.c_str());
+    CSTR_(trajectories.data.size());
 
     sort_motion_primitives(trajectories, trajectories_out,
                            [&](const auto &x, const auto &y) {
@@ -121,7 +132,15 @@ int main(int argc, const char *argv[]) {
       CHECK(traj.feasible, AT);
     }
 
-    trajectories_out.save_file_boost((out_file + ".bin").c_str());
-    trajectories_out.save_file_yaml((out_file + ".yaml").c_str());
+    CSTR_(trajectories_out.data.size());
+    trajectories_out.save_file_boost(out_file.c_str());
+    trajectories_out.save_file_yaml((out_file + ".yaml").c_str(), 1000);
   }
+
+
+
+
+
+
+
 }
