@@ -288,6 +288,7 @@ add_executable(main_dbastar
 
 add_executable(test_croco
   unittest/test_croco.cpp 
+  src/generate_primitives.cpp 
 )
 
 add_executable(test_db
@@ -311,6 +312,12 @@ add_executable(main_primitives
   src/main_primitives.cpp 
   src/generate_primitives.cpp 
 )
+
+add_executable(merge_primitives
+  src/merge_primitives.cpp 
+)
+
+
 
 add_executable(test_primitives
   unittest/test_primitives.cpp 
@@ -354,6 +361,8 @@ src
 target_include_directories(dbastar
   PRIVATE ${CMAKE_BINARY_DIR}/deps/fcl/include
   PRIVATE ${CMAKE_SOURCE_DIR}/deps/fcl/include
+
+  PRIVATE deps/nigh/src 
 )
 
 target_link_libraries(main_dbastar
@@ -430,6 +439,7 @@ target_include_directories(dev_manifold PRIVATE ${CROCODDYL_INCLUDE_DIRS} ${PINO
 
 target_include_directories(croco_main PRIVATE ${CROCODDYL_INCLUDE_DIRS})
 target_include_directories(main_primitives PRIVATE ${CROCODDYL_INCLUDE_DIRS})
+target_include_directories(merge_primitives PRIVATE ${CROCODDYL_INCLUDE_DIRS})
 target_include_directories(test_primitives PRIVATE ${CROCODDYL_INCLUDE_DIRS} src)
 
 
@@ -476,6 +486,18 @@ ${Boost_LIBRARIES}
   fcl
   yaml-cpp
 )
+
+target_link_libraries(merge_primitives
+  croco_ocp
+  robot_models
+${CROCODDYL_LIBRARIES} 
+${Boost_LIBRARIES}
+  ompl
+  fcl
+  yaml-cpp
+)
+
+
 
 target_link_libraries(test_primitives
   croco_ocp
