@@ -1,0 +1,10 @@
+#car second order, without trailer
+#for Alexander
+dynamics: "car2"
+max_acc_abs: 20 
+# max_steer_vel_abs: 6.28 # 2 * M_PI;
+max_steer_vel_abs: 20 # 6.28 # 2 * M_PI;
+min_vel: -1
+max_vel: 1
+max_steering_abs: 1.5
+

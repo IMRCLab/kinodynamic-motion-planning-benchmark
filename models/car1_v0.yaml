@@ -11,3 +11,5 @@ size: [.5, .25]
 size_trailer: [.3, .25]
 hitch_lengths: [.5]
 max_angular_vel: 10
+dynamics: car_with_trailers
+
