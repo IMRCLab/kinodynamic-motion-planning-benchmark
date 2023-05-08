@@ -2899,8 +2899,8 @@ BOOST_AUTO_TEST_CASE(check_all_init_guess) {
   auto path = "../data_welf_yaml/guesses/guess_low_noise/";
   // auto path = "../data_welf_yaml/guesses/guess_middle_noise/";
   // auto path = "../data_welf_yaml/guesses/guess_high_noise/";
-    // guess_middle_noise/";
-    // guess_low_noise/";
+  // guess_middle_noise/";
+  // guess_low_noise/";
 
   std::vector<std::string> paths;
 
@@ -2914,7 +2914,8 @@ BOOST_AUTO_TEST_CASE(check_all_init_guess) {
   options_trajopt.welf_format = true;
   options_trajopt.max_iter = 350;
   options_trajopt.weight_goal = 300;
-  options_trajopt.smooth_traj = true; // important: set to true, because the guess are bad!
+  options_trajopt.smooth_traj =
+      true; // important: set to true, because the guess are bad!
 
   size_t solved = 0;
   size_t trials = 0;
@@ -2940,11 +2941,380 @@ BOOST_AUTO_TEST_CASE(check_all_init_guess) {
 
 BOOST_AUTO_TEST_CASE(t_diff_angle) {
   // TODO
-
 }
-//
-//
-// }
 
+BOOST_AUTO_TEST_CASE(t_alexander_v2) {
 
+  std::shared_ptr<Model_robot> car2 =
+      std::make_shared<Model_car2>("../models/car2_v0.yaml");
 
+  auto result =
+      "/home/quim/Downloads/trajectory_config_1681304908.0324593.yaml";
+
+  std::cout << "loading file: " << result << std::endl;
+  YAML::Node node = YAML::LoadFile(result);
+
+  std::vector<Eigen::VectorXd> __xs = yaml_node_to_xs(node["states"]);
+  std::vector<Eigen::VectorXd> __us = yaml_node_to_xs(node["actions"]);
+
+  __us.pop_back();
+
+  std::vector<Eigen::VectorXd> xs(__xs.size());
+
+  std::transform(__xs.begin(), __xs.end(), xs.begin(), [](auto &v) {
+    Eigen::VectorXd out(5);
+    out = v.head(5);
+    out(2) = wrap_angle(out(2));
+    return out;
+  });
+
+  Trajectory traj;
+
+  traj.states = xs;
+  traj.actions = __us;
+
+  traj.to_yaml_format(std::cout);
+  traj.check(car2);
+
+  // not matching exactly because he clips one of the quantities
+
+  {
+    std::cout << "SOLVING for pose " << std::endl;
+
+    auto file = "/home/quim/Downloads/starting_poses_20_steps.yaml";
+
+    YAML::Node node = YAML::LoadFile(file);
+
+    // x,y,theat,v,phi,vg,phig
+    std::vector<Eigen::VectorXd> alex_starts;
+
+    for (const auto &n : node["training_set"]) {
+      auto v = n.as<std::vector<double>>();
+      alex_starts.push_back(Eigen::VectorXd::Map(v.data(), v.size()));
+    }
+
+    const char *dynamics = "car2_v0";
+
+    std::vector<Eigen::VectorXd> starts(alex_starts.size());
+    std::vector<Eigen::VectorXd> goals(alex_starts.size());
+
+    std::transform(alex_starts.begin(), alex_starts.end(), starts.begin(),
+                   [](auto &v) {
+                     Eigen::VectorXd out(5);
+                     out = v.head(5);
+                     out(2) = wrap_angle(out(2));
+                     return out;
+                   });
+
+    std::transform(alex_starts.begin(), alex_starts.end(), goals.begin(),
+                   [](auto &v) {
+                     Eigen::VectorXd out(5);
+                     out.setZero();
+                     out.tail(2) = v.tail(2);
+                     return out;
+                   });
+
+    int ref_time_steps = 20;
+    Options_trajopt options_trajopt;
+    Trajectories trajectories, trajs_opt;
+
+    CSTR_(starts.size());
+    // solve the problem
+    for (size_t i = 0; i < starts.size(); i++) {
+      Eigen::VectorXd &goal = goals.at(i);
+      Eigen::VectorXd &start = starts.at(i);
+
+      CSTR_V(start);
+      CSTR_V(goal);
+
+      Problem problem;
+      problem.goal = goal;
+      problem.start = start;
+      problem.robotType = dynamics;
+
+      Trajectory init_guess;
+      init_guess.num_time_steps = int(ref_time_steps);
+
+      Trajectory traj;
+      Result_opti opti_out;
+
+      trajectory_optimization(problem, init_guess, options_trajopt, traj,
+                              opti_out);
+      if (opti_out.feasible) {
+        CHECK(traj.states.size(), AT);
+        traj.start = traj.states.front();
+        traj.goal = traj.states.back();
+        trajectories.data.push_back(traj);
+      }
+    }
+
+    trajectories.save_file_yaml("car2_v0_starting_poses_20.yaml");
+    CSTR_(trajectories.data.size());
+    CSTR_(starts.size());
+  }
+}
+
+BOOST_AUTO_TEST_CASE(alex_3) {
+
+  std::vector<std::string> files;
+  auto in_folder = "../src/alex/trajectories/";
+  for (const auto &entry : std::filesystem::directory_iterator(in_folder)) {
+    if (entry.is_regular_file())
+      files.push_back(entry.path());
+  }
+
+  std::shared_ptr<Model_robot> car2 =
+      std::make_shared<Model_car2>("../models/car2_v0.yaml");
+
+  for (auto &f : files) {
+
+    YAML::Node node = YAML::LoadFile(f);
+
+    std::vector<Eigen::VectorXd> __xs = yaml_node_to_xs(node["states"]);
+    std::vector<Eigen::VectorXd> __us = yaml_node_to_xs(node["actions"]);
+
+    __us.pop_back();
+
+    std::vector<Eigen::VectorXd> xs(__xs.size());
+
+    std::transform(__xs.begin(), __xs.end(), xs.begin(), [](auto &v) {
+      Eigen::VectorXd out(5);
+      out = v.head(5);
+      out(2) = wrap_angle(out(2));
+      return out;
+    });
+
+    Trajectory traj;
+
+    traj.states = xs;
+    traj.actions = __us;
+
+    traj.start = traj.states.front();
+    traj.goal = traj.states.back();
+
+    traj.to_yaml_format(std::cout);
+    traj.check(car2);
+  }
+}
+
+BOOST_AUTO_TEST_CASE(test_acrobot_mpcc) {
+
+  Trajectory traj_in, traj_out;
+  traj_in.read_from_yaml("../unittest/traj_db_acrobot_swingup.yaml");
+  Problem problem("../benchmark/acrobot/swing_up_empty.yaml");
+  std::shared_ptr<Model_robot> robot =
+      std::make_shared<Model_acrobot>("../models/acrobot_v0.yaml");
+
+  traj_in.start = problem.start;
+  traj_in.goal = problem.goal;
+  traj_in.check(robot, true);
+
+  Options_trajopt options_trajopt;
+  // options_trajopt.x_b
+  options_trajopt.solver_id = 8;
+  options_trajopt.window_optimize = 300;
+  options_trajopt.window_shift = 100;
+  options_trajopt.max_iter = 100;
+  options_trajopt.weight_goal = 300;
+  options_trajopt.smooth_traj = true;
+  options_trajopt.k_linear = 10;
+  options_trajopt.k_contour = 10;
+
+  Result_opti opti_out;
+
+  trajectory_optimization(problem, traj_in, options_trajopt, traj_out,
+                          opti_out);
+}
+
+BOOST_AUTO_TEST_CASE(test_quad2d_recovery) {
+
+  Trajectory traj_in, traj_out;
+  traj_in.read_from_yaml("../unittest/traj_db_quad2d_recovery.yaml");
+  Problem problem("../benchmark/quad2d/quad2d_recovery_wo_obs.yaml");
+
+  std::shared_ptr<Model_robot> robot =
+      std::make_shared<Model_quad2d>("../models/quad2d_v0.yaml");
+
+  traj_in.start = problem.start;
+  traj_in.goal = problem.goal;
+  traj_in.check(robot, true);
+
+  Options_trajopt options_trajopt;
+  options_trajopt.solver_id = 8;
+  options_trajopt.window_optimize = 300;
+  options_trajopt.window_shift = 100;
+  options_trajopt.max_iter = 100;
+  options_trajopt.weight_goal = 200;
+  options_trajopt.smooth_traj = true;
+  options_trajopt.k_linear = 100;
+
+  Result_opti opti_out;
+
+  trajectory_optimization(problem, traj_in, options_trajopt, traj_out,
+                          opti_out);
+}
+
+BOOST_AUTO_TEST_CASE(test_acrobot_db) {
+
+  Trajectory traj_in, traj_out;
+  traj_in.read_from_yaml("../build/traj_db.yaml");
+  Problem problem("../benchmark/acrobot/swing_up_empty.yaml");
+
+  std::shared_ptr<Model_robot> acrobot =
+      std::make_shared<Model_acrobot>("../models/acrobot_v0.yaml");
+
+  traj_in.start = problem.start;
+  traj_in.goal = problem.goal;
+  traj_in.check(acrobot, true);
+
+  Options_trajopt options_trajopt;
+  options_trajopt.max_iter = 100;
+  options_trajopt.weight_goal = 1000;
+  options_trajopt.smooth_traj = true;
+  Result_opti opti_out;
+
+  trajectory_optimization(problem, traj_in, options_trajopt, traj_out,
+                          opti_out);
+
+  {
+    std::ofstream out("out_opt.yaml");
+    traj_out.to_yaml_format(out);
+  }
+}
+
+BOOST_AUTO_TEST_CASE(test_quad3d_mpcc) {
+
+  // the init guess is good. why the mpcc produces strange trajectory?
+
+  Trajectory traj_in, traj_out;
+  traj_in.read_from_yaml("../build/traj_db_fwduGj.yaml");
+  Problem problem("../benchmark/quadrotor_0/empty_0_easy.yaml");
+
+  for (auto &s : traj_in.states) {
+    s.segment<4>(3).normalize();
+  }
+  CSTR_(traj_in.states.size());
+
+  std::shared_ptr<Model_robot> acrobot =
+      std::make_shared<Model_quad3d>("../models/quad3d_v0.yaml");
+
+  traj_in.start = problem.start;
+  traj_in.goal = problem.goal;
+  traj_in.check(acrobot, true);
+
+  Options_trajopt options_trajopt;
+  options_trajopt.max_iter = 100;
+  options_trajopt.weight_goal = 500;
+  options_trajopt.smooth_traj = true;
+  options_trajopt.solver_id = 8;
+  options_trajopt.window_optimize = 100;
+  options_trajopt.window_shift = 50;
+  options_trajopt.k_linear = 100;
+  options_trajopt.noise_level = 1e-8;
+  options_trajopt.max_mpc_iterations = 10;
+  // options_trajopt.k_contour = 50;
+
+  Result_opti opti_out;
+
+  trajectory_optimization(problem, traj_in, options_trajopt, traj_out,
+                          opti_out);
+
+  {
+    std::ofstream out("out_opt.yaml");
+    traj_out.to_yaml_format(out);
+  }
+}
+
+BOOST_AUTO_TEST_CASE(test_quad3d_mpcc_oneobs) {
+
+  // TODO: not working.
+  // TODO: issue with distance with quaternions!!
+  // maybe use smaller delta?
+  // or scaled distance function? -- decide if I should use everywhere
+
+  Trajectory traj_in, traj_out;
+  traj_in.read_from_yaml("../unittest/traj_db_quad3d_oneobs.yaml");
+  Problem problem("../benchmark/quadrotor_0/quad_one_obs.yaml");
+
+  for (auto &s : traj_in.states) {
+    s.segment<4>(3).normalize();
+  }
+  CSTR_(traj_in.states.size());
+
+  std::shared_ptr<Model_robot> acrobot =
+      std::make_shared<Model_quad3d>("../models/quad3d_v0.yaml");
+
+  traj_in.start = problem.start;
+  traj_in.goal = problem.goal;
+  traj_in.check(acrobot, true);
+
+  Options_trajopt options_trajopt;
+  options_trajopt.max_iter = 100;
+  options_trajopt.weight_goal = 300;
+  options_trajopt.smooth_traj = true;
+  options_trajopt.solver_id = 8;
+  options_trajopt.window_optimize = 100;
+  options_trajopt.window_shift = 50;
+  options_trajopt.k_linear = 50;
+  options_trajopt.k_contour = 10;
+  options_trajopt.noise_level = 1e-8;
+  options_trajopt.max_mpc_iterations = 20;
+  // options_trajopt.k_contour = 50;
+
+  Result_opti opti_out;
+
+  trajectory_optimization(problem, traj_in, options_trajopt, traj_out,
+                          opti_out);
+
+  {
+    std::ofstream out("out_opt.yaml");
+    traj_out.to_yaml_format(out);
+  }
+}
+
+BOOST_AUTO_TEST_CASE(test_quad3d_recovery_mpcc) {
+
+  // TODO: not working.
+  // TODO: issue with distance with quaternions!!
+  // maybe use smaller delta?
+  // or scaled distance function? -- decide if I should use everywhere
+
+  Trajectory traj_in, traj_out;
+  traj_in.read_from_yaml("../unittest/traj_db_recovery.yaml");
+  Problem problem("../benchmark/quadrotor_0/recovery.yaml");
+
+  for (auto &s : traj_in.states) {
+    s.segment<4>(3).normalize();
+  }
+  CSTR_(traj_in.states.size());
+
+  std::shared_ptr<Model_robot> acrobot =
+      std::make_shared<Model_quad3d>("../models/quad3d_v0.yaml");
+
+  traj_in.start = problem.start;
+  traj_in.goal = problem.goal;
+  traj_in.check(acrobot, true);
+
+  Options_trajopt options_trajopt;
+  options_trajopt.max_iter = 100;
+  options_trajopt.weight_goal = 300;
+  options_trajopt.smooth_traj = true;
+  options_trajopt.solver_id = 8;
+  options_trajopt.window_optimize = 100;
+  options_trajopt.window_shift = 50;
+  options_trajopt.k_linear = 50;
+  options_trajopt.k_contour = 10;
+  options_trajopt.noise_level = 1e-8;
+  options_trajopt.max_mpc_iterations = 20;
+  // options_trajopt.k_contour = 50;
+
+  Result_opti opti_out;
+
+  trajectory_optimization(problem, traj_in, options_trajopt, traj_out,
+                          opti_out);
+
+  {
+    std::ofstream out("out_opt.yaml");
+    traj_out.to_yaml_format(out);
+  }
+}
