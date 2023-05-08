@@ -1,0 +1,20 @@
+environment:
+  min: [-0.5, -0.5, -0.5]
+  max: [6, 6, 6]
+  obstacles:
+    - type: box
+      center: [3, 3,2 ]
+      size: [3,3,2]
+robots:
+  - type: quad3d_v0
+    start: [1.,1.,1., #p
+      0,0,0,1, #quat
+      0,0,0, #vel
+      0,0,0 #ang vel
+    ]
+    goal: [5.,5.,1., #p
+      0,0,0,1, # quat
+      0,0,0, # vel
+      0,0,0 #ang vel 
+    ] 
+
