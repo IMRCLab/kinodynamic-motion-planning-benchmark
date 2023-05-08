@@ -1,7 +1,11 @@
 # general parameters, all systems and problems
 default:
-  solver_id: 1
+  solver_id: 8
+  smooth_traj: true
+  window_optimize: 100
+  window_shift: 50 
   search_timelimit: 15000 # in ms
+
 
 # you can set parameters per dynamial system
 unicycle1_v0:
@@ -15,30 +19,37 @@ unicycle1_v0:
 unicycle2_v0:
   default:
     motionsFile: "../cloud/motionsV2/good/unicycle2_v0/unicycle2_v0__ispso__2023_04_03__15_36_01.bin"
-    num_primitives_0: 200
+    num_primitives_0: 250
+    delta_0: .3
       # unicycle1_v0__ispso__2023_04_03__14_56_57.bin"
+
+car1_v0:
+  default:
+    use_nigh_nn: true
+    motionsFile: "../cloud/motionsV2/good/car1_v0/car1_v0_all.bin.sp.bin"
+    num_primitives_0: 2000
+    max_motions_primitives: 20000
 
 quad2d_v0:
   default:
+    window_optimize: 300
+    window_shift: 100 
     # motionsFile: "../cloud/motionsV2/good/quad2d_v0/quad2_all_split_2_sorted.bin"
     motionsFile: "../cloud/motionsV2/good/quad2d_v0/quad2d_v0_all.bin.sp1.bin"
     # num_primitives_0: 50000
     # max_motions_primitives: 100000
     num_primitives_0: 5000
-    max_motions_primitives: 10000
+    max_motions_primitives: 50000
+    k_linear: 100
     delta_0: .7
     use_nigh_nn: true
-    heuristic: 1
 
 acrobot_v0:
   default:
     # option to not use collitions in db search
-    max_iter: 200
-    weight_goal: 500
     smooth_traj: true
     delta_factor_goal: .7
     # solver_id: 0 # TODO: check why Jacobians are not working with free time!
-    solver_id: 0
     linear_search: true
     use_nigh_nn: true # library for knn 
     # motionsFile: "../cloud/motionsV2/good/acrobot_v0/acrobot_v0_all.bin.sp.bin.so.bin"
@@ -47,15 +58,20 @@ acrobot_v0:
     max_motions_primitives: 200000
     check_cols: false
     delta_0: .35
+    window_optimize: 300
+    window_shift: 100
+    max_iter: 100
+    weight_goal: 300
+    k_linear: 10 # default
+    k_contour: 10
+
 
 quad3d_v0:
   default:
-    # option to not use collitions in db search
     max_iter: 200
-    weight_goal: 400
+    weight_goal: 300
     smooth_traj: true
     delta_factor_goal: .5
-    solver_id: 0
     use_nigh_nn: true # library for knn 
     # motionsFile: "../cloud/motionsV2/good/quad3d_v0/quad3d_v0_all.bin.sp.bin"
     motionsFile: "../cloud/motionsV2/good/quad3d_v0/quad3d_v0_sp1_merged.bin"
@@ -64,20 +80,12 @@ quad3d_v0:
     max_motions_primitives: 500000
     check_cols: false
     delta_0: .9
-    # heuristic: 1
-    # heu_connection_radius: 3 #otherwise sample are not connected
+    k_linear: 50
   quad_one_obs:
     check_cols: true
-    # num_primitives_0: 1000
-    # max_motions_primitives: 10000
 
 
-car1_v0:
-  default:
-    use_nigh_nn: true
-    motionsFile: "../cloud/motionsV2/good/car1_v0/car1_v0_all.bin.sp.bin"
-    num_primitives_0: 2000
-    max_motions_primitives: 20000
+
 
 
 

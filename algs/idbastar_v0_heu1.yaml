@@ -1,0 +1,17 @@
+# general parameters, all systems and problems
+reference: "idbastar_v0"
+default:
+  # solver_id: 1
+  heuristic: 1
+
+# you can set parameters per dynamial system
+# unicycle1_v0:
+#   default:
+#     motionsFile: "../cloud/motionsV2/good/unicycle1_v0/unicycle1_v0__ispso__2023_04_03__14_56_57.bin"
+#     num_primitives_0: 100
+
+
+# unicycle2_v0:
+#   default:
+#     motionsFile: "../cloud/motionsV2/good/unicycle2_v0/unicycle2_v0__ispso__2023_04_03__15_36_01.bin"
+#     num_primitives_0: 200
