@@ -67,6 +67,7 @@ void solve_ompl_geometric(const Problem &problem,
         for (auto &s : __states) {
           Eigen::VectorXd x;
           state_to_eigen(x, si, s);
+          robot->diff_model->set_0_velocity(x);
           traj_geo.states.push_back(x);
         }
         traj_geo.states.push_back(traj_geo.goal);
@@ -89,7 +90,7 @@ void solve_ompl_geometric(const Problem &problem,
         // add the control
 
         for (size_t i = 0; i < traj_geo.states.size() - 1; i++) {
-          traj_geo.actions.push_back(robot->diff_model->u_ref);
+          traj_geo.actions.push_back(robot->diff_model->u_0);
         }
 
         // Path path;

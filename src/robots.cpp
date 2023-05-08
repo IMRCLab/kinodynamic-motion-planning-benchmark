@@ -25,6 +25,151 @@
 namespace ob = ompl::base;
 namespace oc = ompl::control;
 
+std::ostream &printAction(std::ostream &stream,
+                          std::shared_ptr<ompl::control::SpaceInformation> si,
+                          oc::Control *action) {
+  const size_t dim = si->getControlSpace()->getDimension();
+  stream << "[";
+  for (size_t d = 0; d < dim; ++d) {
+    double *address = si->getControlSpace()->getValueAddressAtIndex(action, d);
+    stream << *address;
+    if (d < dim - 1) {
+      stream << ",";
+    }
+  }
+  stream << "]";
+  return stream;
+}
+
+std::ostream &printState(std::ostream &stream, const std::vector<double> &x) {
+  // continue here
+  stream << "[";
+  for (size_t d = 0; d < x.size(); ++d) {
+    stream << x[d];
+    if (d < x.size() - 1) {
+      stream << ",";
+    }
+  }
+  stream << "]";
+  return stream;
+}
+
+std::ostream &printState(std::ostream &stream,
+                         std::shared_ptr<ompl::control::SpaceInformation> si,
+                         const ob::State *state, bool add_brackets_comma) {
+  std::vector<double> reals;
+  si->getStateSpace()->copyToReals(reals, state);
+  if (add_brackets_comma)
+    stream << "[";
+  for (size_t d = 0; d < reals.size(); ++d) {
+    stream << reals[d];
+    if (d < reals.size() - 1) {
+      if (add_brackets_comma)
+        stream << ",";
+      else
+        stream << " ";
+    }
+  }
+  if (add_brackets_comma)
+    stream << "]";
+  return stream;
+}
+
+double clamp(double val, double min, double max) {
+  if (val < min)
+    return min;
+  if (val > max)
+    return max;
+  return val;
+}
+
+// This works:
+// (opti) ⋊> ~/s/w/k/build on dev ⨯ make && ./main_ompl --env_file ../benchmark/quadrotor_0/empty_0_easy.yaml --results_file ../results_new/quadrotor_
+// 0/empty_0_easy/sst_v0/04-17-2023--18-58-03/run_0_out.yaml --timelimit 10  --cfg ../results_new/quadrotor_0/empty_0_easy/sst_v0/04-17-2023--18-58-03
+// /run_0_out.yaml.cfg.yaml
+
+struct ControlSamplerMixer : public oc::ControlSampler {
+  std::shared_ptr<Model_quad3d> model;
+  ControlSamplerMixer(const std::shared_ptr<Model_quad3d> &model,
+                      const oc::ControlSpace *space, double mean, double stddev)
+      : oc::ControlSampler(space), model(model), mean_(mean), stddev_(stddev) {}
+
+  void sample(oc::Control *control) override {
+    const unsigned int dim = space_->getDimension();
+    const ob::RealVectorBounds &bounds =
+        static_cast<const oc::RealVectorControlSpace *>(space_)->getBounds();
+
+    auto *rcontrol =
+        static_cast<oc::RealVectorControlSpace::ControlType *>(control);
+
+    double max_T =  model->g * model->m * model->u_ub(0);
+    double min_T = .5 * max_T;
+    double max_M = 1e-5;
+
+    using V4 = Eigen::Vector4d;
+
+    Eigen::Vector4d TM =
+        V4(min_T, -max_M, -max_M, -max_M) +
+        (V4(max_T, max_M, max_M, max_M) - V4(min_T, -max_M, -max_M, -max_M))
+            .cwiseProduct(.5 * (V4::Random(4) + V4::Ones(4)));
+
+    V4 f;
+    // CSTR_V(TM);
+    model->motorForcesFromThrust(f, TM);
+    // CSTR_V(f);
+    // CSTR_V((model->B0 * f * model->u_nominal));
+
+    for (unsigned int i = 0; i < 4; ++i) {
+      rcontrol->values[i] = clamp(f(i), bounds.low[i], bounds.high[i]);
+    }
+
+    // rcontrol->values[1] = rcontrol->values[0]  ; // TODO: change this!
+    // rcontrol->values[2] = rcontrol->values[0]  ; // TODO: change this!
+    // rcontrol->values[3] = rcontrol->values[0]  ; // TODO: change this!
+
+    // control is the same.
+
+    // std::cout << std::endl;
+  }
+
+protected:
+  double mean_;
+  double stddev_;
+};
+
+class ControlSampler : public oc::ControlSampler {
+public:
+  ControlSampler(const oc::ControlSpace *space, double mean, double stddev)
+      : oc::ControlSampler(space), mean_(mean), stddev_(stddev) {}
+
+  void sample(oc::Control *control) override {
+    const unsigned int dim = space_->getDimension();
+    const ob::RealVectorBounds &bounds =
+        static_cast<const oc::RealVectorControlSpace *>(space_)->getBounds();
+
+    auto *rcontrol =
+        static_cast<oc::RealVectorControlSpace::ControlType *>(control);
+    for (unsigned int i = 0; i < dim; ++i) {
+      // rcontrol->values[i] = rng_.uniformReal(bounds.low[i],
+      // bounds.high[i]);
+      rcontrol->values[i] =
+          clamp(rng_.gaussian(mean_, stddev_), bounds.low[i], bounds.high[i]);
+    }
+
+    // rcontrol->values[1] = rcontrol->values[0]  ; // TODO: change this!
+    // rcontrol->values[2] = rcontrol->values[0]  ; // TODO: change this!
+    // rcontrol->values[3] = rcontrol->values[0]  ; // TODO: change this!
+
+    // control is the same.
+
+    // std::cout << std::endl;
+  }
+
+protected:
+  double mean_;
+  double stddev_;
+};
+
 void state_to_stream(std::ostream &out,
                      std::shared_ptr<ompl::control::SpaceInformation> si,
                      const ob::State *state) {
@@ -139,7 +284,8 @@ double distance_angle(double a, double b) {
 }
 
 RobotOmpl::RobotOmpl(std::shared_ptr<Model_robot> diff_model)
-    : diff_model(diff_model), nx(diff_model->nx), nx_pr(diff_model->nx_pr), nu(diff_model->nu)  {
+    : diff_model(diff_model), nx(diff_model->nx), nx_pr(diff_model->nx_pr),
+      nu(diff_model->nu) {
 
   xx.resize(nx); // data
   zz.resize(nx); // data
@@ -177,12 +323,19 @@ void RobotOmpl::propagate(const ompl::base::State *start,
   // use simple Euler integration
   double remaining_time = duration;
 
+  // std::cout << "propagating" << std::endl;
   while (remaining_time > 0.) {
     double dt = std::min(remaining_time, diff_model->ref_dt);
     diff_model->step(yy, xx, uu, dt);
+    // CSTR_V(uu);
+    // CSTR_V(xx);
+    // CSTR_V(yy);
+    // CSTR_(dt)
     xx = yy;
     remaining_time -= dt;
   }
+  // std::cout << "out ";
+  // CSTR_V(xx);
   fromEigen(result, xx);
   enforceBounds(result);
 }
@@ -195,20 +348,18 @@ double RobotOmpl::cost_lower_bound(const ompl::base::State *x,
 }
 
 double RobotOmpl::cost_lower_bound_pr(const ompl::base::State *x,
-                                   const ompl::base::State *y) {
+                                      const ompl::base::State *y) {
   toEigen(x, xx);
   toEigen(y, yy);
   return diff_model->lower_bound_time_pr(xx, yy);
 }
 
 double RobotOmpl::cost_lower_bound_vel(const ompl::base::State *x,
-                                   const ompl::base::State *y) {
+                                       const ompl::base::State *y) {
   toEigen(x, xx);
   toEigen(y, yy);
   return diff_model->lower_bound_time_vel(xx, yy);
 }
-
-
 
 class RobotUnicycleFirstOrder : public RobotOmpl {
   using StateSpace = ob::SE2StateSpace;
@@ -218,7 +369,6 @@ public:
 
   RobotUnicycleFirstOrder(std::shared_ptr<Model_unicycle1> diff_model)
       : RobotOmpl(diff_model) {
-
 
     auto space(std::make_shared<StateSpace>());
     auto cspace(std::make_shared<oc::RealVectorControlSpace>(space, 2));
@@ -318,9 +468,6 @@ public:
   //   stateTyped->setX(position(0));
   //   stateTyped->setY(position(1));
   // }
-
-
-
 };
 
 class RobotUnicycleSecondOrder : public RobotOmpl {
@@ -1060,7 +1207,7 @@ public:
 
   Quad2d(std::shared_ptr<Model_quad2d> t_diff_model) : RobotOmpl(t_diff_model) {
 
-
+    CSTR_V(t_diff_model->distance_weights);
     auto space(std::make_shared<StateSpace>(t_diff_model->distance_weights));
     auto cspace(std::make_shared<oc::RealVectorControlSpace>(space, 2));
     ob::RealVectorBounds cbounds(2);
@@ -1088,6 +1235,11 @@ public:
     space->setAngularVelocityBounds(w_bounds);
 
     si_ = std::make_shared<oc::SpaceInformation>(space, cspace);
+
+    cspace->setControlSamplerAllocator([](const oc::ControlSpace *space) {
+      return std::make_shared<ControlSampler>(
+          space, 1.0, 0.05); // why not uniform in bounds?
+    });
   }
 
   virtual void toEigen(const ompl::base::State *x_ompl,
@@ -1118,7 +1270,7 @@ public:
   fromEigen(ompl::base::State *x_ompl,
             const Eigen::Ref<const Eigen::VectorXd> &x_eigen) override {
 
-    assert(x_eigen.size() == 3);
+    assert(x_eigen.size() == 6);
     auto x_typed = x_ompl->as<StateSpace::StateType>();
 
     x_typed->setX(x_eigen(0));
@@ -1174,11 +1326,11 @@ protected:
       }
 
       double getVx() const {
-        return as<ob::RealVectorStateSpace::StateType>(2)->values[1];
+        return as<ob::RealVectorStateSpace::StateType>(2)->values[0];
       }
 
       double getVy() const {
-        return as<ob::RealVectorStateSpace::StateType>(2)->values[2];
+        return as<ob::RealVectorStateSpace::StateType>(2)->values[1];
       }
 
       double getAngularVelocity() const {
@@ -1666,7 +1818,6 @@ public:
   Acrobot(std::shared_ptr<Model_acrobot> t_diff_model)
       : RobotOmpl(t_diff_model) {
 
-
     auto space(std::make_shared<StateSpace>(t_diff_model->distance_weights));
     ob::RealVectorBounds vel_bounds(2);
     vel_bounds.setLow(-t_diff_model->params.max_angular_vel);
@@ -1934,6 +2085,17 @@ public:
     }
   }
 
+  virtual void enforceBounds(ompl::base::State *x) const override {
+    enforce_so2(x);
+  }
+
+  void enforce_so2(ompl::base::State *x) const {
+    auto x_typed = x->as<StateSpace::StateType>();
+    ob::SO2StateSpace SO2;
+    SO2.enforceBounds(x_typed->as<ob::SO2StateSpace::StateType>(1));
+    SO2.enforceBounds(x_typed->as<ob::SO2StateSpace::StateType>(2));
+  }
+
   virtual fcl::Transform3d getTransform(const ompl::base::State *state,
                                         size_t part) override {
     auto stateTyped = state->as<StateSpace::StateType>();
@@ -2105,7 +2267,6 @@ public:
   virtual ~RobotQuadrotor() {}
   RobotQuadrotor(std::shared_ptr<Model_quad3d> t_model) : RobotOmpl(t_model) {
 
-
     auto space(std::make_shared<StateSpace>(t_model->distance_weights));
 
     ob::RealVectorBounds vbounds(3);
@@ -2124,10 +2285,16 @@ public:
 
     auto cspace(std::make_shared<oc::RealVectorControlSpace>(space, 4));
 
-    cspace->setControlSamplerAllocator([this](const oc::ControlSpace *space) {
-      return std::make_shared<ControlSampler>(
-          space, 1., 0.25); // why not uniform in bounds?
-    });
+    // cspace->setControlSamplerAllocator([](const oc::ControlSpace *space) {
+    //   return std::make_shared<ControlSampler>(
+    //       space, 1., 0.01); // why not uniform in bounds?
+    // });
+
+    cspace->setControlSamplerAllocator(
+        [t_model](const oc::ControlSpace *space) {
+          return std::make_shared<ControlSamplerMixer>(
+              t_model, space, 1., 0.01); // why not uniform in bounds?
+        });
 
     ob::RealVectorBounds cbounds(4);
     cbounds.setLow(0);
@@ -2139,7 +2306,7 @@ public:
     std::cout << STR_V(diff_model->x_ub) << std::endl;
     for (size_t i = 0; i < 3; i++) {
       position_bounds.setLow(i, diff_model->x_lb(i));
-      position_bounds.setHigh(i, diff_model->u_ub(i));
+      position_bounds.setHigh(i, diff_model->x_ub(i));
     }
     position_bounds.check();
     space->setPositionBounds(position_bounds);
@@ -2188,7 +2355,7 @@ public:
   fromEigen(ompl::base::State *x_ompl,
             const Eigen::Ref<const Eigen::VectorXd> &x_eigen) override {
 
-    assert(x_eigen.size() == 3);
+    assert(x_eigen.size() == 13);
     auto x_typed = x_ompl->as<StateSpace::StateType>();
 
     x_typed->setX(x_eigen(0));
@@ -2218,8 +2385,8 @@ public:
     result = Eigen::Translation<double, 3>(fcl::Vector3d(
         stateTyped->getX(), stateTyped->getY(), stateTyped->getZ()));
     result.rotate(
-        Eigen::Quaterniond(stateTyped->rotation().w, stateTyped->rotation().x,
-                           stateTyped->rotation().y, stateTyped->rotation().z));
+        Eigen::Quaterniond(stateTyped->rotation().x, stateTyped->rotation().y,
+                           stateTyped->rotation().z, stateTyped->rotation().w));
     return result;
   }
 
@@ -2229,6 +2396,12 @@ public:
     stateTyped->setX(position(0));
     stateTyped->setY(position(1));
     stateTyped->setZ(position(2));
+  }
+
+  virtual void enforceBounds(ompl::base::State *state) const override {
+    auto x_typed = state->as<StateSpace::StateType>();
+    ob::SO3StateSpace SO3;
+    SO3.enforceBounds(x_typed->as<ob::SO3StateSpace::StateType>(1));
   }
 
 protected:
@@ -2414,39 +2587,6 @@ protected:
   };
 
 protected:
-  class ControlSampler : public oc::ControlSampler {
-  public:
-    ControlSampler(const oc::ControlSpace *space, double mean, double stddev)
-        : oc::ControlSampler(space), mean_(mean), stddev_(stddev) {}
-
-    void sample(oc::Control *control) override {
-      const unsigned int dim = space_->getDimension();
-      const ob::RealVectorBounds &bounds =
-          static_cast<const oc::RealVectorControlSpace *>(space_)->getBounds();
-
-      auto *rcontrol =
-          static_cast<oc::RealVectorControlSpace::ControlType *>(control);
-      for (unsigned int i = 0; i < dim; ++i) {
-        // rcontrol->values[i] = rng_.uniformReal(bounds.low[i],
-        // bounds.high[i]);
-        rcontrol->values[i] =
-            clamp(rng_.gaussian(mean_, stddev_), bounds.low[i], bounds.high[i]);
-      }
-    }
-
-  protected:
-    double clamp(double val, double min, double max) {
-      if (val < min)
-        return min;
-      if (val > max)
-        return max;
-      return val;
-    }
-
-  protected:
-    double mean_;
-    double stddev_;
-  };
 };
 
 RobotStateValidityChecker::RobotStateValidityChecker(

@@ -120,7 +120,7 @@ void Trajectory::to_yaml_format(std::ostream &out,
 
 void Trajectory::update_feasibility(double traj_tol, double goal_tol,
                                     double col_tol, double x_bound_tol,
-                                    double u_bound_tol) {
+                                    double u_bound_tol, bool verbose) {
   traj_feas = max_jump < traj_tol;
   goal_feas = goal_distance < goal_tol;
   start_feas = start_distance < goal_tol;
@@ -131,17 +131,19 @@ void Trajectory::update_feasibility(double traj_tol, double goal_tol,
   feasible = traj_feas && goal_feas && start_feas && col_feas &&
              x_bounds_feas && u_bounds_feas;
 
-  std::cout << "updating flags " << std::endl;
-  CSTR_(feasible);
-  CSTR_(traj_feas);
-  CSTR_(goal_feas);
-  CSTR_(start_feas);
-  CSTR_(col_feas);
-  CSTR_(x_bounds_feas);
-  CSTR_(u_bounds_feas);
+  if (verbose) {
+    std::cout << "updating flags " << std::endl;
+    CSTR_(feasible);
+    CSTR_(traj_feas);
+    CSTR_(goal_feas);
+    CSTR_(start_feas);
+    CSTR_(col_feas);
+    CSTR_(x_bounds_feas);
+    CSTR_(u_bounds_feas);
+  }
 }
 
-void Trajectory::check(std::shared_ptr<Model_robot> &robot) {
+void Trajectory::check(std::shared_ptr<Model_robot> &robot, bool verbose) {
 
   max_collision = check_cols(robot, states);
   Eigen::VectorXd dts;
@@ -155,20 +157,21 @@ void Trajectory::check(std::shared_ptr<Model_robot> &robot) {
     dts.array() *= robot->ref_dt;
   }
 
-  max_jump = check_trajectory(states, actions, dts, robot);
-  x_bound_distance = check_x_bounds(states, robot);
-  u_bound_distance = check_u_bounds(actions, robot);
+  max_jump = check_trajectory(states, actions, dts, robot, verbose);
+  x_bound_distance = check_x_bounds(states, robot, verbose);
+  u_bound_distance = check_u_bounds(actions, robot, verbose);
 
   if (goal.size()) {
-    CSTR_V(states.back());
-    CSTR_V(goal);
+    if (verbose) {
+      CSTR_V(states.back());
+      CSTR_V(goal);
+    }
     goal_distance = robot->distance(states.back(), goal);
   }
   if (start.size())
     start_distance = robot->distance(states.front(), start);
 
-  bool debug = true;
-  if (debug) {
+  if (verbose) {
     std::cout << " -- Checking trajectory -- " << std::endl;
     CSTR_(max_jump);
     CSTR_(x_bound_distance);
@@ -177,6 +180,8 @@ void Trajectory::check(std::shared_ptr<Model_robot> &robot) {
     CSTR_(start_distance);
     CSTR_(max_collision);
   }
+
+  update_feasibility();
 
   // &&goal_feas &&start_feas &&col_feas &&x_bounds_feas &&u_bounds_feas;
 }
@@ -277,7 +282,7 @@ void get_states_and_actions(const YAML::Node &data,
 }
 
 double check_u_bounds(const std::vector<Vxd> &us_out,
-                      std::shared_ptr<Model_robot> model) {
+                      std::shared_ptr<Model_robot> model, bool verbose) {
   CHECK(us_out.size(), AT);
   CHECK(model, AT);
 
@@ -299,21 +304,32 @@ double check_u_bounds(const std::vector<Vxd> &us_out,
 }
 
 double check_x_bounds(const std::vector<Vxd> &xs_out,
-                      std::shared_ptr<Model_robot> model) {
+                      std::shared_ptr<Model_robot> model, bool verbose) {
   CHECK(xs_out.size(), AT);
   CHECK(model, AT);
 
   double max_out = 0;
-  for (const auto &x : xs_out) {
-    max_out = std::max(max_out, check_bounds_distance(x, model->get_x_lb(),
-                                                      model->get_x_ub()));
+  // for (const auto &x : xs_out) {
+  for (size_t i = 0; i < xs_out.size(); i++) {
+
+    auto &x = xs_out.at(i);
+    double d = check_bounds_distance(x, model->get_x_lb(), model->get_x_ub());
+
+    if (d > .01 && verbose) {
+      std::cout << "BOUND VIOLATION t=" << i << std::endl;
+      CSTR_(d);
+      CSTR_V(x);
+      CSTR_V(model->get_x_lb());
+      CSTR_V(model->get_x_ub());
+    }
+    max_out = std::max(max_out, d);
   }
   return max_out;
 }
 
 double check_trajectory(const std::vector<Vxd> &xs_out,
                         const std::vector<Vxd> &us_out, const Vxd &dt,
-                        std::shared_ptr<Model_robot> model) {
+                        std::shared_ptr<Model_robot> model, bool verbose) {
   CHECK(xs_out.size(), AT);
   CHECK(us_out.size(), AT);
   CHECK(model, AT);
@@ -333,7 +349,7 @@ double check_trajectory(const std::vector<Vxd> &xs_out,
     model->step(xnext, x, u, dt(i));
 
     double jump = model->distance(xnext, xs_out.at(i + 1));
-    if (jump > max_jump_distance) {
+    if (jump > 1e-3 && verbose) {
       std::cout << "jump of " << jump << std::endl;
       CSTR_(i);
       CSTR_V(x);
@@ -366,8 +382,6 @@ double check_cols(std::shared_ptr<Model_robot> model_robot,
     }
   }
 
-  std::cout << STR_(accumulated_c) << std::endl;
-  std::cout << STR_(max_c) << std::endl;
   return max_c;
 }
 
@@ -406,9 +420,6 @@ void resample_trajectory(std::vector<Eigen::VectorXd> &xs_out,
 
   xs_out.clear();
   us_out.clear();
-  std::cout
-      << "resampling assumes that state space is R^n! change to manifold!!!"
-      << std::endl;
 
   double total_time = ts(ts.size() - 1);
 
@@ -567,7 +578,6 @@ void load_env_quim(Model_robot &robot, const Problem &problem) {
   robot.env->setup();
 }
 
-
 Trajectory from_welf_to_quim(const Trajectory &traj_raw, double u_nominal) {
 
   Trajectory traj = traj_raw;
@@ -618,3 +628,129 @@ Trajectory from_quim_to_welf(const Trajectory &traj_raw, double u_nominal) {
   return traj;
 }
 
+#include <boost/histogram.hpp>
+
+struct Bin {
+
+  int index;
+  double min;
+  double max;
+  double center;
+  double x;
+
+  void to_yaml(std::ostream &out, const char *prefix = "") const {
+    out << prefix << "index: " << index << std::endl;
+    out << prefix << "min: " << min << std::endl;
+    out << prefix << "max: " << max << std::endl;
+    out << prefix << "center: " << center << std::endl;
+    out << prefix << "x: " << x << std::endl;
+  }
+};
+
+std::vector<std::vector<Bin>>
+make_componentwise_histogram(const std::vector<Eigen::VectorXd> &states) {
+  CHECK(states.size(), AT);
+  std::vector<std::vector<Bin>> out;
+
+  for (size_t i = 0; i < states.front().size(); i++) {
+    std::vector<double> xi;
+    for (const auto &s : states) {
+      xi.push_back(s(i));
+    }
+    size_t num_bins = 100;
+
+    // print_vec(xi.data(), xi.size());
+
+    double min_ = *std::min_element(xi.begin(), xi.end());
+    double max_ = *std::max_element(xi.begin(), xi.end());
+
+    // if (max_ - min_ < 1e-10) {
+
+    double diff = max_ - min_;
+    max_ += .1 * std::max(diff, .1);
+    min_ -= .1 * std::max(diff, .1);
+
+    auto h = boost::histogram::make_histogram(boost::histogram::axis::regular<>(
+        num_bins, min_, max_, "x" + std::to_string(i)));
+
+    // CSTR_(h.size());
+    std::for_each(xi.begin(), xi.end(), std::ref(h));
+    // CSTR_(h.size());
+
+    std::vector<Bin> bins;
+    for (auto &&x : indexed(h, boost::histogram::coverage::all)) {
+      Bin bin{.index = x.index(),
+              .min = x.bin().lower(),
+              .max = x.bin().upper(),
+              .center = (x.bin().upper() + x.bin().lower()) / 2,
+              .x = *x};
+      bins.push_back(bin);
+    }
+
+    out.push_back(bins);
+  }
+  return out;
+}
+
+void bins_to_yaml(std::ostream &out,
+                  const std::vector<std::vector<Bin>> &bins_start) {
+  for (auto &bs : bins_start) {
+    out << " -" << std::endl;
+    for (auto &b : bs) {
+      out << "  -" << std::endl;
+      b.to_yaml(out, "   ");
+    }
+  }
+}
+void Trajectories::compute_stats(const char *filename_out) const {
+
+  std::vector<Eigen::VectorXd> starts;
+  std::vector<Eigen::VectorXd> goals;
+
+  std::vector<Eigen::VectorXd> states;
+  std::vector<Eigen::VectorXd> actions;
+
+  using V1d = Eigen::Matrix<double, 1, 1>;
+
+  std::vector<Eigen::VectorXd> lengths;
+
+  for (const auto &t : data) {
+    CHECK(t.states.size(), AT);
+    starts.push_back(t.states.front());
+    goals.push_back(t.states.back());
+    states.insert(states.end(), t.states.begin(), t.states.end());
+    actions.insert(actions.end(), t.actions.begin(), t.actions.end());
+
+    lengths.push_back(V1d(t.actions.size()));
+  }
+
+  std::vector<std::vector<Bin>> bins_lengths =
+      make_componentwise_histogram(lengths);
+
+  /// continue!!
+  std::vector<std::vector<Bin>> bins_start =
+      make_componentwise_histogram(starts);
+  std::vector<std::vector<Bin>> bins_goals =
+      make_componentwise_histogram(goals);
+  std::vector<std::vector<Bin>> bins_states =
+      make_componentwise_histogram(states);
+  std::vector<std::vector<Bin>> bins_actions =
+      make_componentwise_histogram(actions);
+
+  std::ofstream out(filename_out);
+
+  out << "bins_lengths:" << std::endl;
+  bins_to_yaml(out, bins_lengths);
+
+  out << "bins_start:" << std::endl;
+  bins_to_yaml(out, bins_start);
+
+  out << "bins_goals:" << std::endl;
+  bins_to_yaml(out, bins_goals);
+
+  out << "bins_states:" << std::endl;
+  bins_to_yaml(out, bins_states);
+
+  out << "bins_actions:" << std::endl;
+  bins_to_yaml(out, bins_actions);
+}

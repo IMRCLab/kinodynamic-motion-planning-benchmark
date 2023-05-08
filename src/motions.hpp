@@ -21,10 +21,10 @@
 #include <yaml-cpp/node/node.h>
 
 double check_u_bounds(const std::vector<Eigen::VectorXd> &us_out,
-                      std::shared_ptr<Model_robot> model);
+                      std::shared_ptr<Model_robot> model, bool verbose);
 
 double check_x_bounds(const std::vector<Eigen::VectorXd> &xs_out,
-                      std::shared_ptr<Model_robot> model);
+                      std::shared_ptr<Model_robot> model, bool verbose);
 
 void get_states_and_actions(const YAML::Node &data,
                             std::vector<Eigen::VectorXd> &states,
@@ -59,7 +59,8 @@ struct Problem {
 double check_trajectory(const std::vector<Eigen::VectorXd> &xs_out,
                         const std::vector<Eigen::VectorXd> &us_out,
                         const Eigen::VectorXd &dt,
-                        std::shared_ptr<Model_robot> model);
+                        std::shared_ptr<Model_robot> model,
+                        bool verbose = false);
 
 double check_cols(std::shared_ptr<Model_robot> model_robot,
                   const std::vector<Eigen::VectorXd> &xs);
@@ -123,6 +124,9 @@ struct Trajectory {
   Trajectory() = default;
   Trajectory(const char *file) { read_from_yaml(file); }
 
+
+
+
   Eigen::VectorXd start;
   Eigen::VectorXd goal;
   std::vector<Eigen::VectorXd> states;
@@ -136,11 +140,11 @@ struct Trajectory {
 
   void read_from_yaml(const char *file);
 
-  void check(std::shared_ptr<Model_robot> &robot);
+  void check(std::shared_ptr<Model_robot> &robot, bool verbose = false);
 
   void update_feasibility(double traj_tol = 1e-2, double goal_tol = 1e-2,
                           double col_tol = 1e-2, double x_bound_tol = 1e-2,
-                          double u_bound_tol = 1e-2);
+                          double u_bound_tol = 1e-2, bool verbose = false);
 
   // boost serialization
 
@@ -152,6 +156,8 @@ struct Trajectory {
     ar &feasible;
     ar &start;
     ar &goal;
+    if (file_version > 0)
+      ar &info;
   }
 
   double distance(const Trajectory &other) const;
@@ -160,6 +166,7 @@ struct Trajectory {
 
   void load_file_boost(const char *file);
 };
+BOOST_CLASS_VERSION(Trajectory, 1);
 
 struct Trajectories {
 
@@ -192,6 +199,24 @@ struct Trajectories {
       traj.to_yaml_format(out, prefix);
     }
   }
+
+  void load_file_yaml(const YAML::Node &node) {
+    CSTR_(node.size());
+    for (const auto &nn : node) {
+      Trajectory traj;
+      traj.read_from_yaml(nn);
+      data.push_back(traj);
+    }
+  }
+
+  void load_file_yaml(const char *file) {
+    std::cout << "Loading file: " << file << std::endl;
+    load_file_yaml(load_yaml_safe(file));
+  }
+
+  void compute_stats(const char *filename_out) const;
+
+  //
 };
 
 double max_rollout_error(std::shared_ptr<Model_robot> robot,

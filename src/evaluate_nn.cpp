@@ -76,20 +76,6 @@ template <class T> struct L2Q {
 #include <boost/graph/undirected_graph.hpp>
 #include <boost/property_map/property_map.hpp>
 
-void load_matrix(std::istream &in, std::vector<std::vector<double>> &out) {
-  out.clear();
-
-  std::string line;
-  while (std::getline(in, line)) {
-    std::istringstream iss(line);
-    std::string token;
-    std::vector<double> v;
-    while (std::getline(iss, token, ' ')) {
-      v.push_back(std::stod(token));
-    }
-    out.push_back(v);
-  }
-}
 
 // forward declaration
 struct AStarNode;

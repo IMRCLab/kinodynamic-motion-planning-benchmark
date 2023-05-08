@@ -35,6 +35,9 @@
 // this is the complete algorithm: idbA*
 
 int main(int argc, char *argv[]) {
+
+  srand(time(0));
+
   Options_idbAStar options_idbastar;
   Options_dbastar options_dbastar;
   Options_trajopt options_trajopt;

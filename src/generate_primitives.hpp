@@ -5,8 +5,8 @@
 
 struct Options_primitives {
 
-  double time_limit = 1000; // in seconds
-  size_t max_num_primitives = 1000;
+  double time_limit = 1000;      // in seconds
+  int max_num_primitives = 1000; // use -1 to say MAX
   size_t max_attempts = 1e8;
   std::string dynamics = "unicycle1_v0";
   bool adapt_infeas_primitives = false;
@@ -47,17 +47,14 @@ void sort_motion_primitives(
         distance_fun,
     int top_k = -1);
 
-void split_motion_primitives(const Trajectories &in, size_t num_translation,
-                             Trajectories &out,
+void split_motion_primitives(const Trajectories &in,
+                             const std::string &dynamics, Trajectories &out,
                              const Options_primitives &options_primitives);
 
 void improve_motion_primitives(const Options_trajopt &options_trajopt,
                                const Trajectories &trajs_in,
-                               const std::string& dynamics, 
+                               const std::string &dynamics,
                                Trajectories &trajs_out);
-
-
-
 
 void generate_primitives(const Options_trajopt &options_trajopt,
                          const Options_primitives &options_primitives,

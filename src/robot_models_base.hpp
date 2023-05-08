@@ -213,6 +213,7 @@ struct Model_robot {
   size_t nr_reg;
   size_t nr_ineq;
 
+
   bool is_2d;
   size_t translation_invariance = 0; // e.g. 1, 2 , 3, ...
   std::vector<std::string> x_desc;
@@ -299,6 +300,12 @@ struct Model_robot {
 
   std::vector<std::string> &get_x_desc() { return x_desc; }
   std::vector<std::string> &get_u_desc() { return u_desc; }
+
+  virtual double cost(const Eigen::Ref<const Eigen::VectorXd> &x,
+                      const Eigen::Ref<const Eigen::VectorXd> &u) const;
+
+  virtual double traj_cost(const std::vector<Eigen::VectorXd> &xs,
+                           const std::vector<Eigen::VectorXd> &us) const;
 
   virtual void
   setPositionBounds(const Eigen::Ref<const Eigen::VectorXd> &p_lb,
@@ -387,6 +394,61 @@ struct Model_robot {
   virtual double distance(const Eigen::Ref<const Eigen::VectorXd> &x,
                           const Eigen::Ref<const Eigen::VectorXd> &y);
 
+  virtual void rollout(const Eigen::Ref<const Eigen::VectorXd> &x0,
+                       const std::vector<Eigen::VectorXd> &us,
+                       std::vector<Eigen::VectorXd> &xs) {
+    CHECK_EQ(us.size() + 1, xs.size(), AT);
+
+    xs.at(0) = x0;
+    for (size_t i = 0; i < us.size(); i++) {
+      step(xs.at(i + 1), xs.at(i), us.at(i), ref_dt);
+    }
+  }
+
+  virtual void transform_state(const Eigen::Ref<const Eigen::VectorXd> &p,
+                               const Eigen::Ref<const Eigen::VectorXd> &xin,
+                               Eigen::Ref<Eigen::VectorXd> xout) {
+
+    xout = xin;
+    xout.head(translation_invariance) += p;
+  }
+
+  virtual void canonical_state(const Eigen::Ref<const Eigen::VectorXd> &xin,
+                               Eigen::Ref<Eigen::VectorXd> xout) {
+
+    xout = xin;
+    xout.head(translation_invariance).setZero();
+  }
+
+  virtual void offset(const Eigen::Ref<const Eigen::VectorXd> &xin,
+                      Eigen::Ref<Eigen::VectorXd> p) {
+
+    CHECK_EQ(p.size(), translation_invariance, AT);
+    p = xin.head(translation_invariance);
+  }
+
+
+  virtual size_t get_offset_dim() {
+    return translation_invariance;
+  }
+
+
+
+  virtual void transform_primitive(const Eigen::Ref<const Eigen::VectorXd> &p,
+                                   const std::vector<Eigen::VectorXd> &xs_in,
+                                   const std::vector<Eigen::VectorXd> &us_in,
+                                   std::vector<Eigen::VectorXd> &xs_out,
+                                   std::vector<Eigen::VectorXd> &us_out) {
+
+    // basic transformation is translation invariance
+    CHECK_EQ(p.size(), translation_invariance, AT);
+    us_out = us_in;
+    xs_out = xs_in;
+    for (auto &x : xs_out) {
+      x.head(translation_invariance) += p;
+    }
+  }
+
   // x1 - x0
   virtual void state_diff(Eigen::Ref<Eigen::VectorXd> r,
                           const Eigen::Ref<const Eigen::VectorXd> &x0,
@@ -422,6 +484,8 @@ struct Model_robot {
 
   virtual double lower_bound_time(const Eigen::Ref<const Eigen::VectorXd> &x,
                                   const Eigen::Ref<const Eigen::VectorXd> &y);
+
+  virtual void set_0_velocity(Eigen::Ref<Eigen::VectorXd> x) { (void)x; }
 
   virtual double
   lower_bound_time_vel(const Eigen::Ref<const Eigen::VectorXd> &x,

@@ -388,11 +388,19 @@ void Contour_cost_x::calcDiff(Eigen::Ref<Eigen::VectorXd> Lx,
     path->interpolate(alpha, last_out, last_J);
   }
 
+  // TODO check if this works correctly for SO(2)?
+
   __Jx.block(0, 0, nx - 1, nx - 1).diagonal() = -weight * Vxd::Ones(nx - 1);
   __Jx.block(0, nx - 1, nx - 1, 1) = weight * last_J;
 
   __r = weight * (last_out - x.head(nx - 1));
   // std::cout << "calcDiff __r: " << __r.format(FMT) << std::endl;
+  //
+
+  // CSTR_V((__r));
+  // CSTR_V((__Jx));
+  // CSTR_V((__r.transpose() * __Jx));
+
   Lx += __r.transpose() * __Jx;
 
   Lxx += __Jx.transpose() * __Jx;

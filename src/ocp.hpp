@@ -21,8 +21,8 @@
 #include "crocoddyl/core/action-base.hpp"
 
 inline std::string robot_type_to_path(const std::string &robot_type) {
-  std::string base_path = "../models/";
-  std::string suffix = ".yaml";
+  const std::string base_path = "../models/";
+  const std::string suffix = ".yaml";
   return base_path + robot_type + suffix;
 }
 
@@ -37,7 +37,7 @@ struct Options_trajopt {
   bool control_bounds = true;
   bool states_reg = false;
   int solver_id = 0;
-  double disturbance = 1e-4;
+  double disturbance = 1e-5;
 
   double th_stop = 1e-2;
   double init_reg = 1e2;
@@ -58,11 +58,12 @@ struct Options_trajopt {
   bool shift_repeat = true;
 
   double tsearch_max_rate = 2;
-  double tsearch_min_rate = .7;
-  int tsearch_num_check = 20;
+  double tsearch_min_rate = .3;
+  int tsearch_num_check = 10;
   bool ref_x0 = false;
   bool interp = false;
   bool welf_format = false;
+  bool linear_search = false;
 
   void add_options(po::options_description &desc);
 
@@ -202,6 +203,11 @@ void trajectory_optimization(const Problem &problem,
                              const Trajectory &init_guess,
                              const Options_trajopt &opti_parms,
                              Trajectory &traj, Result_opti &opti_out);
+
+
+std::vector<Eigen::VectorXd>
+smooth_traj2(const std::vector<Eigen::VectorXd> &xs_init, const StateQ &state) ;
+
 
 bool check_problem(ptr<crocoddyl::ShootingProblem> problem,
                    ptr<crocoddyl::ShootingProblem> problem2,

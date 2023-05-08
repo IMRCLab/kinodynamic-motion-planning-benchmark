@@ -28,7 +28,7 @@ struct SST_public_interface : public oc::SST {
 };
 
 void solve_sst(const Problem &problem, const Options_sst &options_ompl_sst,
-              const  Options_trajopt &options_trajopt, Trajectory &traj_out,
+               const Options_trajopt &options_trajopt, Trajectory &traj_out,
                Info_out &info_out_omplsst) {
 
   auto robot = robot_factory_ompl(problem);
@@ -276,6 +276,96 @@ void solve_sst(const Problem &problem, const Options_sst &options_ompl_sst,
   // for (int i = 0; i < 3; ++i) {
   solved = planner->ob::Planner::solve(options_ompl_sst.timelimit);
   CSTR_(solved);
+
+  {
+    Trajectory traj_sst;
+    std::vector<ompl::base::PlannerSolution> solutions = pdef->getSolutions();
+    CSTR_(solutions.size());
+    CHECK_EQ(solutions.size(), 1, AT);
+    ompl::base::PlannerSolution sol = solutions.front();
+    auto sol_control = sol.path_->as<ompl::control::PathControl>();
+    std::vector<ob::State *> states = sol_control->getStates();
+    sol_control->print(std::cout);
+    sol_control->interpolate();
+    sol_control->print(std::cout);
+
+    Eigen::VectorXd x;
+    for (size_t i = 0; i < sol_control->getStateCount(); ++i) {
+      const auto state = sol_control->getState(i);
+      state_to_eigen(x, si, state);
+      traj_sst.states.push_back(x);
+    }
+
+    Eigen::VectorXd u;
+    for (size_t i = 0; i < sol_control->getControlCount(); ++i) {
+      const auto action = sol_control->getControl(i);
+      control_to_eigen(u, si, action);
+      traj_sst.actions.push_back(u);
+    }
+
+    traj_sst.check(robot->diff_model);
+
+    {
+      std::ofstream out("debug_sst_traj.yaml");
+      traj_sst.to_yaml_format(out);
+    }
+  }
+
+  ompl::control::PlannerData data(robot->getSpaceInformation());
+  planner->getPlannerData(data);
+  // TODO!: maybe I have to ensure the SO2?
+
+  std::vector<Eigen::VectorXd> states;
+  std::vector<std::vector<unsigned int>> edges;
+  CSTR_(data.numVertices());
+  for (size_t i = 0; i < data.numVertices(); i++) {
+    auto vertex = data.getVertex(i);
+    // std::cout << "tag " << vertex.getTag() << std::endl;
+    // printState(std::cout, robot->getSpaceInformation(), vertex.getState());
+    // std::cout << std::endl;
+
+    std::vector<unsigned int> edgeList;
+    std::cout << "vertex: " << i << std::endl;
+    data.getEdges(i, edgeList);
+    for (auto &e : edgeList) {
+      std::cout << "  edge: " << i << "-" << e << std::endl;
+    }
+    edges.push_back(edgeList);
+
+    Eigen::VectorXd x(robot->nx);
+    robot->toEigen(vertex.getState(), x);
+    states.push_back(x);
+  }
+
+  double min_distance = std::numeric_limits<double>::max();
+  Eigen::VectorXd state;
+
+  for (size_t i = 0; i < states.size(); i++) {
+    if (double d = robot->diff_model->distance(states.at(i), problem.goal);
+        d < min_distance) {
+      min_distance = d;
+      state = states.at(i);
+    }
+  }
+  CSTR_(min_distance);
+  CSTR_V(state);
+
+  // write down the states
+
+  {
+    std::ofstream out("debug_sst.yaml");
+    CHECK_EQ(states.size(), edges.size(), AT);
+    for (size_t i = 0; i < states.size(); i++) {
+      auto &state = states.at(i);
+      auto &edge = edges.at(i);
+      out << "- " << std::endl;
+      out << " "
+          << "x: " << state.format(FMT) << std::endl;
+      out << " "
+          << "e: ";
+      print_vec(edge.data(), edge.size(), out);
+    }
+  }
 
   // This does not work because it is protected member
   // oc::SST *ppp = static_cast<oc::SST *>(planner.get());
