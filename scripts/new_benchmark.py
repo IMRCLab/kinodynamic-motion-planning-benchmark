@@ -3,20 +3,54 @@ import yaml
 from typing import List
 import numpy as np
 import pathlib
+from typing import Tuple
+
+from multiprocessing import Pool
+import multiprocessing
+import uuid
+from pathlib import Path
+import csv
+import pandas
+
+import argparse
+
+parser = argparse.ArgumentParser()
+parser.add_argument("-m", "--mode")
+parser.add_argument("-bc", "--bench_cfg")
+parser.add_argument("-d", "--dynamics")
+
+args = parser.parse_args()
+
+print(args.__dict__)
+
+mode = args.mode
+bench_cfg = args.bench_cfg
+
+MAX_TIME_PLOTS = 40
+
+
+do_compare = False
+do_benchmark = False
+do_debug = False
+do_vis_primitives = False
+
+
+if mode == "compare":
+    do_compare = True
+
+elif mode == "bench":
+    do_benchmark = True
+
+elif mode == "debug":
+    do_debug = True
+
+elif mode == "vis":
+    do_vis_primitives = True
 
 
 import sys
 sys.path.append('..')
 
-
-import viewer.viewer_utils as viewer_utils
-import viewer.quad2d_viewer as quad2d_viewer
-import viewer.quad3d_viewer as quad3d_viewer
-import viewer.acrobot_viewer as acrobot_viewer
-import viewer.unicycle1_viewer as unicycle1_viewer
-import viewer.unicycle2_viewer as unicycle2_viewer
-import viewer.car_with_trailer_viewer as car_with_trailer_viewer
-import viewer.robot_viewer as robot_viewer
 import viewer.viewer_cli as viewer_cli
 import matplotlib.pyplot as plt
 
@@ -51,18 +85,15 @@ def plot_stats(motions: list, robot_model: str, filename: str):
     # from motionplanningutils import robot_factory
     # r = robot_factory(base_path + robot_model + ".yaml")
 
-
-
     def get_desc(name: str) -> Tuple[List[str], List[str]]:
         if name.startswith("unicycle1"):
-            return ( [ "x" , "y" , "theta"] , ["v", "w"])
-        elif name.startswith("unicycle2") : 
-            return ( [ "x" , "y" , "theta", "v" , "w"] , ["a", "aa"])
-        else :
+            return (["x", "y", "theta"], ["v", "w"])
+        elif name.startswith("unicycle2"):
+            return (["x", "y", "theta", "v", "w"], ["a", "aa"])
+        else:
             raise NotImplementedError(f"unknown {name}")
 
     x_desc, u_desc = get_desc(robot_model)
-
 
     fig, ax = plt.subplots()
     ax.set_title("Num steps: ")
@@ -101,8 +132,6 @@ def plot_stats(motions: list, robot_model: str, filename: str):
     pp.close()
 
 
-
-
 def create_empty_env(start: List, goal: List, robot_model: str):
     if robot_model.startswith("quadrotor_0"):
         env_max = [2., 2., 2.]
@@ -129,58 +158,72 @@ def create_empty_env(start: List, goal: List, robot_model: str):
     return env
 
 
-problems = [
-    "unicycle_first_order_0/parallelpark_0",
-]
+with open(bench_cfg) as f:
+    data = yaml.safe_load(f)
 
-algs = [
-    # "sst_v0",
-    # "geo_v0",
-    "idbastar_v0"
-]
+print("bench cfg")
+print(data)
+problems = data["problems"]
+algs = data["algs"]
+trials = data["trials"]
+timelimit = data["timelimit"]
+
+
+print(f"problems {problems}")
+print(f"algs {algs}")
 
 
 color_map = {
-    "idbastar_v0": "red",
-    "geo_v0": "green",
     "sst_v0": "blue",
+    "geo_v0": "green",
+    "geo_v1": "red",
+    "idbastar_v0": "cyan",
+    "idbastar_v0_heu1" : "yellow",
+    "idbastar_v0_mpcc": "black",
+    "idbastar_v0_search": "orange"
 }
 
 
-trials = 10
-timelimit = 6
 
 
-def get_motions_file(problem: str) -> str:
-    return "../cloud/motions/unicycle_first_order_0_sorted.msgpack"
 
-
-def solve_problem_with_alg(problem: str, alg: str, out: str):
-    # load params
-
-    # get the dynamics
-    with open(problem, 'r') as f:
-        data_problem = yaml.safe_load(f)
-
-    dynamics = data_problem["robots"][0]["type"]
-    print(f"dynamics {dynamics}")
+def get_config(alg: str , dynamics : str , problem : str)  :
 
     base_path_algs = "../algs/"
     file = base_path_algs + alg + ".yaml"
+
     print(f"loading {file}")
     with open(file, "r") as f:
-        cfg = yaml.safe_load(f)
-    print("cfg is:\n", cfg)
+        data = yaml.safe_load(f)
+    print("data is:\n", data)
 
-    cfg_default = cfg.get("default")
-    cfg_dynamics = cfg.get(dynamics, {}).get("default", {})
-    cfg_problem = cfg.get(dynamics, {}).get(problem, {})
+
+    cfg = {}
+    if  "reference" in  data:
+        # I have to load another configuration as default
+        print("there is a reference!")
+        reference = data.get("reference")
+        print(f"reference {reference}")
+        cfg = get_config(reference, dynamics  , problem )
+        print( "reference cfg is: " , cfg) 
+
+
+    print(f"dynamics {dynamics}")
+    print(f"problem is {problem}")
+
+
+    cfg_default = data.get("default")
+    cfg_dynamics = data.get(dynamics, {}).get("default", {})
+    __problem = Path(problem).stem
+
+    cfg_problem = data.get(dynamics, {}).get(__problem, {})
 
     print(f"cfg_default {cfg_default}")
     print(f"cfg_dynamics {cfg_dynamics}")
     print(f"cfg_problem {cfg_problem}")
 
-    cfg = cfg_default
+    for k, v in cfg_default.items():
+        cfg[k] = v
 
     for k, v in cfg_dynamics.items():
         cfg[k] = v
@@ -188,12 +231,38 @@ def solve_problem_with_alg(problem: str, alg: str, out: str):
     for k, v in cfg_problem.items():
         cfg[k] = v
 
+    return cfg
+
+
+
+
+
+
+
+
+
+def solve_problem_with_alg(problem: str, alg: str, out: str) -> List[str]:
+    # load params
+
+    # get the dynamics
+    with open(problem, 'r') as f:
+        data_problem = yaml.safe_load(f)
+
+    print(f"data_problem {data_problem}")
+
+    dynamics = data_problem["robots"][0]["type"]
+    print(f"dynamics {dynamics}")
+
+
+    cfg = get_config(alg, dynamics , problem )
+
     print("merged cfg\n", cfg)
 
     cfg_out = out + ".cfg.yaml"
 
     with open(cfg_out, "w") as f:
         yaml.dump(cfg, f)
+
 
     if alg.startswith("sst"):
         cmd = [
@@ -211,15 +280,13 @@ def solve_problem_with_alg(problem: str, alg: str, out: str):
             out, "--timelimit", str(timelimit), "--cfg", cfg_out]
 
     elif alg.startswith("idbastar"):
-        motions_file = get_motions_file(problem)
+        # motions_file = get_motions_file(problem)
         cmd = [
             "./main_idbastar",
             "--env_file",
             problem,
             "--results_file",
             out,
-            "--motionsFile",
-            motions_file,
             "--timelimit",
             str(timelimit),
             "--cfg",
@@ -228,8 +295,48 @@ def solve_problem_with_alg(problem: str, alg: str, out: str):
     else:
         raise NotImplementedError()
 
+    return cmd
+    # print("**\n**\nRUNNING cpp\n**\n", *cmd, "\n", sep=" ")
+    # subprocess.run(cmd)
+    # print("**\n**\nDONE RUNNING cpp\n**\n")
+
+
+multiprocess = True
+
+
+n_cores = data["n_cores"]
+if n_cores == -1:
+    n_cores = int(multiprocessing.cpu_count() / 2)
+
+
+class Experiment():
+    def __init__(self, path, problem, alg):
+        self.path = path
+        self.problem = problem
+        self.alg = alg
+
+    def __str__(self):
+        print(f"path:{self.path} problem:{self.problem} alg:{self.alg}")
+
+
+redirect_output = True
+
+
+def run_cmd(cmd: str):
     print("**\n**\nRUNNING cpp\n**\n", *cmd, "\n", sep=" ")
-    subprocess.run(cmd)
+
+    if redirect_output:
+        id = str(uuid.uuid4())[:7]
+        stdout_name = f"stdout-{id}.log"
+        stderr_name = f"stderr-{id}.log"
+        print(*cmd, f"---- stderr_name {stderr_name}   stdout_name {stdout_name} ----")
+        f_stdout = open(stdout_name, 'w')
+        f_stderr = open(stderr_name, 'w')
+        subprocess.run(cmd, stdout=f_stdout, stderr=f_stderr)
+        f_stdout.close()
+        f_stderr.close()
+    else:
+        subprocess.run(cmd)
     print("**\n**\nDONE RUNNING cpp\n**\n")
 
 
@@ -239,87 +346,195 @@ def benchmark():
     folder_results = "../results_new/"
 
     now = datetime.now()  # current date and time
-    date_time = now.strftime("%m-%d-%Y--%H-%M-%S")
+    date_time = now.strftime("%Y-%m-%d--%H-%M-%S")
+    cmds = []
+    paths = []
+
+    experiments = []
     for problem in problems:
         for alg in algs:
             path = folder_results + problem + "/" + alg + "/" + date_time
+            paths.append(path)
             pathlib.Path(path).mkdir(parents=True, exist_ok=True)
+            experiments.append(Experiment(path=path, problem=problem, alg=alg))
             for i in range(trials):
                 out = path + f"/run_{i}_out.yaml"
-                solve_problem_with_alg(
+                cmd = solve_problem_with_alg(
                     base_path_problem + problem + ".yaml", alg, out)
-            analyze_runs(path, visualize=False)
+                cmds.append(cmd)
+    print("commands are: ")
+    for i, cmd in enumerate(cmds):
+        print(i, cmd)
 
-            # basic analysisi of the results?
+    print(f"Start a pool with {n_cores}:")
+    with Pool(n_cores) as p:
+        p.map(run_cmd, cmds)
+    print("Pool is DONE")
+
+    fileouts = []
+    for experiment in experiments:
+        print("experiment")
+
+        fileout, _ = analyze_runs(
+            experiment.path,
+            experiment.problem,
+            experiment.alg,
+            visualize=False)
+        fileouts.append(fileout)
+
+    compare(fileouts, False)
+
+    # basic analysisi of the results?
 
 
-def compare(interactive: bool = False, filename : str = "/tmp/tmp_compare.pdf"):
-    files = ["/home/quim/stg/wolfgang/kinodynamic-motion-planning-benchmark/results_new/unicycle_first_order_0/parallelpark_0/idbastar_v0/04-01-2023--11-50-36/report.yaml",
-             "/home/quim/stg/wolfgang/kinodynamic-motion-planning-benchmark/results_new/unicycle_first_order_0/parallelpark_0/idbastar_v0/04-01-2023--11-50-36/report.yaml"]
+def compare(
+        files: List[str],
+        interactive: bool = False,
+        filename: str = "/tmp/tmp_compare.pdf"):
+
+    print("calling compare:")
+    print(f"files {files}")
+    print(filename)
 
     # load
     datas = []
     for file in files:
+        print("loading ", file)
         with open(file, 'r') as f:
             data = yaml.safe_load(f)
             datas.append(data)
+    print("datas\n", datas)
+
+    # print("artificially adding the problem...")
+    # for data in datas:
+    #     data["problem"] = "unicycle_first_order_0/bugtrap_0"
+    # print(datas)
 
     # organize by problem
 
     D = {}
+    fields = [
+        "problem",
+        "alg",
+        "cost_at_01",
+        "cost_at_05",
+        "cost_at_10",
+        "cost_at_20",
+        "cost_first_solution",
+        "time_first_solution",
+        "last_cost"]
+    fields.sort()
 
-    for problem in problems:
+    reduced_data = []
+    for d in datas:
+        # take only some fields
+        dd = {}
+        for field in fields:
+            dd[field] = d[field]
+        reduced_data.append(dd)
+
+    # save as csv file
+
+    # id = str(uuid.uuid4())[:7]
+    now = datetime.now()  # current date and time
+    date_time = now.strftime("%Y-%m-%d--%H-%M-%S")
+    filename_csv = f"../results_new/summary/summary_{date_time}.csv"
+
+    print("saving reduced data to", filename_csv)
+    with open(filename_csv, 'w') as f:
+        writer = csv.writer(f)
+        writer.writerow(fields)
+        for dictionary in reduced_data:
+            writer.writerow(dictionary.values())
+
+    create_latex_table(filename_csv)
+
+    # check
+    print("checking data")
+    with open(filename_csv, 'r') as myFile:
+        print(myFile.read())
+
+    all_problems = [
+        "unicycle_first_order_0/parallelpark_0",
+        "unicycle_first_order_0/bugtrap_0",
+        "unicycle_first_order_0/kink_0",
+        "unicycle_second_order_0/parallelpark_0",
+        "unicycle_second_order_0/bugtrap_0",
+        "unicycle_second_order_0/kink_0",
+        "car_first_order_with_1_trailers_0/bugtrap_0",
+        "car_first_order_with_1_trailers_0/parallelpark_0",
+        "quad2d/empty_0",
+        "quad2d/quad_obs_column",
+        "quad2d/quad2d_recovery_wo_obs",
+        # CONTINUE QUADROTOR_0
+        "quadrotor_0/empty_0_easy",
+        "quadrotor_0/recovery",
+        "quadrotor_0/quad_one_obs",
+        "acrobot/swing_up_empty",
+        "acrobot/swing_down_easy",
+        "car_first_order_with_1_trailers_0/easy_0"]
+
+    for problem in all_problems:
+        print(f"problem {problem}")
         # check if data belongs to this problem
-        datas = []
+        _datas = []
         for data in datas:
+            print("**")
+            print(data["problem"])
+            print(problem)
+            print("**")
+            print("**")
             if data["problem"] == problem:
-                datas.append(data)
-        D["problem"] = datas
+                print("match!")
+                _datas.append(data)
+        D[problem] = _datas
+    print("D", D)
 
     # now print the data!
 
     from matplotlib.backends.backend_pdf import PdfPages
 
-
     print(f"writing pdf to {filename}")
     pp = PdfPages(filename)
 
+    for problem in all_problems:
 
-    for problem in problems: 
+        if D[problem]:
+            fig, ax = plt.subplots(2, 1, sharex=True)
+            fig.suptitle(problem)
+            for d in D[problem]:
+                print("d", d)
+                alg = d["alg"]
+                times = d["times"]
+                success = d["success"]
+                cost_mean = d["cost_mean"]
+                cost_std = d["cost_std"]
+                color = color_map[alg]
 
-        fig, ax = plt.subplots(2,1)
-        for d in D[problem]:
-            alg = d["alg"]
-            times = d["times"]
-            success = d["success"]
-            cost_mean = d["cost_mean"]
-            cost_std = d["cost_std"]
-            color = color_map["alg"]
+                ax[0].plot(times, cost_mean, color=color, label=alg)
+                ax[0].fill_between(times,
+                                   np.array(cost_mean) + np.array(cost_std),
+                                   np.array(cost_mean) - np.array(cost_std),
+                                   facecolor=color,
+                                   alpha=0.5)
+                ax[1].plot(times, success, color=color, label=alg)
 
-            ax[0].plot(times, cost_std, color=color, label=alg)
-            ax[0].fill_between( times,
-                cost_mean + cost_std,
-                cost_mean - cost_std,
-                facecolor=color,
-                alpha=0.5)
-            ax[1].plot(times, success)
+                ax[0].set_xscale('log')
+                ax[1].set_xscale('log')
 
-        ax[0].legend()
-        ax[1].legend()
-        ax[0].set_ylabel("cost")
-        ax[1].set_xlabel("time [s]")
-        ax[1].set_ylabel("success %")
+            ax[1].legend()
+            ax[0].set_ylabel("cost")
+            ax[1].set_xlabel("time [s]")
+            ax[1].set_ylabel("success %")
+            ax[1].set_ylim(-10, 110)
+            ax[1].set_xlim(.1, MAX_TIME_PLOTS)
 
-        if (interactive):
-            plt.show()
+            if (interactive):
+                plt.show()
 
-        pp.savefig(fig)
-        plt.close(fig)
-
-
-
-
-
+            pp.savefig(fig)
+            plt.close(fig)
+    pp.close()
 
 
 def make_videos(robot: str, problem: str, file: str):
@@ -343,8 +558,9 @@ def make_videos(robot: str, problem: str, file: str):
         viewer.make_video(problem, traj, filename)
 
 
-def get_cost_evolution(ax, file: str):
+def get_cost_evolution(ax, file: str, **kwargs):
 
+    print(f"loading file {file}")
     with open(file, "r") as f:
         data = yaml.load(f, yaml.SafeLoader)
 
@@ -353,38 +569,110 @@ def get_cost_evolution(ax, file: str):
     time_cost_pairs = []
 
     best_cost = 1e10
-    for traj in trajs_opt:
-        ts = float(traj["time_stamp"]) / 1000
-        cs = traj["cost"]
-        feas = traj["cost"]
-        if feas:
-            if cs < best_cost:
-                time_cost_pairs.append([ts, cs])
-                best_cost = cs
+
+    if trajs_opt is not None:
+        for traj in trajs_opt:
+            ts = float(traj["time_stamp"]) / 1000
+            cs = traj["cost"]
+            feas = traj["feasible"]
+            if feas:
+                print(cs)
+                print(best_cost)
+                if cs < best_cost:
+                    time_cost_pairs.append([ts, cs])
+                    best_cost = cs
+
+    if len(time_cost_pairs) == 0:
+        print("there is not solution...")
+        unsolved_num = 100
+        time_cost_pairs.append([unsolved_num, unsolved_num])
 
     # plot
 
     ts = [x[0] for x in time_cost_pairs]
     cs = [x[1] for x in time_cost_pairs]
 
-    ax.plot(ts, cs)
+    ax.plot(ts, cs, color=kwargs.get("color", "blue"), alpha=0.3)
     return time_cost_pairs
 
 
-def analyze_runs(path_to_dir: str, visualize: bool):
+def get_av_cost(all_costs_np) -> Tuple[np.ndarray, np.ndarray]:
+    # easy
+    mean = all_costs_np.mean(axis=0)
+    std = all_costs_np.std(axis=0)
+
+    # more complex.
+    # wait until half of them are solved
+
+    print("all_costs_np")
+    print(all_costs_np)
+
+    num_instances = all_costs_np.shape[0]
+    mean = []
+    std = []
+    for j in range(all_costs_np.shape[1]):
+        column = all_costs_np[:, j]
+        # how many nan?
+        non_nan = np.count_nonzero(~np.isnan(column))
+        print(column)
+        print(non_nan)
+        if non_nan > int(num_instances / 2):
+            print("success rate is enough")
+            cc = column[~np.isnan(column)]
+            print("cc", cc)
+            mean.append(cc.mean())
+            std.append(cc.std())
+        else:
+            print("success rate is very slow")
+            mean.append(np.nan)
+            std.append(np.nan)
+
+    return np.array(mean), np.array(std)
+
+
+def first(iterable, condition):
+    """
+    Returns the first item in the `iterable` that
+    satisfies the `condition`.
+
+    If the condition is not given, returns the first item of
+    the iterable.
+
+    Raises `StopIteration` if no item satysfing the condition is found.
+
+    >>> first( (1,2,3), condition=lambda x: x % 2 == 0)
+    2
+    >>> first(range(3, 100))
+    3
+    >>> first( () )
+    Traceback (most recent call last):
+    ...
+    StopIteration
+    """
+
+    return next(x for x in iterable if condition(x))
+
+
+def analyze_runs(path_to_dir: str,
+                 problem: str,
+                 alg: str,
+                 visualize: bool, **kwargs) -> Tuple[str, str]:
 
     __files = [f for f in pathlib.Path(
         path_to_dir).iterdir() if f.is_file()]
 
     # filter some files out.
 
-    files = [f for f in __files if "cfg" not in f.name and "debug" not in f.name]
+    files = [f for f in __files if "cfg" not in f.name and "debug" not in f.name and f.suffix ==
+             ".yaml" and "report" not in f.name]
 
     print(f"files ", [f.name for f in files])
 
-    fig, ax = plt.subplots(2, 1)
+    fig, ax = plt.subplots(2, 1, sharex=True)
+    fig.suptitle(problem)
 
-    T = 10  # max time
+
+    T = MAX_TIME_PLOTS  # max time
     dt = 0.1
     times = np.linspace(0, T, int(T / dt) + 1)
 
@@ -394,7 +682,7 @@ def analyze_runs(path_to_dir: str, visualize: bool):
     raw_data = []
 
     for file in [str(f) for f in files]:
-        time_cost_pairs = get_cost_evolution(ax[0], file)
+        time_cost_pairs = get_cost_evolution(ax[0], file, **kwargs)
         raw_data.append(time_cost_pairs)
         first_solution.append(time_cost_pairs[0][0])
         t = [x[0] for x in time_cost_pairs]
@@ -411,8 +699,35 @@ def analyze_runs(path_to_dir: str, visualize: bool):
         all_costs.append(cost_times)
 
     all_costs_np = np.array(all_costs)
-    mean = all_costs_np.mean(axis=0)
-    std = all_costs_np.std(axis=0)
+
+    mean, std = get_av_cost(all_costs_np)
+
+    # // nan nan 1
+
+    __where = np.argwhere(np.isnan(mean)).flatten()
+    time_first_solution = dt
+
+    if __where.size > 0:
+        time_first_solution = float(dt * (__where[-1] + 1))
+
+    try: 
+        cost_first_solution = first(mean.tolist(), lambda x: not np.isnan(x))
+        last_cost = float(mean[-1])
+    except StopIteration:
+        # TODO : define a way to deal whit this numbers
+        cost_first_solution = -1
+        last_cost = -1
+
+    # 10 seconds
+
+    cost_at_1 = mean.tolist()[int(1 / dt)]
+    cost_at_5 = mean.tolist()[int(5 / dt)]
+    cost_at_10 = mean.tolist()[int(10 / dt)]
+    cost_at_20 = mean.tolist()[int(20 / dt)]
+
+    # cost of first solution
+
+    # get the first not nan
 
     success = np.count_nonzero(
         ~np.isnan(all_costs_np),
@@ -424,26 +739,53 @@ def analyze_runs(path_to_dir: str, visualize: bool):
         mean + std,
         mean - std,
         facecolor='blue',
-        alpha=0.5)
+        alpha=0.2)
     ax[0].set_ylabel("cost")
 
     ax[1].plot(times, success)
     ax[1].set_xlabel("time [s]")
     ax[1].set_ylabel("success %")
 
+    # ax[0].set_ylim([0, 30])
+    ax[1].set_xlim([0, 20])
+    ax[0].set_xlim([0, 20])
+
     data_out = {}
     data_out["times"] = times.tolist()
     data_out["success"] = success.tolist()
+
+    print("time_first_solution", time_first_solution)
+    print("type(time_first_solution)")
+    print(type(time_first_solution))
+    data_out["time_first_solution"] = time_first_solution
+    data_out["cost_first_solution"] = cost_first_solution
+
+    data_out["cost_at_01"] = cost_at_1
+    data_out["cost_at_05"] = cost_at_5
+    data_out["cost_at_10"] = cost_at_10
+    data_out["cost_at_20"] = cost_at_20
+    data_out["last_cost"] = last_cost
+
     data_out["cost_mean"] = mean.tolist()
+
     data_out["cost_std"] = std.tolist()
     data_out["raw_data"] = raw_data
 
-    with open(path_to_dir + "/report.yaml", "w") as f:
+    data_out["problem"] = problem
+    data_out["alg"] = alg
+
+    fileout = path_to_dir + "/report.yaml"
+    print(f"fileout {fileout}")
+    with open(fileout, "w") as f:
         yaml.dump(data_out, f)
 
-    plt.savefig(path_to_dir + "/report.pdf")
+    figureout = path_to_dir + "/report.pdf"
+    print(f"figureout {figureout}")
+    plt.savefig(figureout)
     if (visualize):
         plt.show()
+
+    return fileout, figureout
 
 
 def visualize_motion_together(
@@ -497,6 +839,35 @@ def visualize_motion_together(
     plt.show()
 
 
+def create_latex_table(csv_file: str) -> None:
+    # lets create the latex table
+
+    # some replacements
+
+    df = pandas.read_csv(csv_file)
+    str_raw = df.to_latex(index=False, float_format="{:.1f}".format)
+
+    str_ = format_latex_str(str_raw)
+    now = datetime.now()  # current date and time
+    date_time = now.strftime("%Y-%m-%d--%H-%M-%S")
+
+    with open(f"../results_new/tex/data_{date_time}.tex", "w") as f:
+        f.write(str_)
+
+    problems = df["problem"].unique()
+    print("problems", problems)
+    for problem in problems:
+        df_i = df[df["problem"] == problem].drop("problem", axis=1)
+
+        df_i_str_raw = df_i.to_latex(index=False, float_format="{:.1f}".format)
+        str_ = format_latex_str(df_i_str_raw)
+
+        problem_ = problem.replace("/", "--")
+
+        with open(f"../results_new/tex/data_{problem_}_{date_time}.tex", "w") as f:
+            f.write(str_)
+
+
 def visualize_primitives(motions: list, robot: str,
                          interactive: bool = True, output_file: str = ""):
 
@@ -548,48 +919,111 @@ def visualize_primitives(motions: list, robot: str,
         plt.show()
 
 
+def format_latex_str(str_in: str) -> str:
+
+    str_ = str_in[:]
+
+    D = {"unicycle_first_order_0": "uni1",
+         "unicycle_second_order_0": "uni2",
+         "parallelpark_0": "park",
+         "cost_at": "c",
+         "cost_first_solution": "cs",
+         "time_first_solution": "ts",
+         "last_cost": "cf"}
+
+    for k, v in D.items():
+        str_ = str_.replace(k, v)
+
+    str_ = str_.replace("_", "\\_")
+    print("final string is:")
+    print(str_)
+    return str_
+
+    # group by problem
+    # should I use the latex output of pandas?
 if __name__ == "__main__":
-    path1 = "results_sst.yaml"
 
-    problem = "../benchmark/unicycle_first_order_0/parallelpark_0.yaml"
-    # benchmark()
+    # fileout, _ = analyze_runs(path_to_dir="/home/quim/stg/wolfgang/kinodynamic-motion-planning-benchmark/results_new/unicycle_first_order_0/kink_0/sst_v0/2023-04-27--17-34-46/",
+    #                           problem="unicycle_first_order_0/kink_0", alg="sst_v0", visualize=True)
 
-    # folder = "/home/quim/stg/wolfgang/kinodynamic-motion-planning-benchmark/results_new/unicycle_first_order_0/parallelpark_0/geo/03-31-2023--17-27-58"
+
+    # csv_file = "../results_new/summary/summary_2023-04-27--13-03-13.csv"
+    # create_latex_table(csv_file)
+    # sys.exit(1)
+
+    if do_compare:
+        # folders = ["geo_v0/04-04-2023--15-59-51",
+        #            "idbastar_v0/04-04-2023--15-59-51",
+        #            "idbastar_v1/04-04-2023--15-59-51",
+        #            "sst_v0/04-04-2023--15-59-51"]
+        #
+        # base = "/home/quim/stg/wolfgang/kinodynamic-motion-planning-benchmark/results_new/unicycle_first_order_0/bugtrap_0/"
+        # files = [base + folder + "/report.yaml" for folder in folders]
+        files = [
+            "../results_new/unicycle_second_order_0/parallelpark_0/idbastar_v0/04-24-2023--18-07-26/report.yaml",
+            "../results_new/car_first_order_with_1_trailers_0/parallelpark_0/idbastar_v0/04-24-2023--18-07-26/report.yaml"]
+
+        compare(files, interactive=True)
+    if do_benchmark:
+        benchmark()
+    if do_debug:
+        file = "../results_new/unicycle_second_order_0/parallelpark_0/idbastar_v0/04-06-2023--14-52-41/run_1_out.yaml"
+        with open(file, "r") as f:
+            data = yaml.safe_load(f)
+        print(data)
+    if do_vis_primitives:
+        # file = "../cloud/motionsV2/tmp_car1.bin.yaml"
+        # robot = "car"
+        # with open(file, "r") as f:
+        #     motions = yaml.safe_load(f)
+        # visualize_primitives(motions, robot, True, "out.pdf");
+
+        # file = "../cloud/motionsV2/tmp_acrobot.bin.yaml"
+        # robot = "acrobot"
+        # with open(file, "r") as f:
+        #     motions = yaml.safe_load(f)
+        # visualize_primitives(motions, robot, True, "out.pdf");
+
+        file = "../cloud/motionsV2/tmp_quad_2d.bin.yaml"
+        robot = "quad2d"
+        with open(file, "r") as f:
+            motions = yaml.safe_load(f)
+        visualize_primitives(motions, robot, True, "out.pdf")
+
+    # path = "/home/quim/stg/wolfgang/kinodynamic-motion-planning-benchmark/results_new/unicycle_first_order_0/bugtrap_0/sst_v0/04-04-2023--11-08-40"
+    # path = "../results_new/unicycle_first_order_0/bugtrap_0/geo_v0/04-04-2023--15-23-12/"
+    # analyze_runs(path, visualize=False)
 
     # folder = '../results_new/unicycle_first_order_0/parallelpark_0/idbastar_v0/04-01-2023--11-50-36/'
     # analyze_runs(folder, visualize=True)
-
     # file = "results_sst.yaml"
     # make_videos(robot, problem, file)
 
     # file = "tmp_trajectories.yaml"
     # visualize_primitives(file,robot, "primitives.pdf")
 
-    # file = "motions__i__unicycle1_v0__02-04-2023--17-22-04.yaml";
-
-    file = "motions__s__unicycle1_v0__03-04-2023--08-48-54.yaml"
-
-    robot = "unicycle2"
-    file = "../cloud/motionsV2/unicycle2_v0__2023_04_03__15_01_24.yaml"
-
-    with open(file, "r") as f:
-        motions = yaml.safe_load(f)
-
-    visualize_primitives(
-        motions,
-        robot,
-        interactive=True,
-        output_file="primitives.pdf")
-
-    visualize_primitives(motions[10:],
-                         robot,
-                         interactive=True,
-                         output_file="primitives2.pdf")
-
-    with open(file, "r") as f:
-        motions = yaml.safe_load(f)
-    print(f"len(motions) {len(motions)}")
-    plot_stats(motions, robot, "new_stats.pdf")
+    # file = "motions__s__unicycle1_v0__03-04-2023--08-48-54.yaml"
+    # robot = "unicycle2"
+    # file = "../cloud/motionsV2/unicycle2_v0__2023_04_03__15_01_24.yaml"
+    # with open(file, "r") as f:
+    #     motions = yaml.safe_load(f)
+    #
+    # visualize_primitives(
+    #     motions,
+    #     robot,
+    #     interactive=True,
+    #     output_file="primitives.pdf")
+    #
+    # visualize_primitives(motions[10:],
+    #                      robot,
+    #                      interactive=True,
+    #                      output_file="primitives2.pdf")
+    #
+    # with open(file, "r") as f:
+    #     motions = yaml.safe_load(f)
+    # print(f"len(motions) {len(motions)}")
+    # plot_stats(motions, robot, "new_stats.pdf")
+    #
 
     # stats of primitives
     # Get the stats...

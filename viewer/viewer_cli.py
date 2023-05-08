@@ -1,3 +1,8 @@
+
+from pathlib import Path
+import sys
+sys.path.append(str(Path(__file__).parent) )
+
 import argparse
 import viewer_utils
 import quad2d_viewer
