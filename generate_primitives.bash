@@ -1,25 +1,68 @@
 #/bin/bash
 #
 
-
-time_stamp=$(date +%Y_%m_%d__%H_%M_%S)
-echo $time_stamp
 make main_primitives 
 
-# Car
-./main_primitives --dynamics car1_v0 --out_file  "../cloud/motionsV2/tmp_car1.bin"  --mode_gen_id 0  --max_num_primitives 100 --max_iter 200 --ref_x0 1  --ref_time_steps 50 --weight_goal 200 
+# Car: 1s=1primitive
+car_primitive () {
+num_primitives=$1
+time_stamp=$(date +%Y_%m_%d__%H_%M_%S)
+./main_primitives --dynamics car1_v0 --out_file  "data_4/tmp_car1_v0_${time_stamp}.bin"  --mode_gen_id 0  --max_num_primitives $num_primitives --max_iter 200 --ref_x0 1  --ref_time_steps 50 --weight_goal 200  --time_limit 1e8 > /dev/null
+}
 
 # Acrobot
-./main_primitives --dynamics acrobot_v0  --out_file  "../cloud/motionsV2/tmp_car1.bin"  --mode_gen_id 0  --max_num_primitives 10  --max_iter 200 --ref_x0 1  --ref_time_steps 300  --weight_goal 500 
+# 3s=1primitive
+
+acrobot_primitive() {
+num_primitives=$1
+time_stamp=$(date +%Y_%m_%d__%H_%M_%S)
+./main_primitives --dynamics acrobot_v0  --out_file  "data_4/tmp_acrobot_vo${time_stamp}.bin"  --mode_gen_id 0  --max_num_primitives $num_primitives  --max_iter 200 --ref_x0 1  --ref_time_steps 300  --weight_goal 500  --time_limit 1e8 > /dev/null
+}
+
 
 # Quad 2d
+# 3s=1primitive
+quad_2d_primitive() {
+num_primitives=$1
+time_stamp=$(date +%Y_%m_%d__%H_%M_%S)
 ./main_primitives  --dynamics quad2d_v0 \
-                                       --out_file  "../cloud/motionsV2/tmp_quad_2d.bin" \
+                                       --out_file  "data_5/tmp_quad_2d_${time_stamp}.bin" \
                                        --mode_gen_id 0 \
-                                       --max_num_primitives  10  --max_iter 200 --ref_x0 1  --ref_time_steps 300 --weight_goal 400 
+                                       --max_num_primitives $num_primitives  --max_iter 200 --ref_x0 1  --ref_time_steps 300 --weight_goal 400  --time_limit 1e8 --adapt_infeas_primitives true > /dev/null
+}
 
 # Quad 3d
-./main_primitives --dynamics quad3d_v0 --out_file  "../cloud/motionsV2/tmp_quad_3d.bin"  --mode_gen_id 0  --max_num_primitives 10 --max_iter 200 --ref_x0 1  --ref_time_steps 300 --weight_goal 400 
+# 4s= 1primitive
+# quad_3d_primitive() {
+# num_primitives=$1
+# time_stamp=$(date +%Y_%m_%d__%H_%M_%S)
+# ./main_primitives --dynamics quad3d_v0 --out_file  "data_5/tmp_quad_3d_${time_stamp}.bin"  --mode_gen_id 0  --max_num_primitives $num_primitives --max_iter 200 --ref_x0 1  --ref_time_steps 300 --weight_goal 400 --time_limit 1e8 --adapt_infeas_primitives true  > /dev/null
+# }
+
+quad_3d_primitive() {
+num_primitives=$1
+time_stamp=$(date +%Y_%m_%d__%H_%M_%S)
+./main_primitives --dynamics quad3d_v0 --out_file  "data_6/tmp_quad_3d_${time_stamp}.bin"  --mode_gen_id 0  --max_num_primitives $num_primitives --max_iter 200 --ref_x0 1  --ref_time_steps 300 --weight_goal 400 --time_limit 1e8 > /dev/null
+}
+
+
+
+
+# i want 10.000 of each!
+
+# quad_3d_primitive 10
+
+num_primitives=5000
+for i in {1..50}
+do
+  # car_primitive 100  &
+  quad_3d_primitive $num_primitives  &
+  # quad_2d_primitive $num_primitives &
+  # acrobot_primitive $num_primitives &
+sleep 2
+done
+
+
 
 
 
