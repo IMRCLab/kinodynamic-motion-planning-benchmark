@@ -23,6 +23,43 @@ using V4d = Eigen::Vector4d;
 using Vxd = Eigen::VectorXd;
 using V1d = Eigen::Matrix<double, 1, 1>;
 
+namespace crocoddyl {
+
+class CallbackVerboseQ : public CallbackAbstract {
+public:
+  using Traj =
+      std::pair<std::vector<Eigen::VectorXd>, std::vector<Eigen::VectorXd>>;
+  std::vector<Traj> trajs;
+
+  explicit CallbackVerboseQ() = default;
+  ~CallbackVerboseQ() override = default;
+
+  void operator()(SolverAbstract &solver) override {
+    std::cout << "adding trajectory" << std::endl;
+    trajs.push_back(std::make_pair(solver.get_xs(), solver.get_us()));
+  }
+
+  void store() {
+    std::string timestamp = get_time_stamp();
+    std::string folder = "iterations/" + timestamp;
+    std::filesystem::create_directories(folder);
+
+    for (size_t i = 0; i < trajs.size(); i++) {
+      auto &traj = trajs.at(i);
+      Trajectory tt;
+      tt.states = traj.first;
+      tt.actions = traj.second;
+
+      std::stringstream ss;
+      ss << std::setfill('0') << std::setw(4) << i;
+      std::ofstream out(folder + "/it" + ss.str() + ".yaml");
+      tt.to_yaml_format(out);
+    }
+  }
+};
+
+} // namespace crocoddyl
+
 void Options_trajopt::add_options(po::options_description &desc) {
 
   set_from_boostop(desc, VAR_WITH_NAME(rollout_warmstart));
@@ -339,6 +376,12 @@ generate_problem(const Generate_params &gen_args,
       ptr<Cost> state_feature =
           mk<State_cost>(nx, nu, nx, state_weights, state_ref);
       feats_run.push_back(state_feature);
+
+      if (control_mode == Control_Mode::default_mode) {
+        ptr<Cost> acc_cost =
+            mk<Acceleration_cost_quad2d>(gen_args.model_robot, nx, nu);
+        feats_run.push_back(acc_cost);
+      }
     }
     if (startsWith(gen_args.name, "quad3d")) {
       if (control_mode == Control_Mode::default_mode) {
@@ -1099,6 +1142,11 @@ void __trajectory_optimization(const Problem &problem,
                                const Options_trajopt &options_trajopt,
                                Trajectory &traj, Result_opti &opti_out) {
 
+  bool store_iterations = true;
+  CSTR_(store_iterations);
+
+  auto callback_quim = mk<crocoddyl::CallbackVerboseQ>();
+
   {
     Trajectory __init_guess = init_guess;
     __init_guess.start = problem.start;
@@ -1210,7 +1258,7 @@ void __trajectory_optimization(const Problem &problem,
                         "init_guess.yaml");
 
   size_t num_smooth_iterations =
-      dt > .05 ? 10 : 50; // TODO: as option in command line
+      dt > .05 ? 3 : 10; // TODO: as option in command line
 
   // if (startsWith(problem.robotType, "quad3d")) {
   //   for (auto &s : xs_init) {
@@ -1795,6 +1843,9 @@ void __trajectory_optimization(const Problem &problem,
       if (options_trajopt_local.CALLBACKS) {
         std::vector<ptr<crocoddyl::CallbackAbstract>> cbs;
         cbs.push_back(mk<crocoddyl::CallbackVerbose>());
+        if (store_iterations) {
+          cbs.push_back(callback_quim);
+        }
         ddp.setCallbacks(cbs);
       }
 
@@ -1862,6 +1913,10 @@ void __trajectory_optimization(const Problem &problem,
       ddp.solve(xs, us, options_trajopt_local.max_iter, false,
                 options_trajopt_local.init_reg);
       std::cout << "CROCO optimize -- DONE" << std::endl;
+
+      if (store_iterations) {
+        callback_quim->store();
+      }
 
       {
 
@@ -2272,6 +2327,9 @@ void __trajectory_optimization(const Problem &problem,
       if (options_trajopt_local.CALLBACKS) {
         std::vector<ptr<crocoddyl::CallbackAbstract>> cbs;
         cbs.push_back(mk<crocoddyl::CallbackVerbose>());
+        if (store_iterations) {
+          cbs.push_back(callback_quim);
+        }
         ddp.setCallbacks(cbs);
       }
 
@@ -2291,8 +2349,11 @@ void __trajectory_optimization(const Problem &problem,
       ddp.solve(xs, us, options_trajopt_local.max_iter, false,
                 options_trajopt_local.init_reg);
 
-      std::cout << "CROCO optimize -- DONE" << std::endl;
+      if (store_iterations) {
+        callback_quim->store();
+      }
 
+      std::cout << "CROCO optimize -- DONE" << std::endl;
       {
         std::string filename = "opt_" + random_id + ".yaml";
         write_states_controls(ddp.get_xs(), ddp.get_us(), model_robot, problem,
@@ -2403,8 +2464,9 @@ void __trajectory_optimization(const Problem &problem,
 
       std::cout << "before resample " << std::endl;
       std::cout << xs.back().format(FMT) << std::endl;
-      resample_trajectory(xs_out, us_out, xs, us, ts, model_robot->ref_dt,
-                          model_robot->state);
+      Eigen::VectorXd times;
+      resample_trajectory(xs_out, us_out, times, xs, us, ts,
+                          model_robot->ref_dt, model_robot->state);
       std::cout << "after resample " << std::endl;
       std::cout << xs_out.back().format(FMT) << std::endl;
 
@@ -2578,9 +2640,24 @@ void trajectory_optimization(const Problem &problem,
 
   if (init_guess.times.size()) {
     std::cout << "i have time stamps, I resample the trajectory" << std::endl;
+
+    {
+      std::cout << "check for input" << std::endl;
+      Trajectory(init_guess).check(model_robot, true);
+      std::cout << "check for input -- DONE" << std::endl;
+    }
+
     resample_trajectory(tmp_init_guess.states, tmp_init_guess.actions,
-                        init_guess.states, init_guess.actions, init_guess.times,
+                        tmp_init_guess.times, init_guess.states,
+                        init_guess.actions, init_guess.times,
                         model_robot->ref_dt, model_robot->state);
+
+    if (startsWith(problem.robotType, "quad3d")) {
+
+      for (auto &s : tmp_init_guess.states) {
+        s.segment<4>(3).normalize();
+      }
+    }
   }
   CHECK(tmp_init_guess.actions.size(), AT);
   CHECK(tmp_init_guess.states.size(), AT);

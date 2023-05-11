@@ -376,6 +376,7 @@ struct Options_dbastar {
   bool debug = false;
   int limit_branching_factor  = 20;
   bool use_collision_shape  = true;
+  bool always_add = false;
 
   std::vector<Heuristic_node> *heu_map_ptr = nullptr;
   std::string heu_map_file;
@@ -391,7 +392,7 @@ struct Options_dbastar {
 
   void add_options(po::options_description &desc);
 
-  void __load_data(void *source, bool boost, bool write = false);
+  void __load_data(void *source, bool boost, bool write = false, const std::string &be="");
 
   void print(std::ostream &out, const std::string &be = "",
              const std::string &af = ": ") const;

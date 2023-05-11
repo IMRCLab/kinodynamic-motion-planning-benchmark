@@ -2,11 +2,24 @@
 default:
   solver_id: 1
   search_timelimit: 15000 # in ms
+  use_nigh_nn: True # TODO: modify code so that distance function is set at runtime.
 
 # you can set parameters per dynamial system
 unicycle1_v0:
   default:
-    motionsFile: "../cloud/motionsV2/good/unicycle1_v0/unicycle1_v0__ispso__2023_04_03__14_56_57.bin"
+    motionsFile: 
+      "../cloud/motionsV2/good/unicycle1_v0/unicycle1_v0__ispso__2023_04_03__14_56_57.bin.im.bin.im.bin"
+    num_primitives_0: 100
+
+
+unicycle1_v1:
+  default:
+    motionsFile: "../cloud/motionsV2/good/unicycle1_v1/tmp_motions_unicycle1_v1.bin.sp.bin"
+    num_primitives_0: 100
+
+unicycle1_v2:
+  default:
+    motionsFile: "../cloud/motionsV2/good/unicycle1_v2/tmp_motions_unicycle1_v2.bin.sp.bin"
     num_primitives_0: 100
 
   # And also per problem
@@ -14,21 +27,27 @@ unicycle1_v0:
 
 unicycle2_v0:
   default:
-    motionsFile: "../cloud/motionsV2/good/unicycle2_v0/unicycle2_v0__ispso__2023_04_03__15_36_01.bin"
+    delta_0: .5
+    motionsFile: "../cloud/motionsV2/good/unicycle2_v0/unicycle2_v0__ispso__2023_04_03__15_36_01.bin.im.bin.im.bin"
     num_primitives_0: 200
       # unicycle1_v0__ispso__2023_04_03__14_56_57.bin"
 
 quad2d_v0:
+  # ALSO: distance is wrong!!! I should have big number for velocity, and small for rotation and for 
+  # rotational velocity.
   default:
-    # motionsFile: "../cloud/motionsV2/good/quad2d_v0/quad2_all_split_2_sorted.bin"
     motionsFile: "../cloud/motionsV2/good/quad2d_v0/quad2d_v0_all.bin.sp1.bin"
-    # num_primitives_0: 50000
-    # max_motions_primitives: 100000
     num_primitives_0: 5000
-    max_motions_primitives: 10000
+    max_motions_primitives: 100000
     delta_0: .7
     use_nigh_nn: true
-    heuristic: 1
+    weight_goal: 200
+    smooth_traj: true
+    max_iter: 150
+    delta_factor_goal: .7
+  quad2d_recovery_wo_obs:
+    num_primitives_0: 100000 #  I need more!!!
+    delta_0: .4
 
 acrobot_v0:
   default:

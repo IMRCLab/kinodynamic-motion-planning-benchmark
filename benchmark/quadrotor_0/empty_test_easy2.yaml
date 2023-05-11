@@ -9,5 +9,11 @@ robots:
     start: [  0.0, 0.0 ,  0.0 , 0, 0, 0, 1, 0 , 0, 0, 0, 0 ,0 ] 
     # goal: [  0.8, 0.05 ,  0.1 , 0, 0, 0, 1, 0 , .1, 0, 0, 0 ,0 ]  OK
     # goal: [  0.08, 0.05 ,  0.1 , 0, 0, 0, 1, 0 , 0, 0, 0.1, 0 ,0 ]  OK
-    # goal: [  0.07, 0.07 ,  0.07 , 0, 0, 0, 1, 0 , 0, 0, 0, 0 ,0 ]  # in the limit of touching
-    goal: [  0.06, 0.06 ,  0.06 , 0, 0, 0, 1, 0 , 0, 0, 0, 0 ,0 ]  #  NOT saturating the limits.
+    # goal: [  0.08, 0.08 ,  0.08 , 0, 0, 0, 1, 0 , 0, 0, 0, 0 ,0 ]  # in the limit of touching
+    # goal: [  0.09, 0.09 ,  0.09 , 0, 0, 0, 1, 0 , 0, 0, 0, 0 ,0 ]  # in the limit of touching
+    # goal: [  0.1, 0.1 ,  0.1 , 0, 0, 0, 1, 0 , 0, 0, 0, 0 ,0 ]  # in the limit of touching
+    goal: [  0.15, 0.15 ,  0.15 , 0, 0, 0, 1, 0 , 0, 0, 0, 0 ,0 ]  # in the limit of touching
+    # goal: [  0.06, 0.06 ,  0.06 , 0, 0, 0, 1, 0 , 0, 0, 0, 0 ,0 ]  #  NOT saturating the limits.
+    #
+# make -j4 && time  
+# ./croco_main   --env ../benchmark/quadrotor_0/empty_test_easy2.yaml        --init_guess ../benchmark/quadrotor_0/empty_easy_guess_new.yaml    --out out.yaml --solver_id 0 --control_bounds 1 --use_warmstart 1  --weight_goal 300. --max_iter 400  --noise_level 1e-6 --use_finite_diff 1 

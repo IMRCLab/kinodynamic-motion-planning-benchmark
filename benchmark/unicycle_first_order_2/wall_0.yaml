@@ -8,6 +8,6 @@ environment:
       size: [0.2, 1.4]
 
 robots:
-  - type: unicycle_first_order_2
+  - type: unicycle1_v2
     start: [1.5,2.5,0] # x,y,theta
     goal: [3.5,2.5,0] # x,y,theta

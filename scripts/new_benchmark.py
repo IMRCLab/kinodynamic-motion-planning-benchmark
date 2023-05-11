@@ -18,6 +18,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument("-m", "--mode")
 parser.add_argument("-bc", "--bench_cfg")
 parser.add_argument("-d", "--dynamics")
+parser.add_argument("-f", "--file_in")
 
 args = parser.parse_args()
 
@@ -25,6 +26,8 @@ print(args.__dict__)
 
 mode = args.mode
 bench_cfg = args.bench_cfg
+file_in = args.file_in
+dynamics = args.dynamics
 
 MAX_TIME_PLOTS = 40
 
@@ -158,36 +161,19 @@ def create_empty_env(start: List, goal: List, robot_model: str):
     return env
 
 
-with open(bench_cfg) as f:
-    data = yaml.safe_load(f)
-
-print("bench cfg")
-print(data)
-problems = data["problems"]
-algs = data["algs"]
-trials = data["trials"]
-timelimit = data["timelimit"]
-
-
-print(f"problems {problems}")
-print(f"algs {algs}")
-
-
 color_map = {
     "sst_v0": "blue",
     "geo_v0": "green",
     "geo_v1": "red",
     "idbastar_v0": "cyan",
-    "idbastar_v0_heu1" : "yellow",
+    "idbastar_v0_heu1": "yellow",
+    "idbastar_tmp": "deeppink",
     "idbastar_v0_mpcc": "black",
     "idbastar_v0_search": "orange"
 }
 
 
-
-
-
-def get_config(alg: str , dynamics : str , problem : str)  :
+def get_config(alg: str, dynamics: str, problem: str):
 
     base_path_algs = "../algs/"
     file = base_path_algs + alg + ".yaml"
@@ -197,20 +183,17 @@ def get_config(alg: str , dynamics : str , problem : str)  :
         data = yaml.safe_load(f)
     print("data is:\n", data)
 
-
     cfg = {}
-    if  "reference" in  data:
+    if "reference" in data:
         # I have to load another configuration as default
         print("there is a reference!")
         reference = data.get("reference")
         print(f"reference {reference}")
-        cfg = get_config(reference, dynamics  , problem )
-        print( "reference cfg is: " , cfg) 
-
+        cfg = get_config(reference, dynamics, problem)
+        print("reference cfg is: ", cfg)
 
     print(f"dynamics {dynamics}")
     print(f"problem is {problem}")
-
 
     cfg_default = data.get("default")
     cfg_dynamics = data.get(dynamics, {}).get("default", {})
@@ -234,14 +217,11 @@ def get_config(alg: str , dynamics : str , problem : str)  :
     return cfg
 
 
-
-
-
-
-
-
-
-def solve_problem_with_alg(problem: str, alg: str, out: str) -> List[str]:
+def solve_problem_with_alg(
+        problem: str,
+        alg: str,
+        out: str,
+        timelimit: float) -> List[str]:
     # load params
 
     # get the dynamics
@@ -253,8 +233,7 @@ def solve_problem_with_alg(problem: str, alg: str, out: str) -> List[str]:
     dynamics = data_problem["robots"][0]["type"]
     print(f"dynamics {dynamics}")
 
-
-    cfg = get_config(alg, dynamics , problem )
+    cfg = get_config(alg, dynamics, problem)
 
     print("merged cfg\n", cfg)
 
@@ -262,7 +241,6 @@ def solve_problem_with_alg(problem: str, alg: str, out: str) -> List[str]:
 
     with open(cfg_out, "w") as f:
         yaml.dump(cfg, f)
-
 
     if alg.startswith("sst"):
         cmd = [
@@ -301,14 +279,6 @@ def solve_problem_with_alg(problem: str, alg: str, out: str) -> List[str]:
     # print("**\n**\nDONE RUNNING cpp\n**\n")
 
 
-multiprocess = True
-
-
-n_cores = data["n_cores"]
-if n_cores == -1:
-    n_cores = int(multiprocessing.cpu_count() / 2)
-
-
 class Experiment():
     def __init__(self, path, problem, alg):
         self.path = path
@@ -329,7 +299,10 @@ def run_cmd(cmd: str):
         id = str(uuid.uuid4())[:7]
         stdout_name = f"stdout-{id}.log"
         stderr_name = f"stderr-{id}.log"
-        print(*cmd, f"---- stderr_name {stderr_name}   stdout_name {stdout_name} ----")
+        print(
+            *
+            cmd,
+            f"---- stderr_name {stderr_name}   stdout_name {stdout_name} ----")
         f_stdout = open(stdout_name, 'w')
         f_stderr = open(stderr_name, 'w')
         subprocess.run(cmd, stdout=f_stdout, stderr=f_stderr)
@@ -340,7 +313,23 @@ def run_cmd(cmd: str):
     print("**\n**\nDONE RUNNING cpp\n**\n")
 
 
-def benchmark():
+def benchmark(bench_cfg: str):
+
+    with open(bench_cfg) as f:
+        data = yaml.safe_load(f)
+
+    print("bench cfg")
+    print(data)
+    problems = data["problems"]
+    algs = data["algs"]
+    trials = data["trials"]
+    timelimit = data["timelimit"]
+    n_cores = data["n_cores"]
+    if n_cores == -1:
+        n_cores = int(multiprocessing.cpu_count() / 2)
+
+    print(f"problems {problems}")
+    print(f"algs {algs}")
 
     base_path_problem = "../benchmark/"
     folder_results = "../results_new/"
@@ -360,7 +349,7 @@ def benchmark():
             for i in range(trials):
                 out = path + f"/run_{i}_out.yaml"
                 cmd = solve_problem_with_alg(
-                    base_path_problem + problem + ".yaml", alg, out)
+                    base_path_problem + problem + ".yaml", alg, out, timelimit)
                 cmds.append(cmd)
     print("commands are: ")
     for i, cmd in enumerate(cmds):
@@ -389,12 +378,10 @@ def benchmark():
 
 def compare(
         files: List[str],
-        interactive: bool = False,
-        filename: str = "/tmp/tmp_compare.pdf"):
+        interactive: bool = False):
 
     print("calling compare:")
     print(f"files {files}")
-    print(filename)
 
     # load
     datas = []
@@ -440,12 +427,29 @@ def compare(
     date_time = now.strftime("%Y-%m-%d--%H-%M-%S")
     filename_csv = f"../results_new/summary/summary_{date_time}.csv"
 
+    # log file
+
+    filename_csv_log = filename_csv + ".log"
+
+    with open(filename_csv_log, "w") as f:
+        dd = {"input": files, "output": filename_csv}
+        yaml.dump(dd, f)
+
+        # input
+
+        # f.writelines(files)
+        # f.write("---")
+        # f.write(filename_csv)
+
     print("saving reduced data to", filename_csv)
     with open(filename_csv, 'w') as f:
         writer = csv.writer(f)
         writer.writerow(fields)
         for dictionary in reduced_data:
             writer.writerow(dictionary.values())
+
+    import shutil
+    shutil.copy(filename_csv, '/tmp/tmp_reduced_data.csv')
 
     create_latex_table(filename_csv)
 
@@ -458,11 +462,14 @@ def compare(
         "unicycle_first_order_0/parallelpark_0",
         "unicycle_first_order_0/bugtrap_0",
         "unicycle_first_order_0/kink_0",
+        "unicycle_first_order_1/kink_0",
+        "unicycle_first_order_2/wall_0",
         "unicycle_second_order_0/parallelpark_0",
         "unicycle_second_order_0/bugtrap_0",
         "unicycle_second_order_0/kink_0",
         "car_first_order_with_1_trailers_0/bugtrap_0",
         "car_first_order_with_1_trailers_0/parallelpark_0",
+        "car_first_order_with_1_trailers_0/kink_0",
         "quad2d/empty_0",
         "quad2d/quad_obs_column",
         "quad2d/quad2d_recovery_wo_obs",
@@ -470,8 +477,10 @@ def compare(
         "quadrotor_0/empty_0_easy",
         "quadrotor_0/recovery",
         "quadrotor_0/quad_one_obs",
+
         "acrobot/swing_up_empty",
         "acrobot/swing_down_easy",
+        "acrobot/swing_down",
         "car_first_order_with_1_trailers_0/easy_0"]
 
     for problem in all_problems:
@@ -494,8 +503,17 @@ def compare(
 
     from matplotlib.backends.backend_pdf import PdfPages
 
-    print(f"writing pdf to {filename}")
-    pp = PdfPages(filename)
+    filename_pdf = f"../results_new/plots/plot_{date_time}.pdf"
+
+    print(f"writing pdf to {filename_pdf}")
+
+    filename_log_pdf = filename_pdf + ".log"
+
+    with open(filename_log_pdf, "w") as f:
+        dd = {"input": files, "output": filename_pdf}
+        yaml.dump(dd, f)
+
+    pp = PdfPages(filename_pdf)
 
     for problem in all_problems:
 
@@ -535,6 +553,9 @@ def compare(
             pp.savefig(fig)
             plt.close(fig)
     pp.close()
+
+    import shutil
+    shutil.copy(filename_pdf, '/tmp/tmp_compare.pdf')
 
 
 def make_videos(robot: str, problem: str, file: str):
@@ -658,19 +679,21 @@ def analyze_runs(path_to_dir: str,
                  alg: str,
                  visualize: bool, **kwargs) -> Tuple[str, str]:
 
+    print(
+        f"path_to_dir:{path_to_dir}\nproblem:{problem}\nalg:{alg}\nvisualize:{visualize}")
+
     __files = [f for f in pathlib.Path(
         path_to_dir).iterdir() if f.is_file()]
 
     # filter some files out.
 
     files = [f for f in __files if "cfg" not in f.name and "debug" not in f.name and f.suffix ==
-             ".yaml" and "report" not in f.name]
+             ".yaml" and "report" not in f.name and "traj" not in f.name]
 
     print(f"files ", [f.name for f in files])
 
     fig, ax = plt.subplots(2, 1, sharex=True)
     fig.suptitle(problem)
-
 
     T = MAX_TIME_PLOTS  # max time
     dt = 0.1
@@ -710,7 +733,7 @@ def analyze_runs(path_to_dir: str,
     if __where.size > 0:
         time_first_solution = float(dt * (__where[-1] + 1))
 
-    try: 
+    try:
         cost_first_solution = first(mean.tolist(), lambda x: not np.isnan(x))
         last_cost = float(mean[-1])
     except StopIteration:
@@ -923,8 +946,10 @@ def format_latex_str(str_in: str) -> str:
 
     str_ = str_in[:]
 
-    D = {"unicycle_first_order_0": "uni1",
-         "unicycle_second_order_0": "uni2",
+    D = {"unicycle_first_order_0": "uni1_0",
+         "unicycle_first_order_1": "uni1_1",
+         "unicycle_first_order_2": "uni1_2",
+         "unicycle_second_order_0": "uni2_0",
          "parallelpark_0": "park",
          "cost_at": "c",
          "cost_first_solution": "cs",
@@ -943,13 +968,154 @@ def format_latex_str(str_in: str) -> str:
     # should I use the latex output of pandas?
 if __name__ == "__main__":
 
-    # fileout, _ = analyze_runs(path_to_dir="/home/quim/stg/wolfgang/kinodynamic-motion-planning-benchmark/results_new/unicycle_first_order_0/kink_0/sst_v0/2023-04-27--17-34-46/",
-    #                           problem="unicycle_first_order_0/kink_0", alg="sst_v0", visualize=True)
 
+    # path_to_dir= "../results_new/quadrotor_0/recovery/geo_v1/2023-05-11--15-54-45"
+    # problem = "quadrotor_0/recovery"
+    # alg = "geo_v1"
+    # visualize = False
+    # analyze_runs(path_to_dir, problem, alg, visualize) 
+    # sys.exit(0)
+
+
+
+    files = [
+        "../results_new/car_first_order_with_1_trailers_0/kink_0/idbastar_v0/2023-05-10--16-26-38/report.yaml",
+        "../results_new/car_first_order_with_1_trailers_0/kink_0/sst_v0/2023-05-10--16-26-38/report.yaml",
+        "../results_new/car_first_order_with_1_trailers_0/kink_0/geo_v1/2023-05-10--16-26-38/report.yaml",
+        "../results_new/car_first_order_with_1_trailers_0/bugtrap_0/idbastar_v0/2023-05-10--16-26-38/report.yaml",
+        "../results_new/car_first_order_with_1_trailers_0/bugtrap_0/sst_v0/2023-05-10--16-26-38/report.yaml",
+        "../results_new/car_first_order_with_1_trailers_0/bugtrap_0/geo_v1/2023-05-10--16-26-38/report.yaml",
+        "../results_new/car_first_order_with_1_trailers_0/parallelpark_0/idbastar_v0/2023-05-10--16-26-38/report.yaml",
+        "../results_new/car_first_order_with_1_trailers_0/parallelpark_0/sst_v0/2023-05-10--16-26-38/report.yaml",
+        "../results_new/car_first_order_with_1_trailers_0/parallelpark_0/geo_v1/2023-05-10--16-26-38/report.yaml"]
+
+    # files = ['../results_new/unicycle_second_order_0/bugtrap_0/idbastar_v0/2023-05-10--12-51-39/report.yaml', '../results_new/unicycle_second_order_0/bugtrap_0/idbastar_tmp/2023-05-10--12-51-39/report.yaml']
+    #
+    # compare(files )
+    # raise Exception('DONE')
+
+    # fileout, _ = analyze_runs(path_to_dir="/home/quim/stg/wolfgang/kinodynamic-motion-planning-benchmark/results_new/unicycle_first_order_0/kink_0/sst_v0/2023-04-27--17-34-46/",
+    # problem="unicycle_first_order_0/kink_0", alg="sst_v0", visualize=True)
 
     # csv_file = "../results_new/summary/summary_2023-04-27--13-03-13.csv"
     # create_latex_table(csv_file)
     # sys.exit(1)
+
+    do_fancy_table = False
+    if do_fancy_table:
+
+        filenames = ["../results_new/summary/summary_2023-05-10--15-18-08.csv",
+                     "../results_new/summary/summary_2023-05-10--15-41-42.csv"]
+
+        df = pandas.DataFrame()
+
+        for file in filenames:
+            __df = pandas.read_csv(file)
+            df = pandas.concat([df, __df], axis=0)
+
+        def get_data(frame, alg: str, problem: str, field: str, **kwargs):
+            print(alg, problem, field)
+            __f = frame.loc[(frame["alg"] == alg) & (
+                frame["problem"] == problem)].reset_index()
+            print(__f)
+            print("**" + field + "**")
+            return __f[field]
+
+        # buu = get_data(
+        #     df,
+        #     "idbastar_v0",
+        #     "unicycle_first_order_0/parallelpark_0",
+        #     "time_first_solution")
+
+        data = []
+
+        algs = ["idbastar_v0", "sst_v0", "geo_v1"]
+        fields = ["cost_first_solution", "last_cost", "time_first_solution"]
+
+        def get_column_name(alg: str, field: str):
+            token1 = ""
+            if alg == "idbastar_v0":
+                token1 = "i"
+            elif alg == "sst_v0":
+                token1 = "s"
+            elif alg == "geo_v1":
+                token1 = "g"
+            else:
+                raise KeyError(alg)
+            token2 = ""
+            if field == "cost_first_solution":
+                token2 = "cf"
+            elif field == "time_first_solution":
+                token2 = "tf"
+            elif field == "last_cost":
+                token2 = "lc"
+            else:
+                raise KeyError()
+            return token1 + token2
+
+        problems = [
+            "unicycle_first_order_0/bugtrap_0",
+            "unicycle_first_order_0/kink_0",
+            "unicycle_first_order_0/parallelpark_0",
+            "unicycle_second_order_0/bugtrap_0",
+            "unicycle_second_order_0/kink_0",
+            "unicycle_second_order_0/parallelpark_0"]
+
+        # TODO df.problem.unique()
+
+        all_df = pandas.DataFrame()
+
+        for problem in problems:
+            row = []
+            headers = []
+            for alg in algs:
+                for field in fields:
+                    # D = {"alg": alg,
+                    #      "problem": problem,
+                    #      "field": field}
+                    header = get_column_name(alg, field)
+                    headers.append(header)
+                    _data = get_data(df, alg, problem, field)
+                    row.append(_data[0])
+            print("final")
+            print(row)
+            print(headers)
+
+            new_df = pandas.DataFrame([row], columns=headers, index=[problem])
+            print(new_df)
+            all_df = pandas.concat([all_df, new_df], axis=0)
+        print(all_df)
+        all_df.to_csv("tmp.csv")
+        # now i could just export as table!!
+        # CONTINUE HERE!!!
+
+        str_raw = all_df.to_latex(index=True, float_format="{:.1f}".format)
+        str_ = format_latex_str(str_raw)
+
+        lines = str_.splitlines()
+
+        algs = r"&  \multicolumn{3}{c}{idba*} & \multicolumn{3}{c}{sst} & \multicolumn{3}{c}{geo}\\"
+        mid_rules = r"\cmidrule(lr){2-4}\cmidrule(lr){5-7}\cmidrule(lr){8-10}"
+        lines.insert(2, algs)
+        lines.insert(3, mid_rules)
+
+        now = datetime.now()  # current date and time
+        date_time = now.strftime("%Y-%m-%d--%H-%M-%S")
+        fileout = f"../results_new/tex/merged_{date_time}.tex"
+
+        print("saving", fileout)
+
+        with open(fileout, "w") as f:
+            f.write('\n'.join(lines))
+
+        fileout_log = fileout + ".log"
+        print("saving", fileout_log)
+
+        with open(fileout_log, "w") as f:
+            D = {"input": filenames, "output": fileout, "problems": problems}
+            yaml.dump(D, f)
+
+        # LOG
 
     if do_compare:
         # folders = ["geo_v0/04-04-2023--15-59-51",
@@ -965,7 +1131,7 @@ if __name__ == "__main__":
 
         compare(files, interactive=True)
     if do_benchmark:
-        benchmark()
+        benchmark(bench_cfg)
     if do_debug:
         file = "../results_new/unicycle_second_order_0/parallelpark_0/idbastar_v0/04-06-2023--14-52-41/run_1_out.yaml"
         with open(file, "r") as f:
@@ -984,8 +1150,8 @@ if __name__ == "__main__":
         #     motions = yaml.safe_load(f)
         # visualize_primitives(motions, robot, True, "out.pdf");
 
-        file = "../cloud/motionsV2/tmp_quad_2d.bin.yaml"
-        robot = "quad2d"
+        file = file_in
+        robot = dynamics
         with open(file, "r") as f:
             motions = yaml.safe_load(f)
         visualize_primitives(motions, robot, True, "out.pdf")

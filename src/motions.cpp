@@ -148,9 +148,15 @@ void Trajectory::check(std::shared_ptr<Model_robot> &robot, bool verbose) {
   max_collision = check_cols(robot, states);
   Eigen::VectorXd dts;
 
-  if (times.size())
-    dts = times;
-  else {
+  if (times.size()) {
+    CHECK_EQ(static_cast<size_t>(times.size()), states.size(), AT);
+    dts.resize(times.size() - 1);
+    CHECK_GE(times.size(), 1, AT);
+    for (size_t i = 0; i < static_cast<size_t>(times.size() - 1); i++) {
+      dts(i) = times(i + 1) - times(i);
+    }
+
+  } else {
     size_t T = actions.size();
     dts.resize(T);
     dts.setOnes();
@@ -400,7 +406,7 @@ double max_rollout_error(std::shared_ptr<Model_robot> robot,
   for (size_t i = 0; i < N; i++) {
 
     robot->step(xnext, xs.at(i), us.at(i), robot->ref_dt);
-    double d = (xnext - xs.at(i + 1)).norm();
+    double d = robot->distance(xnext, xs.at(i + 1));
 
     if (d > max_error) {
       max_error = d;
@@ -411,6 +417,7 @@ double max_rollout_error(std::shared_ptr<Model_robot> robot,
 
 void resample_trajectory(std::vector<Eigen::VectorXd> &xs_out,
                          std::vector<Eigen::VectorXd> &us_out,
+                         Eigen::VectorXd &times,
                          const std::vector<Eigen::VectorXd> &xs,
                          const std::vector<Eigen::VectorXd> &us,
                          const Eigen::VectorXd &ts, double ref_dt,
@@ -432,6 +439,7 @@ void resample_trajectory(std::vector<Eigen::VectorXd> &xs_out,
   auto ts__ = Eigen::VectorXd::LinSpaced(num_time_steps + 1, 0,
                                          num_time_steps * ref_dt);
 
+  times = ts__;
   std::cout << "taking samples at " << ts__.format(FMT) << std::endl;
 
   std::vector<Eigen::VectorXd> new_xs;

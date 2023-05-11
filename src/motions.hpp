@@ -225,6 +225,7 @@ double max_rollout_error(std::shared_ptr<Model_robot> robot,
 
 void resample_trajectory(std::vector<Eigen::VectorXd> &xs_out,
                          std::vector<Eigen::VectorXd> &us_out,
+                         Eigen::VectorXd& times,
                          const std::vector<Eigen::VectorXd> &xs,
                          const std::vector<Eigen::VectorXd> &us,
                          const Eigen::VectorXd &ts, double ref_dt,

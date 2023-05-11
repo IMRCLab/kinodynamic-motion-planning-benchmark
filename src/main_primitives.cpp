@@ -95,6 +95,12 @@ int main(int argc, const char *argv[]) {
       trajectories.data.resize(options_primitives.max_num_primitives);
     }
 
+    if (out_file == "auto") {
+      out_file = in_file + ".im.bin";
+    }
+
+
+
     // Options_trajopt options_trajopt;
     // options_trajopt.solver_id =
     //     static_cast<int>(SOLVER::traj_opt_free_time_linear);

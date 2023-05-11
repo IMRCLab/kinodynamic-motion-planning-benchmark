@@ -483,7 +483,7 @@ BOOST_AUTO_TEST_CASE(test_bugtrap_heu) {
   Options_dbastar options_dbastar;
   options_dbastar.search_timelimit = 1e5; // in ms
   options_dbastar.max_motions = 1000;
-  options_dbastar.heuristic = 0;
+  options_dbastar.heuristic = 1;
   options_dbastar.motionsFile = "../cloud/motionsV2/good/unicycle1_v0/"
                                 "unicycle1_v0__ispso__2023_04_03__14_56_57.bin";
   options_dbastar.max_size_heu_map = 500;
@@ -495,6 +495,29 @@ BOOST_AUTO_TEST_CASE(test_bugtrap_heu) {
   CSTR_(out_info_db.cost);
   BOOST_TEST(out_info_db.cost < 30.);
 }
+
+BOOST_AUTO_TEST_CASE(test_bugtrap) {
+
+  Problem problem("../benchmark/unicycle_first_order_0/bugtrap_0.yaml");
+  Options_dbastar options_dbastar;
+  options_dbastar.search_timelimit = 1e5; // in ms
+  options_dbastar.max_motions = 1000;
+  options_dbastar.heuristic = 0;
+  options_dbastar.motionsFile = "../cloud/motionsV2/good/unicycle1_v0/"
+                                "unicycle1_v0__ispso__2023_04_03__14_56_57.bin";
+  options_dbastar.max_size_heu_map = 500;
+  options_dbastar.use_nigh_nn = 0;
+  options_dbastar.cost_delta_factor = 1; // equivalent number of expands, maybe more clean!!
+  options_dbastar.always_add = 1; // very, very slow!! 
+  Out_info_db out_info_db;
+  Trajectory traj_out;
+  dbastar(problem, options_dbastar, traj_out, out_info_db);
+  BOOST_TEST(out_info_db.solved);
+  CSTR_(out_info_db.cost);
+  BOOST_TEST(out_info_db.cost < 30.);
+}
+
+
 
 BOOST_AUTO_TEST_CASE(parallel_park_1) {
 
@@ -784,6 +807,11 @@ BOOST_AUTO_TEST_CASE(t_bug2) {
     BOOST_TEST(out_db.cost_with_delta_time < 70);
   }
 }
+
+
+
+
+
 
 // CONTINUE HERE -- visualization and primitives for 3d case!!
 

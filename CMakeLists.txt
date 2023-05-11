@@ -340,6 +340,7 @@ target_include_directories(test_db
   PRIVATE ${CMAKE_BINARY_DIR}/deps/fcl/include
   PRIVATE ${CMAKE_SOURCE_DIR}/deps/fcl/include
   src
+  PRIVATE deps/nigh/src
 )
 
 

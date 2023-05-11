@@ -17,6 +17,9 @@ build_debug/
 .cache/
 .nvimrc
 *.mp4
+*.pdf
+*.log
+*.txt
 compile_commands.json
 pyrightconfig.json
 

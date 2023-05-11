@@ -38,7 +38,6 @@ int main(int argc, const char *argv[]) {
   Trajectories trajectories_all;
   for (auto &file : files) {
     Trajectories trajectories;
-    trajectories.load_file_boost(file.c_str());
 
     try {
       trajectories.load_file_yaml(file.c_str());
@@ -54,6 +53,14 @@ int main(int argc, const char *argv[]) {
                                  trajectories.data.end());
     CSTR_(trajectories_all.data.size());
   }
+
+  const bool shuffle = true;
+  if (shuffle) {
+    std::random_device rd;
+    std::mt19937 g(rd());
+    std::shuffle(trajectories_all.data.begin(), trajectories_all.data.end(), g);
+  }
+
   trajectories_all.save_file_boost(out_file.c_str());
   trajectories_all.save_file_yaml((out_file + ".yaml").c_str());
 }

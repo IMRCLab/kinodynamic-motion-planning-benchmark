@@ -3318,3 +3318,38 @@ BOOST_AUTO_TEST_CASE(test_quad3d_recovery_mpcc) {
     traj_out.to_yaml_format(out);
   }
 }
+
+BOOST_AUTO_TEST_CASE(test_quad2d_recovery_new) {
+
+  // Trajectory traj_in, traj_out;
+  // traj_in.read_from_yaml("../unittest/traj_db_quad2d_recovery.yaml");
+
+  Trajectory traj_in, traj_out;
+  traj_in.read_from_yaml("../unittest/traj_db_quad2d_recovery_2.yaml");
+
+  Problem problem("../benchmark/quad2d/quad2d_recovery_wo_obs.yaml");
+
+  std::shared_ptr<Model_robot> robot =
+      std::make_shared<Model_quad2d>("../models/quad2d_v0.yaml");
+
+  traj_in.start = problem.start;
+  traj_in.goal = problem.goal;
+  traj_in.check(robot, true);
+
+  Options_trajopt options_trajopt;
+  options_trajopt.solver_id = 0;
+  options_trajopt.max_iter = 200;
+  options_trajopt.weight_goal = 200;
+  options_trajopt.smooth_traj = true;
+  options_trajopt.linear_search = true;
+
+  Result_opti opti_out;
+
+  trajectory_optimization(problem, traj_in, options_trajopt, traj_out,
+                          opti_out);
+
+  {
+    std::ofstream out("out_opt.yaml");
+    traj_out.to_yaml_format(out);
+  }
+}

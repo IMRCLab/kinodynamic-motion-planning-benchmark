@@ -104,8 +104,7 @@ void idbA(const Problem &problem, const Options_idbAStar &options_idbas,
     non_counter_time += __after_t - __pre_t - out_info_db.time_search;
     CSTR_(non_counter_time);
     traj_db.time_stamp = get_time_stamp_ms() - non_counter_time;
-
-    // info_out_idbastar.trajs_raw.push_back(traj_db);
+    info_out_idbastar.trajs_raw.push_back(traj_db);
 
     if (out_info_db.solved) {
       {

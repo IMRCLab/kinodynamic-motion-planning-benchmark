@@ -199,7 +199,7 @@ void solve_ompl_geometric(const Problem &problem,
 
   // lets print all the paths
 
-  info_out_omplgeo.solved = solved;
+  // info_out_omplgeo.solved = solved;
 
   if (solved) {
     std::cout << "Found solution:" << std::endl;

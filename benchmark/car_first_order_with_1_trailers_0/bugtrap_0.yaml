@@ -18,6 +18,6 @@ environment:
       center: [1.5, 1.95]
       size: [0.2, 1.1]
 robots:
-  - type: car_first_order_with_1_trailers_0
+  - type: car1_v0
     start: [3.4,3,3.14,3.14] # x,y,theta0,theta1
     goal: [5.2,3,1.55,1.55] # x,y,theta0,theta1

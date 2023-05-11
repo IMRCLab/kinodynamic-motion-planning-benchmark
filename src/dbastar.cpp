@@ -887,13 +887,15 @@ struct Loader {
 };
 
 // TODO: how to unify: write form boost and write from yaml?
-void Options_dbastar::__load_data(void *source, bool boost, bool write) {
+void Options_dbastar::__load_data(void *source, bool boost, bool write,
+                                  const std::string &be) {
 
   Loader loader;
   loader.use_boost = boost;
   loader.print = write;
   loader.source = source;
 
+  loader.set(VAR_WITH_NAME(always_add));
   loader.set(VAR_WITH_NAME(use_collision_shape));
   loader.set(VAR_WITH_NAME(delta));
   loader.set(VAR_WITH_NAME(epsilon));
@@ -935,7 +937,7 @@ void Options_dbastar::print(std::ostream &out, const std::string &be,
                             const std::string &af) const {
 
   auto ptr = const_cast<Options_dbastar *>(this);
-  ptr->__load_data(&out, false, true);
+  ptr->__load_data(&out, false, true, be);
 }
 
 void Options_dbastar::read_from_yaml(const char *file) {
@@ -2394,7 +2396,11 @@ void dbastar(const Problem &problem, const Options_dbastar &options_dbastar,
   double min_distance_to_goal = std::numeric_limits<double>::max();
   ob::State *best_state = si->getStateSpace()->allocState();
 
+  // TODO: do we need a close list?
+  std::vector<AStarNode *> closed_list;
+
   while (true) {
+    // TODO: add the cost of applying the primitive!!
 
     if (static_cast<size_t>(time_bench.expands) >=
         options_dbastar_local.max_expands) {
@@ -2433,6 +2439,7 @@ void dbastar(const Problem &problem, const Options_dbastar &options_dbastar,
     }
 
     AStarNode *current = open.top();
+    closed_list.push_back(current);
     open.pop();
     // std::cout << "current state ";
     // printState(std::cout, si, current->state);
@@ -2498,7 +2505,6 @@ void dbastar(const Problem &problem, const Options_dbastar &options_dbastar,
     }
 
     if (distance_to_goal <=
-
         options_dbastar_local.delta_factor_goal * options_dbastar_local.delta) {
       solution = current;
       std::cout << "current state is " << std::endl;
@@ -2573,6 +2579,7 @@ void dbastar(const Problem &problem, const Options_dbastar &options_dbastar,
       fcl::Vector3d offset(0., 0., 0.);
       fcl::Vector3d computed_offset(0., 0., 0.);
       fcl::Vector3d current_pos(0., 0., 0.);
+
       double tentative_gScore = current->gScore + motion->cost;
       si->copyState(tmpState, motion->states.back());
 
@@ -2646,10 +2653,13 @@ void dbastar(const Problem &problem, const Options_dbastar &options_dbastar,
 
         nearestR_state_timed(query_n, neighbors_n);
 
-        if (neighbors_n.size() == 0 && !options_dbastar_local.use_landmarks) {
+        if ((neighbors_n.size() == 0 && !options_dbastar_local.use_landmarks) ||
+            options_dbastar_local.always_add) {
 
           bool add_node = true;
 
+          CHECK((duplicate_detection == Duplicate_detection::NO), AT);
+#if 0
           if (duplicate_detection == Duplicate_detection::HARD ||
               duplicate_detection == Duplicate_detection::SOFT) {
 
@@ -2682,6 +2692,7 @@ void dbastar(const Problem &problem, const Options_dbastar &options_dbastar,
               }
             }
           }
+#endif
 
           if (add_node) {
             auto node = new AStarNode();
@@ -2702,6 +2713,11 @@ void dbastar(const Problem &problem, const Options_dbastar &options_dbastar,
           // T_n->nearestR(query_n, radius, neighbors_n);
           // check if we have a better path now
           bool added = false;
+          bool test_equivalence_class = false;
+          if (test_equivalence_class) {
+            CHECK(false, AT);
+          }
+
           for (AStarNode *entry : neighbors_n) {
 
             if (options_dbastar_local.debug) {
