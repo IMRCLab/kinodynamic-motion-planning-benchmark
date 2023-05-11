@@ -309,7 +309,7 @@ bool Model_robot::collision_check(const Eigen::Ref<const Eigen::VectorXd> &x) {
 
   for (size_t i = 0; i < collision_geometries.size(); i++) {
 
-    fcl::Transform3d &result = ts_data[i];
+    fcl::Transform3d result = ts_data[i];
     assert(collision_geometries[i]);
     fcl::CollisionObject co(collision_geometries[i]);
 
@@ -477,6 +477,27 @@ void Model_robot::collision_distance_diff(
 //   xnext(2) = angle_out;
 // }
 
+double Model_robot::cost(const Eigen::Ref<const Eigen::VectorXd> &x,
+                         const Eigen::Ref<const Eigen::VectorXd> &u) const {
+  // default cost is time
+
+  (void)x;
+  (void)u;
+  return ref_dt;
+}
+
+double Model_robot::traj_cost(const std::vector<Eigen::VectorXd> &xs,
+                              const std::vector<Eigen::VectorXd> &us) const {
+
+  CHECK((xs.size() == us.size() || xs.size() == us.size() + 1), AT);
+  double c = 0;
+
+  for (size_t i = 0; i < us.size(); i++) {
+    c += cost(xs[i], us[i]);
+  }
+  return c;
+}
+
 void Model_robot::calcV(Eigen::Ref<Eigen::VectorXd> v,
                         const Eigen::Ref<const Eigen::VectorXd> &d,
                         const Eigen::Ref<const Eigen::VectorXd> &u) {
@@ -615,6 +636,12 @@ void linearInterpolation(const Eigen::VectorXd &times,
   // CHECK_GEQ(t_query + num_tolerance, times.head(1)(0), AT);
   assert(static_cast<size_t>(times.size()) == static_cast<size_t>(x.size()));
 
+  if (times.size() == 1) {
+    CHECK_EQ(x.size(), 1, AT);
+    out = x.front();
+    return;
+  }
+
   size_t index = 0;
   if (t_query < times(0)) {
     std::cout << "WARNING: " << AT << std::endl;
@@ -648,6 +675,10 @@ void linearInterpolation(const Eigen::VectorXd &times,
   }
 
   //  i have to refactor this!
+
+  // CSTR_V(times);
+  // CSTR_(index);
+  // CSTR_(t_query);
 
   double factor =
       (t_query - times(index - 1)) / (times(index) - times(index - 1));

@@ -1,0 +1,9 @@
+# general parameters, all systems and problems
+reference: idbastar_v0
+
+default: 
+  dummy: 0
+
+unicycle2_v0:
+  default:
+    delta_0: .5

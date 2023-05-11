@@ -69,7 +69,7 @@ BOOST_AUTO_TEST_CASE(t_split) {
       "motions__unicycle1_v0__02-04-2023--17-20-20.bin");
   size_t num_translation = 2;
   Options_primitives options_primitives;
-  split_motion_primitives(trajectories, num_translation, trajectories_out,
+  split_motion_primitives(trajectories, dynamics, trajectories_out,
                           options_primitives);
 
   // check that they are valid...

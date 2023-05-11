@@ -1,15 +1,15 @@
 l1: 1
 l2: 1
 lc1: 0.5
-lc2:  0.5
+lc2: 0.5
 m1: 1
 m2: 1
-I1:  0.33333 # 1. / 3. * m1 * l1 * l1; // Inertia w.r.t to PIVOT
+I1: 0.33333 # 1. / 3. * m1 * l1 * l1; // Inertia w.r.t to PIVOT
 I2: 0.33333 # 1. / 3. * m2 * l2 * l2;
 max_angular_vel: 8
-max_angular_acc: 10
-distance_weights: [1., 1., 0.2, 0.2]
-max_torque: 10
+# max_angular_vel: 6
+max_angular_acc: 10 # only used for computing time bounds
+distance_weights: [0.5, 0.5, 0.2]
+max_torque: 10 
 dynamics: acrobot
-# TODO: collisions
 

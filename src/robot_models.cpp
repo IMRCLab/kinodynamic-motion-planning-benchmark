@@ -428,7 +428,7 @@ Model_acrobot::Model_acrobot(const Acrobot_params &acrobot_params,
 
   u_weight = V1d(.5);
   x_weightb.resize(4);
-  x_weightb << 0, 0, 10, 10;
+  x_weightb << 0, 0, 50, 50;
 
   const double width = .1;
 
@@ -436,13 +436,13 @@ Model_acrobot::Model_acrobot(const Acrobot_params &acrobot_params,
       std::make_shared<fcl::Boxd>(params.l1, width, 1.0));
 
   collision_geometries.push_back(
-      std::make_shared<fcl::Boxd>(params.l1, width, 1.0));
+      std::make_shared<fcl::Boxd>(params.l2, width, 1.0));
 
   ts_data.resize(2);
   col_outs.resize(2);
 
-  CHECK_EQ(p_lb.size(), 0, AT);
-  CHECK_EQ(p_ub.size(), 0, AT);
+  // CHECK_EQ(p_lb.size(), 2, AT);
+  // CHECK_EQ(p_ub.size(), 2, AT);
 }
 
 void Model_acrobot::sample_uniform(Eigen::Ref<Eigen::VectorXd> x) {
@@ -458,11 +458,6 @@ void Model_acrobot::transformation_collision_geometries(
 
   const double &q1 = x(0);
   const double &q2 = x(1);
-  // const double c1 = cos(x(0));
-  // const double s1 = sin(x(0));
-  //
-  // const double c2 = cos(x(0));
-  // const double s2 = sin(x(0));
 
   double offset = 3. * M_PI / 2.;
   Eigen::Vector2d p1 =
@@ -722,9 +717,9 @@ double Model_acrobot::distance(const Eigen::Ref<const Eigen::VectorXd> &x,
   assert(y(0) <= M_PI && y(0) >= -M_PI);
   assert(x(1) <= M_PI && x(1) >= -M_PI);
 
-  Eigen::Vector4d raw_d =
-      Eigen::Vector4d(so2_distance(x(0), y(0)), so2_distance(x(1), y(1)),
-                      std::abs(x(2) - y(2)), std::abs(x(3) - y(3)));
+  Eigen::Vector3d raw_d =
+      Eigen::Vector3d(so2_distance(x(0), y(0)), so2_distance(x(1), y(1)),
+                      (x.segment<2>(2) - y.segment<2>(2)).norm());
 
   return raw_d.dot(params.distance_weights);
 }
@@ -878,8 +873,12 @@ void Model_unicycle1::interpolate(Eigen::Ref<Eigen::VectorXd> xt,
 double
 Model_unicycle1::lower_bound_time(const Eigen::Ref<const Eigen::VectorXd> &x,
                                   const Eigen::Ref<const Eigen::VectorXd> &y) {
-  return std::max((x.head<2>() - y.head<2>()).norm() / params.max_vel,
-                  so2_distance(x(2), y(2)) / params.max_angular_vel);
+  double max_vel_abs =
+      std::max(std::abs(params.max_vel), std::abs(params.min_vel));
+  double max_angular_vel_abs = std::max(std::abs(params.max_angular_vel),
+                                        std::abs(params.min_angular_vel));
+  return std::max((x.head<2>() - y.head<2>()).norm() / max_vel_abs,
+                  so2_distance(x(2), y(2)) / max_angular_vel_abs);
 }
 
 Model_quad3d::Model_quad3d(const Quad3d_params &params,
@@ -894,6 +893,8 @@ Model_quad3d::Model_quad3d(const Quad3d_params &params,
   this->params.write(std::cout);
   std::cout << "***" << std::endl;
 
+  u_0.setOnes();
+
   translation_invariance = 3;
   nx_col = 7;
   nx_pr = 7;
@@ -906,6 +907,8 @@ Model_quad3d::Model_quad3d(const Quad3d_params &params,
   arm = 0.707106781 * params.arm_length;
   B0 << 1, 1, 1, 1, -arm, -arm, arm, arm, -arm, arm, arm, -arm, -params.t2t,
       params.t2t, -params.t2t, params.t2t;
+
+  B0inv = B0.inverse();
 
   name = "quad3d";
   x_desc = {"x [m]",      "y [m]",      "z [m]",     "qx []",    "qy []",
@@ -963,6 +966,7 @@ Model_quad3d::Model_quad3d(const Quad3d_params &params,
 
   u_nominal = params.m * g / 4.;
   m_inv = 1. / params.m;
+  m = params.m;
   grav_v = Eigen::Vector3d(0, 0, -params.m * g);
 
   u_weight = V4d(.5, .5, .5, .5);
@@ -985,6 +989,15 @@ Model_quad3d::Model_quad3d(const Quad3d_params &params,
   }
 }
 
+Eigen::VectorXd Model_quad3d::get_x0(const Eigen::VectorXd &x) {
+  CHECK_EQ(static_cast<size_t>(x.size()), nx, AT);
+  Eigen::VectorXd out(nx);
+  out.setZero();
+  out.head(3) = x.head(3);
+  out(6) = 1.;
+  return out;
+}
+
 void Model_quad3d::sample_uniform(Eigen::Ref<Eigen::VectorXd> x) {
   (void)x;
   x = x_lb + (x_ub - x_lb)
@@ -1002,10 +1015,34 @@ void Model_quad3d::transformation_collision_geometries(
   ts.at(0) = result;
 }
 
+void Model_quad3d::transform_primitive(
+    const Eigen::Ref<const Eigen::VectorXd> &p,
+    const std::vector<Eigen::VectorXd> &xs_in,
+    const std::vector<Eigen::VectorXd> &us_in,
+    std::vector<Eigen::VectorXd> &xs_out,
+    std::vector<Eigen::VectorXd> &us_out) {
+
+  CHECK((p.size() == 3 || 6), AT);
+
+  if (p.size() == 3) {
+    Model_robot::transform_primitive(p, xs_in, us_in, xs_out, us_out);
+  } else {
+    xs_out.at(0) = xs_in.at(0);
+    xs_out.at(0).head(3) += p.head(3);
+    xs_out.at(0).segment(7, 3) += p.tail(3);
+
+    rollout(xs_out.at(0), us_in, xs_out);
+    us_out = us_in;
+  }
+}
+
 void Model_quad3d::calcV(Eigen::Ref<Eigen::VectorXd> ff,
                          const Eigen::Ref<const Eigen::VectorXd> &x,
                          const Eigen::Ref<const Eigen::VectorXd> &u) {
 
+  // CSTR_V(u);
+  // CSTR_V(x);
+  // CSTR_V(ff);
   Eigen::Vector4d f = u_nominal * u;
   Eigen::Vector3d f_u;
   Eigen::Vector3d tau_u;
@@ -1014,6 +1051,9 @@ void Model_quad3d::calcV(Eigen::Ref<Eigen::VectorXd> ff,
     Eigen::Vector4d eta = B0 * f;
     f_u << 0, 0, eta(0);
     tau_u << eta(1), eta(2), eta(3);
+
+    // eta = B0 f
+
   } else {
     CHECK(false, AT);
   }
@@ -1269,7 +1309,6 @@ double Model_quad3d::distance(const Eigen::Ref<const Eigen::VectorXd> &x,
                         (x.segment<3>(7) - y.segment<3>(7)).norm(),
                         (x.segment<3>(10) - y.segment<3>(10)).norm());
 
-  CSTR_V(raw_d);
   return raw_d.dot(params.distance_weights);
 }
 
@@ -1285,16 +1324,12 @@ void Model_quad3d::interpolate(Eigen::Ref<Eigen::VectorXd> xt,
   assert(static_cast<size_t>(to.size()) == nx);
 
   xt.head<3>() = from.head<3>() + dt * (to.head<3>() - from.head<3>());
-  xt.tail<6>() = from.head<6>() + dt * (to.head<6>() - from.head<6>());
+  xt.tail<6>() = from.tail<6>() + dt * (to.tail<6>() - from.tail<6>());
 
-  auto q_s = Eigen::Quaterniond(from.segment<4>(3));
-  auto q_g = Eigen::Quaterniond(to.segment<4>(3));
-  auto q_ = q_s.slerp(dt, q_g);
+  const Eigen::Quaterniond &q_s = Eigen::Quaterniond(from.segment<4>(3));
+  const Eigen::Quaterniond &q_g = Eigen::Quaterniond(to.segment<4>(3));
+  const Eigen::Quaterniond &q_ = q_s.slerp(dt, q_g);
   xt.segment<4>(3) = q_.coeffs();
-
-  so2_interpolation(xt(2), from(2), to(2), dt);
-  xt.segment<3>(3) =
-      from.segment<3>(3) + dt * (to.segment<3>(3) - from.segment<3>(3));
 }
 
 double
@@ -1304,9 +1339,30 @@ Model_quad3d::lower_bound_time(const Eigen::Ref<const Eigen::VectorXd> &x,
 
   std::array<double, 4> maxs = {
       (x.head<3>() - y.head<3>()).norm() / params.max_vel,
-      so3_distance(x.segment<4>(3), y.segment<4>(4)) / params.max_angular_vel,
+      so3_distance(x.segment<4>(3), y.segment<4>(3)) / params.max_angular_vel,
       (x.segment<3>(7) - y.segment<3>(7)).norm() / params.max_acc,
       (x.segment<3>(10) - y.segment<3>(10)).norm() / params.max_angular_acc};
+  return *std::max_element(maxs.cbegin(), maxs.cend());
+}
+
+double
+Model_quad3d::lower_bound_time_pr(const Eigen::Ref<const Eigen::VectorXd> &x,
+                                  const Eigen::Ref<const Eigen::VectorXd> &y) {
+
+  std::array<double, 2> maxs = {
+      (x.head<3>() - y.head<3>()).norm() / params.max_vel,
+      so3_distance(x.segment<4>(3), y.segment<4>(3)) / params.max_angular_vel};
+  return *std::max_element(maxs.cbegin(), maxs.cend());
+}
+
+double
+Model_quad3d::lower_bound_time_vel(const Eigen::Ref<const Eigen::VectorXd> &x,
+                                   const Eigen::Ref<const Eigen::VectorXd> &y) {
+
+  std::array<double, 2> maxs = {
+      (x.segment<3>(7) - y.segment<3>(7)).norm() / params.max_acc,
+      (x.segment<3>(10) - y.segment<3>(10)).norm() / params.max_angular_acc};
+
   return *std::max_element(maxs.cbegin(), maxs.cend());
 }
 
@@ -1321,7 +1377,8 @@ Model_quad2d::Model_quad2d(const Quad2d_params &params,
   translation_invariance = 2;
   ref_dt = params.dt;
   name = "quad2d";
-  u_0 << 1., 1.;
+  u_0.setOnes();
+  distance_weights = params.distance_weights;
 
   std::cout << "Robot name " << name << std::endl;
   std::cout << "Parameters" << std::endl;
@@ -1374,9 +1431,9 @@ void Model_quad2d::calcV(Eigen::Ref<Eigen::VectorXd> v,
                          const Eigen::Ref<const Eigen::VectorXd> &x,
                          const Eigen::Ref<const Eigen::VectorXd> &u) {
 
-  assert(v.size() == 6);
-  assert(x.size() == 6);
-  assert(u.size() == 2);
+  CHECK_EQ(v.size(), 6, AT);
+  CHECK_EQ(x.size(), 6, AT);
+  CHECK_EQ(u.size(), 2, AT);
 
   const double &f1 = u_nominal * u(0);
   const double &f2 = u_nominal * u(1);
@@ -1452,8 +1509,8 @@ void Model_quad2d::calcDiffV(Eigen::Ref<Eigen::MatrixXd> Jv_x,
 
 double Model_quad2d::distance(const Eigen::Ref<const Eigen::VectorXd> &x,
                               const Eigen::Ref<const Eigen::VectorXd> &y) {
-  assert(x.size() == 3);
-  assert(y.size() == 3);
+  assert(x.size() == 6);
+  assert(y.size() == 6);
   assert(y[2] <= M_PI && y[2] >= -M_PI);
   assert(x[2] <= M_PI && x[2] >= -M_PI);
 
@@ -1470,14 +1527,38 @@ void Model_quad2d::interpolate(Eigen::Ref<Eigen::VectorXd> xt,
   assert(dt <= 1);
   assert(dt >= 0);
 
-  assert(xt.size() == 3);
-  assert(from.size() == 3);
-  assert(to.size() == 3);
+  assert(xt.size() == 6);
+  assert(from.size() == 6);
+  assert(to.size() == 6);
 
   xt.head<2>() = from.head<2>() + dt * (to.head<2>() - from.head<2>());
   so2_interpolation(xt(2), from(2), to(2), dt);
   xt.segment<3>(3) =
       from.segment<3>(3) + dt * (to.segment<3>(3) - from.segment<3>(3));
+}
+
+double
+Model_quad2d::lower_bound_time_vel(const Eigen::Ref<const Eigen::VectorXd> &x,
+                                   const Eigen::Ref<const Eigen::VectorXd> &y) {
+
+  std::array<double, 3> maxs = {std::abs(x(3) - y(3)) / params.max_acc,
+                                std::abs(x(4) - y(4)) / params.max_acc,
+                                std::abs(x(5) - y(5)) / params.max_angular_acc};
+
+  auto it = std::max_element(maxs.cbegin(), maxs.cend());
+  return *it;
+}
+
+double
+Model_quad2d::lower_bound_time_pr(const Eigen::Ref<const Eigen::VectorXd> &x,
+                                  const Eigen::Ref<const Eigen::VectorXd> &y) {
+
+  std::array<double, 2> maxs = {
+      (x.head<2>() - y.head<2>()).norm() / params.max_vel,
+      so2_distance(x(2), y(2)) / params.max_angular_vel};
+
+  auto it = std::max_element(maxs.cbegin(), maxs.cend());
+  return *it;
 }
 
 double

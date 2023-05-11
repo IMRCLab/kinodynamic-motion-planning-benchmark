@@ -1,18 +1,102 @@
+# general parameters, all systems and problems
 default:
   solver_id: 1
-  dummy: 0
-  bu: 0
+  search_timelimit: 15000 # in ms
+  use_nigh_nn: True # TODO: modify code so that distance function is set at runtime.
 
 # you can set parameters per dynamial system
 unicycle1_v0:
   default:
-    dummy: 2
-    bu: 1
+    motionsFile: 
+      "../cloud/motionsV2/good/unicycle1_v0/unicycle1_v0__ispso__2023_04_03__14_56_57.bin.im.bin.im.bin"
+    num_primitives_0: 100
+
+
+unicycle1_v1:
+  default:
+    motionsFile: "../cloud/motionsV2/good/unicycle1_v1/tmp_motions_unicycle1_v1.bin.sp.bin"
+    num_primitives_0: 100
+
+unicycle1_v2:
+  default:
+    motionsFile: "../cloud/motionsV2/good/unicycle1_v2/tmp_motions_unicycle1_v2.bin.sp.bin"
+    num_primitives_0: 100
 
   # And also per problem
-  parallelpark:
-    dummy: 3
-    buu: 2
+  # parallelpark:
+
+unicycle2_v0:
+  default:
+    delta_0: .5
+    motionsFile: "../cloud/motionsV2/good/unicycle2_v0/unicycle2_v0__ispso__2023_04_03__15_36_01.bin.im.bin.im.bin"
+    num_primitives_0: 200
+      # unicycle1_v0__ispso__2023_04_03__14_56_57.bin"
+
+quad2d_v0:
+  # ALSO: distance is wrong!!! I should have big number for velocity, and small for rotation and for 
+  # rotational velocity.
+  default:
+    motionsFile: "../cloud/motionsV2/good/quad2d_v0/quad2d_v0_all.bin.sp1.bin"
+    num_primitives_0: 5000
+    max_motions_primitives: 100000
+    delta_0: .7
+    use_nigh_nn: true
+    weight_goal: 200
+    smooth_traj: true
+    max_iter: 150
+    delta_factor_goal: .7
+  quad2d_recovery_wo_obs:
+    num_primitives_0: 100000 #  I need more!!!
+    delta_0: .4
+
+acrobot_v0:
+  default:
+    # option to not use collitions in db search
+    max_iter: 200
+    weight_goal: 500
+    smooth_traj: true
+    delta_factor_goal: .7
+    # solver_id: 0 # TODO: check why Jacobians are not working with free time!
+    solver_id: 0
+    linear_search: true
+    use_nigh_nn: true # library for knn 
+    # motionsFile: "../cloud/motionsV2/good/acrobot_v0/acrobot_v0_all.bin.sp.bin.so.bin"
+    motionsFile: "../cloud/motionsV2/good/acrobot_v0/acrobot_v0_all2.bin.sp.bin"
+    num_primitives_0: 100000
+    max_motions_primitives: 200000
+    check_cols: false
+    delta_0: .35
+
+quad3d_v0:
+  default:
+    # option to not use collitions in db search
+    max_iter: 200
+    weight_goal: 400
+    smooth_traj: true
+    delta_factor_goal: .5
+    solver_id: 0
+    use_nigh_nn: true # library for knn 
+    # motionsFile: "../cloud/motionsV2/good/quad3d_v0/quad3d_v0_all.bin.sp.bin"
+    motionsFile: "../cloud/motionsV2/good/quad3d_v0/quad3d_v0_sp1_merged.bin"
+    # motionsFile: "../cloud/motionsV2/good/quad3d_v0/quad3d_v0_all.bin.sp.bin.c10000.bin"
+    num_primitives_0: 120000
+    max_motions_primitives: 500000
+    check_cols: false
+    delta_0: .9
+    # heuristic: 1
+    # heu_connection_radius: 3 #otherwise sample are not connected
+  quad_one_obs:
+    check_cols: true
+    # num_primitives_0: 1000
+    # max_motions_primitives: 10000
+
+
+car1_v0:
+  default:
+    use_nigh_nn: true
+    motionsFile: "../cloud/motionsV2/good/car1_v0/car1_v0_all.bin.sp.bin"
+    num_primitives_0: 2000
+    max_motions_primitives: 20000
 
 
 

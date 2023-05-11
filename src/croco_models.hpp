@@ -505,6 +505,37 @@ struct Acceleration_cost_acrobot : Cost {
                         const Eigen::Ref<const Eigen::VectorXd> &u) override;
 };
 
+struct Acceleration_cost_quad2d : Cost {
+
+  std::shared_ptr<Model_robot> model;
+
+  double k_acc = .01;
+  Eigen::Matrix<double, 6, 1> f;
+  Eigen::Vector3d acc;
+  Eigen::Matrix<double, 3, 2> acc_u;
+  Eigen::Matrix<double, 3, 6> acc_x;
+
+  Eigen::Matrix<double, 6, 6> Jv_x;
+  Eigen::Matrix<double, 6, 2> Jv_u;
+
+  Acceleration_cost_quad2d(const std::shared_ptr<Model_robot> &model_robot,
+                           size_t nx, size_t nu);
+
+  virtual ~Acceleration_cost_quad2d() = default;
+
+  virtual void calc(Eigen::Ref<Eigen::VectorXd> r,
+                    const Eigen::Ref<const Eigen::VectorXd> &x,
+                    const Eigen::Ref<const Eigen::VectorXd> &u) override;
+
+  virtual void calcDiff(Eigen::Ref<Eigen::VectorXd> Lx,
+                        Eigen::Ref<Eigen::VectorXd> Lu,
+                        Eigen::Ref<Eigen::MatrixXd> Lxx,
+                        Eigen::Ref<Eigen::MatrixXd> Luu,
+                        Eigen::Ref<Eigen::MatrixXd> Lxu,
+                        const Eigen::Ref<const Eigen::VectorXd> &x,
+                        const Eigen::Ref<const Eigen::VectorXd> &u) override;
+};
+
 struct Contour_cost_alpha_x : Cost {
 
   double k = 1.5; // bigger than 0

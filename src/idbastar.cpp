@@ -1,6 +1,12 @@
 
 #include "idbastar.hpp"
 
+// int main(int argc, char *argv[]) {
+//     srand((unsigned)time(NULL) * getpid());
+//     std::cout << gen_random(12) << "\n";
+//     return 0;
+// }
+
 // TODO
 // give options to load primitives and heuristic map only once.
 // cli to create and store a heuristic map for a robot in an environment.
@@ -28,7 +34,8 @@ void idbA(const Problem &problem, const Options_idbAStar &options_idbas,
     load_motion_primitives_new(options_dbastar_local.motionsFile,
                                *robot_factory_ompl(problem), motions,
                                options_idbas.max_motions_primitives,
-                               options_dbastar_local.cut_actions, true);
+                               options_dbastar_local.cut_actions, true,
+                               options_dbastar_local.check_cols);
   }
   options_dbastar_local.motions_ptr = &motions;
   std::cout << "Loading motion primitives -- DONE " << std::endl;
@@ -45,6 +52,8 @@ void idbA(const Problem &problem, const Options_idbAStar &options_idbas,
       // there is not
       generate_heuristic_map(problem, robot_factory_ompl(problem),
                              options_dbastar_local, heu_map);
+      std::cout << "writing heu map " << std::endl;
+      write_heu_map(heu_map, "tmp_heu_map.yaml");
     }
     options_dbastar_local.heu_map_ptr = &heu_map;
   }
@@ -64,9 +73,11 @@ void idbA(const Problem &problem, const Options_idbAStar &options_idbas,
 
   size_t num_solutions = 0;
 
+  double non_counter_time = 0;
+
   while (!finished) {
 
-    // TODO: implemente the original schedule of
+    // TODO: implement also the original schedule of
 
     if (options_idbas.new_schedule) {
       if (it == 0) {
@@ -86,18 +97,29 @@ void idbA(const Problem &problem, const Options_idbAStar &options_idbas,
 
     Trajectory traj_db, traj;
     Out_info_db out_info_db;
+    double __pre_t = get_time_stamp_ms();
     dbastar(problem, options_dbastar_local, traj_db, out_info_db);
-    traj_db.time_stamp = get_time_stamp_ms();
+    std::cout << "warning: using as time only the search!" << std::endl;
+    double __after_t = get_time_stamp_ms();
+    non_counter_time += __after_t - __pre_t - out_info_db.time_search;
+    CSTR_(non_counter_time);
+    traj_db.time_stamp = get_time_stamp_ms() - non_counter_time;
     info_out_idbastar.trajs_raw.push_back(traj_db);
 
     if (out_info_db.solved) {
+      {
+        std::string filename = "trajdb_" + gen_random(6) + ".yaml";
+        std::cout << "saving traj db file " << filename << std::endl;
+        std::ofstream traj_db_out(filename);
+        traj_db.to_yaml_format(traj_db_out);
+      }
 
       Result_opti result;
       std::cout << "***Trajectory Optimization -- START ***" << std::endl;
       trajectory_optimization(problem, traj_db, options_trajopt, traj, result);
       std::cout << "***Trajectory Optimization -- DONE ***" << std::endl;
 
-      traj.time_stamp = get_time_stamp_ms();
+      traj.time_stamp = get_time_stamp_ms() - non_counter_time;
       info_out_idbastar.trajs_opt.push_back(traj);
 
       if (traj.feasible) {
@@ -106,11 +128,15 @@ void idbA(const Problem &problem, const Options_idbAStar &options_idbas,
 
         std::cout << "we have a feasible solution! Cost: " << traj.cost
                   << std::endl;
-        std::cout << "best cost " << info_out_idbastar.cost << std::endl;
 
         if (traj.cost < info_out_idbastar.cost) {
           info_out_idbastar.cost = traj.cost;
           traj_out = traj;
+        }
+
+        // add primitives
+        if (options_idbas.add_primitives_opt) {
+          NOT_IMPLEMENTED;
         }
       }
     }

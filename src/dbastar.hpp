@@ -111,40 +111,19 @@ protected:
   const typename ompl::NearestNeighbors<_T>::DistanceFunction &distFun_;
 };
 
-std::ostream &printState(std::ostream &stream, const std::vector<double> &x);
-
-std::ostream &printState(std::ostream &stream,
-                         std::shared_ptr<ompl::control::SpaceInformation> si,
-                         const ob::State *state,
-                         bool add_brackets_comma = true);
-
-// void ompl::base::StateSpace::copyFromReals(
-//     State *destination, const std::vector<double> &reals) const;
-
-void copyFromRealsControl(std::shared_ptr<ompl::control::SpaceInformation> si,
-                          oc::Control *out, const std::vector<double> &reals);
-
-oc::Control *
-allocAndFillControl(std::shared_ptr<ompl::control::SpaceInformation> si,
-                    const YAML::Node &node);
-
-std::ostream &printAction(std::ostream &stream,
-                          std::shared_ptr<ompl::control::SpaceInformation> si,
-                          oc::Control *action);
-
 struct HeuNodeWithIndex {
 
   int index;
   const ob::State *state;
   double dist;
-  const ob::State *get_first_state() { return state; }
+  const ob::State *get_first_state() const { return state; }
 };
 
 struct HeuNode {
   const ob::State *state;
   double dist;
 
-  const ob::State *get_first_state() { return state; }
+  const ob::State *get_first_state() const { return state; }
 };
 
 class Motion {
@@ -164,7 +143,7 @@ public:
   void print(std::ostream &out,
              std::shared_ptr<ompl::control::SpaceInformation> &si);
 
-  const ob::State *get_first_state() {
+  const ob::State *get_first_state() const {
     assert(states.size());
     return states.front();
   }
@@ -354,6 +333,7 @@ struct Out_info_db {
   bool solved = 0;
   double cost_with_delta_time = -1;
   void print(std::ostream &out);
+  double time_search = -1;
   // void add_options(po::options_description &desc);
   // void read_from_yaml(YAML::Node &node);
   // void read_from_yaml(const char *file);
@@ -375,7 +355,7 @@ struct Options_dbastar {
   std::string motionsFile = "";
   std::vector<Motion> *motions_ptr = nullptr; // pointer to loaded motions
   std::string outFile = "out.yaml";
-  bool filterDuplicates = true;
+  bool filterDuplicates = false; // very expensive in high dim systems!
   bool primitives_new_format = true; // (false=Format of IROS 22)
   float maxCost = std::numeric_limits<float>::infinity();
   int heuristic = 0;
@@ -394,6 +374,10 @@ struct Options_dbastar {
   double epsilon_soft_duplicate = 1.5;
   bool add_node_if_better = false;
   bool debug = false;
+  int limit_branching_factor  = 20;
+  bool use_collision_shape  = true;
+  bool always_add = false;
+
   std::vector<Heuristic_node> *heu_map_ptr = nullptr;
   std::string heu_map_file;
   bool add_after_expand = false; // this does not improve cost of closed nodes.
@@ -404,16 +388,14 @@ struct Options_dbastar {
   double search_timelimit = 1e4; // in ms
   double heu_connection_radius = 1;
   bool use_nigh_nn = false;
+  bool check_cols = true;
 
   void add_options(po::options_description &desc);
 
-  void __load_data(void *source, bool boost, bool write = false);
+  void __load_data(void *source, bool boost, bool write = false, const std::string &be="");
 
   void print(std::ostream &out, const std::string &be = "",
              const std::string &af = ": ") const;
-
-  void print_nonconst(std::ostream &out, const std::string &be = "",
-                      const std::string &af = ": ");
 
   void __read_from_node(const YAML::Node &node);
   void read_from_yaml(YAML::Node &node);
@@ -558,7 +540,7 @@ void dbastar(const Problem &problem, const Options_dbastar &options_dbastar,
 void load_motion_primitives_new(const std::string &motionsFile,
                                 RobotOmpl &robot, std::vector<Motion> &motions,
                                 int max_motions, bool cut_actions,
-                                bool shuffle);
+                                bool shuffle, bool compute_col);
 
 void write_heu_map(const std::vector<Heuristic_node> &heu_map, const char *file,
                    const char *header = nullptr);

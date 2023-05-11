@@ -26,6 +26,35 @@ template <typename T, typename... Args> auto mk(Args &&...args) {
   return boost::make_shared<T>(std::forward<Args>(args)...);
 }
 
+inline std::string gen_random(const int len) {
+  static const char alphanum[] = "0123456789"
+                                 "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+                                 "abcdefghijklmnopqrstuvwxyz";
+  std::string tmp_s;
+  tmp_s.reserve(len);
+
+  for (int i = 0; i < len; ++i) {
+    tmp_s += alphanum[rand() % (sizeof(alphanum) - 1)];
+  }
+
+  return tmp_s;
+}
+
+void inline load_matrix(std::istream &in,
+                        std::vector<std::vector<double>> &out) {
+
+  std::string line;
+  while (std::getline(in, line)) {
+    std::istringstream iss(line);
+    std::string token;
+    std::vector<double> v;
+    while (std::getline(iss, token, ' ')) {
+      v.push_back(std::stod(token));
+    }
+    out.push_back(v);
+  }
+}
+
 template <class T>
 void print_matrix(std::ostream &out, const std::vector<std::vector<T>> &data) {
 
@@ -175,7 +204,29 @@ std::vector<Eigen::VectorXd> inline yaml_node_to_xs(const YAML::Node &node) {
   return xs;
 }
 
-template <typename T> void print_vec(const T *a, size_t n, bool eof = true) {
+template <typename T>
+void print_vec(const T *a, size_t n, std::ostream &out = std::cout,
+               bool eol = true, const char *s = "[", const char *sep = ", ",
+               const char *e = "]") {
+  out << s;
+
+  if (n == 0) {
+    out << e;
+  }
+
+  else {
+    out << a[0];
+    for (size_t i = 1; i < n; i++) {
+      out << sep << a[i];
+    }
+    out << e;
+  }
+
+  if (eol)
+    out << std::endl;
+}
+
+template <typename T> void print_vec2(const T *a, size_t n, bool eof = true) {
   for (size_t i = 0; i < n; i++) {
     std::cout << a[i] << " ";
   }
@@ -199,3 +250,38 @@ bool inline hasEnding(std::string const &fullString,
     return false;
   }
 }
+
+template <typename T, typename Rep, typename Period>
+T duration_cast(const std::chrono::duration<Rep, Period> &duration) {
+  return duration.count() * static_cast<T>(Period::num) /
+         static_cast<T>(Period::den);
+}
+
+template <typename Clock = std::chrono::steady_clock> class Stopwatch {
+  typename Clock::time_point last_;
+
+public:
+  Stopwatch() : last_(Clock::now()) {}
+
+  void reset() { *this = Stopwatch(); }
+
+  typename Clock::duration elapsed() const { return Clock::now() - last_; }
+
+  typename Clock::duration tick() {
+    auto now = Clock::now();
+    auto elapsed = now - last_;
+    last_ = now;
+    return elapsed;
+  }
+
+  double elapsed_s() const {
+
+    auto out = elapsed();
+    return duration_cast<double>(out);
+  }
+
+  double elapsed_ms() const {
+    auto out = elapsed();
+    return duration_cast<double>(out) * 1000;
+  }
+};

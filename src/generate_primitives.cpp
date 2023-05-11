@@ -4,18 +4,29 @@
 #include "ocp.hpp"
 
 void sort_motion_primitives(
-    const Trajectories &trajs, Trajectories &trajs_out,
+    const Trajectories &__trajs, Trajectories &trajs_out,
     std::function<double(const Eigen::VectorXd &, const Eigen::VectorXd &)>
         distance_fun,
     int top_k) {
+
+  Trajectories trajs = __trajs;
+
+  for (auto &t : trajs.data) {
+    if (!t.start.size()) {
+      CHECK(t.states.size(), AT);
+      t.start = t.states.front();
+    }
+    if (!t.goal.size()) {
+      CHECK(t.states.size(), AT);
+      t.goal = t.states.back();
+    }
+  }
 
   if (top_k == -1 || top_k > static_cast<int>(trajs.data.size())) {
     top_k = trajs.data.size();
   }
 
   for (const auto &traj : trajs.data) {
-    // CSTR_V(traj.states.front());
-    // CSTR_V(traj.start);
     CHECK_LEQ((traj.states.front() - traj.start).norm(), 1e-8, AT);
     CHECK_LEQ((traj.states.back() - traj.goal).norm(), 1e-8, AT);
   }
@@ -92,9 +103,11 @@ void sort_motion_primitives(
   }
 }
 
-void split_motion_primitives(const Trajectories &in, size_t num_translation,
-                             Trajectories &out,
+void split_motion_primitives(const Trajectories &in,
+                             const std::string &dynamics, Trajectories &out,
                              const Options_primitives &options_primitives) {
+
+  auto robot = robot_factory(robot_type_to_path(dynamics).c_str());
 
   std::random_device rd;  // a seed for the random number engine
   std::mt19937 gen(rd()); // Standard mersenne_twister_engine seeded with rd()
@@ -116,15 +129,23 @@ void split_motion_primitives(const Trajectories &in, size_t num_translation,
       size_t start = distrib_start(gen);
       size_t length = distrib_length(gen);
 
-      if (j == 0) {
-        // I always generate one primitive with the original start!
-        start = 0;
-      }
       if (start + length > T) {
         start = T - length;
       }
 
+      if (j == 0) {
+        // I always generate one primitive with the original start!
+        start = 0;
+      }
+
+      else if (j == 1) {
+        // the second primitive contains the goal
+        start = T - length;
+      }
+
       Trajectory new_traj;
+      std::cout << "i: " << i << " "
+                << "start: " << start << " length:" << length << std::endl;
       new_traj.states = std::vector<Eigen::VectorXd>{
           traj.states.begin() + start,
           traj.states.begin() + start + length + 1};
@@ -134,51 +155,78 @@ void split_motion_primitives(const Trajectories &in, size_t num_translation,
       Eigen::VectorXd first_state = new_traj.states.front();
 
       for (auto &state : new_traj.states) {
-        state.head(num_translation) -= first_state.head(num_translation);
+        state.head(robot->translation_invariance) -=
+            first_state.head(robot->translation_invariance);
       }
 
       new_traj.start = new_traj.states.front();
       new_traj.goal = new_traj.states.back();
-      // TODO: add cost!!
-
+      new_traj.cost = robot->traj_cost(new_traj.states, new_traj.actions);
+      new_traj.info = "i:" + std::to_string(i) + "-s:" + std::to_string(start) +
+                      "-l:" + std::to_string(length);
       out.data.push_back(new_traj);
     }
   }
 }
 
 void improve_motion_primitives(const Options_trajopt &options_trajopt,
-                               const Trajectories &trajs_in,
+                               const Trajectories &__trajs_in,
                                const std::string &dynamics,
                                Trajectories &trajs_out) {
 
+  auto robot_model = robot_factory(robot_type_to_path(dynamics).c_str());
+
+  Trajectories trajs_in = __trajs_in;
+  size_t num_improves = 0;
   for (size_t i = 0; i < trajs_in.data.size(); i++) {
 
     auto &traj = trajs_in.data.at(i);
+    // make sure that trajectories have a cost...
+
+    if (traj.cost > 1e3) {
+      traj.cost = robot_model->traj_cost(traj.states, traj.actions);
+    }
 
     Problem problem;
     Trajectory traj_out;
     CHECK(traj.states.size(), AT);
     CHECK(traj.actions.size(), AT);
-    problem.goal = traj.states.at(0);
-    ;
-    problem.start = traj.states.back();
+    traj.to_yaml_format(std::cout);
+    problem.goal = traj.states.back();
+    problem.start = traj.states.front();
     problem.robotType = dynamics;
 
     Result_opti opti_out;
     trajectory_optimization(problem, traj, options_trajopt, traj_out, opti_out);
 
     CHECK_EQ(opti_out.feasible, traj_out.feasible, AT);
+    if (traj_out.feasible) {
+      CHECK_LEQ(
+          std::abs(traj_out.cost -
+                   robot_model->traj_cost(traj_out.states, traj_out.actions)),
+          1e-10, AT);
+    }
+
+    // traj.cost = robot_model->traj_cost(traj.states, traj.actions);
+    //
+    //
+    //        model->traj_cos traj_out.cost);
 
     CSTR_(traj_out.feasible);
-    if (traj_out.feasible && traj_out.cost <= traj.cost) {
+    std::cout << "Previous cost: " << traj.cost << std::endl;
+    std::cout << "New cost: " << traj_out.cost << std::endl;
+    if (traj_out.feasible && traj_out.cost + 1e-5 < traj.cost) {
       std::cout << "we have a better trajectory!" << std::endl;
       CSTR_(traj_out.cost);
       CSTR_(traj.cost);
       trajs_out.data.push_back(traj_out);
+      num_improves++;
     } else {
       trajs_out.data.push_back(traj);
     }
   }
+  std::cout << "input trajectories: " << trajs_in.data.size() << std::endl;
+  std::cout << "num improves: " << num_improves << std::endl;
 }
 
 void generate_primitives(const Options_trajopt &options_trajopt,

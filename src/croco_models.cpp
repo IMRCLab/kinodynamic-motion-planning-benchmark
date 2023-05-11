@@ -388,11 +388,19 @@ void Contour_cost_x::calcDiff(Eigen::Ref<Eigen::VectorXd> Lx,
     path->interpolate(alpha, last_out, last_J);
   }
 
+  // TODO check if this works correctly for SO(2)?
+
   __Jx.block(0, 0, nx - 1, nx - 1).diagonal() = -weight * Vxd::Ones(nx - 1);
   __Jx.block(0, nx - 1, nx - 1, 1) = weight * last_J;
 
   __r = weight * (last_out - x.head(nx - 1));
   // std::cout << "calcDiff __r: " << __r.format(FMT) << std::endl;
+  //
+
+  // CSTR_V((__r));
+  // CSTR_V((__Jx));
+  // CSTR_V((__r.transpose() * __Jx));
+
   Lx += __r.transpose() * __Jx;
 
   Lxx += __Jx.transpose() * __Jx;
@@ -1259,6 +1267,12 @@ void Quad3d_acceleration_cost::calcDiff(
 Acceleration_cost_acrobot::Acceleration_cost_acrobot(size_t nx, size_t nu)
     : Cost(nx, nu, 2) {
   name = "acceleration";
+
+  acc_u.setZero();
+  acc_x.setZero();
+  Jv_x.setZero();
+  Jv_u.setZero();
+  f.setZero();
 }
 
 void Acceleration_cost_acrobot::calc(
@@ -1282,12 +1296,56 @@ void Acceleration_cost_acrobot::calcDiff(
   acc_x = Jv_x.block<2, 4>(2, 0);
   acc_u = Jv_u.block<2, 1>(2, 0);
 
-  Lx += k_acc * k_acc * acc.transpose() * acc_x;
-  Lu += k_acc * k_acc * acc.transpose() * acc_u;
+  const double k_acc2 = k_acc * k_acc;
+  Lx += k_acc2 * acc.transpose() * acc_x;
+  Lu += k_acc2 * acc.transpose() * acc_u;
 
-  Lxx += k_acc * k_acc * acc_x.transpose() * acc_x;
-  Luu += k_acc * k_acc * acc_u.transpose() * acc_u;
-  Lxu += k_acc * k_acc * acc_x.transpose() * acc_u;
+  Lxx += k_acc2 * acc_x.transpose() * acc_x;
+  Luu += k_acc2 * acc_u.transpose() * acc_u;
+  Lxu += k_acc2 * acc_x.transpose() * acc_u;
+}
+
+Acceleration_cost_quad2d::Acceleration_cost_quad2d(
+    const std::shared_ptr<Model_robot> &model_robot, size_t nx, size_t nu)
+    : Cost(nx, nu, 3), model(model_robot) {
+  name = "acceleration";
+  acc_u.setZero();
+  acc_x.setZero();
+  Jv_x.setZero();
+  Jv_u.setZero();
+  f.setZero();
+}
+
+void Acceleration_cost_quad2d::calc(
+    Eigen::Ref<Eigen::VectorXd> r, const Eigen::Ref<const Eigen::VectorXd> &x,
+    const Eigen::Ref<const Eigen::VectorXd> &u) {
+
+  model->calcV(f, x, u);
+  acc = f.tail<3>();
+  r = k_acc * acc;
+}
+
+void Acceleration_cost_quad2d::calcDiff(
+    Eigen::Ref<Eigen::VectorXd> Lx, Eigen::Ref<Eigen::VectorXd> Lu,
+    Eigen::Ref<Eigen::MatrixXd> Lxx, Eigen::Ref<Eigen::MatrixXd> Luu,
+    Eigen::Ref<Eigen::MatrixXd> Lxu, const Eigen::Ref<const Eigen::VectorXd> &x,
+    const Eigen::Ref<const Eigen::VectorXd> &u) {
+
+  model->calcV(f, x, u);
+  acc = f.tail<3>();
+
+  model->calcDiffV(Jv_x, Jv_u, x, u);
+
+  acc_x = Jv_x.block<3, 6>(3, 0);
+  acc_u = Jv_u.block<3, 2>(3, 0);
+
+  const double k_acc2 = k_acc * k_acc;
+  Lx += k_acc2 * acc.transpose() * acc_x;
+  Lu += k_acc2 * acc.transpose() * acc_u;
+
+  Lxx += k_acc2 * acc_x.transpose() * acc_x;
+  Luu += k_acc2 * acc_u.transpose() * acc_u;
+  Lxu += k_acc2 * acc_x.transpose() * acc_u;
 }
 
 Dynamics::Dynamics(std::shared_ptr<Model_robot> robot_model,

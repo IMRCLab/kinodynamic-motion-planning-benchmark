@@ -300,7 +300,7 @@ struct Acrobot_params {
 
   double distance_weight_angular_vel = .2;
   double max_torque = 10;
-  Eigen::Vector4d distance_weights = Eigen::Vector4d(1, 1, .2, .2);
+  Eigen::Vector3d distance_weights = Eigen::Vector3d(.5, .5, .2);
 
   void read_from_yaml(YAML::Node &node);
   void read_from_yaml(const char *file);
@@ -347,6 +347,11 @@ struct Model_acrobot : Model_robot {
                 const Eigen::VectorXd &p_ub = Eigen::VectorXd());
 
   virtual void write_params(std::ostream &out) override { params.write(out); }
+
+  virtual void set_0_velocity(Eigen::Ref<Eigen::VectorXd> x) override {
+    x(2) = 0;
+    x(3) = 0;
+  }
 
   virtual void sample_uniform(Eigen::Ref<Eigen::VectorXd> x) override;
 
@@ -592,11 +597,16 @@ struct Model_quad3d : Model_robot {
   Eigen::Matrix<double, 12, 13> Jv_x;
   Eigen::Matrix<double, 12, 4> Jv_u;
 
+  virtual void set_0_velocity(Eigen::Ref<Eigen::VectorXd> x) override {
+    x.segment<6>(7).setZero();
+  }
+
   double arm;
   double g = 9.81;
 
   double u_nominal;
   double m_inv;
+  double m;
   Eigen::Vector3d inverseJ_v;
 
   Eigen::Matrix3d inverseJ_M;
@@ -608,12 +618,15 @@ struct Model_quad3d : Model_robot {
   Eigen::Vector3d grav_v;
 
   Eigen::Matrix4d B0;
+  Eigen::Matrix4d B0inv;
 
   Matrix34 Fu_selection;
   Matrix34 Ftau_selection;
 
   Matrix34 Fu_selection_B0;
   Matrix34 Ftau_selection_B0;
+
+  const bool adapt_vel = true;
 
   Model_quad3d(const Model_quad3d &) = default;
 
@@ -628,13 +641,62 @@ struct Model_quad3d : Model_robot {
 
   virtual void write_params(std::ostream &out) override { params.write(out); }
 
-  virtual Eigen::VectorXd get_x0(const Eigen::VectorXd &x) override {
-    CHECK_EQ(static_cast<size_t>(x.size()), nx, AT);
-    Eigen::VectorXd out(nx);
-    out.setZero();
-    out.head(3) = x.head(3);
-    out(6) = 1.;
-    return out;
+  virtual Eigen::VectorXd get_x0(const Eigen::VectorXd &x) override;
+
+  virtual void
+  motorForcesFromThrust(Eigen::Ref<Eigen::VectorXd> f,
+                        const Eigen::Ref<const Eigen::VectorXd> tm) {
+
+    // Eigen::Vector4d eta = B0 * u_nominal * f;
+    // f_u << 0, 0, eta(0);
+    // tau_u << eta(1), eta(2), eta(3);
+    f = B0inv * tm / u_nominal;
+  }
+
+  virtual void
+  transform_primitive(const Eigen::Ref<const Eigen::VectorXd> &p,
+                      const std::vector<Eigen::VectorXd> &xs_in,
+                      const std::vector<Eigen::VectorXd> &us_in,
+                      std::vector<Eigen::VectorXd> &xs_out,
+                      std::vector<Eigen::VectorXd> &us_out) override;
+
+  virtual void offset(const Eigen::Ref<const Eigen::VectorXd> &xin,
+                      Eigen::Ref<Eigen::VectorXd> p) override {
+    CHECK_EQ(p.size(), 6, AT);
+    if (adapt_vel) {
+      p.head<3>() = xin.head<3>();
+      p.tail<3>() = xin.segment<3>(7);
+    } else {
+      Model_robot::offset(xin, p);
+    }
+  }
+
+  virtual size_t get_offset_dim() override { return adapt_vel ? 6 : 3; }
+
+  virtual void canonical_state(const Eigen::Ref<const Eigen::VectorXd> &xin,
+                               Eigen::Ref<Eigen::VectorXd> xout) override {
+    const bool adapt_vel = true;
+
+    if (adapt_vel) {
+      xout = xin;
+      xout.head<3>().setZero();
+      xout.segment<3>(7).setZero();
+    } else {
+      Model_robot::canonical_state(xin, xout);
+    }
+  }
+
+  virtual void transform_state(const Eigen::Ref<const Eigen::VectorXd> &p,
+                               const Eigen::Ref<const Eigen::VectorXd> &xin,
+                               Eigen::Ref<Eigen::VectorXd> xout) override {
+
+    CHECK((p.size() == 3 || p.size() == 6), AT);
+    if (p.size() == 3) {
+      Model_robot::transform_state(p, xin, xout);
+    } else if (p.size() == 6) {
+      xout.head<3>() += p.head<3>();
+      xout.segment<3>(7) += p.tail<3>();
+    }
   }
 
   virtual void calcV(Eigen::Ref<Eigen::VectorXd> f,
@@ -677,21 +739,11 @@ struct Model_quad3d : Model_robot {
 
   virtual double
   lower_bound_time_pr(const Eigen::Ref<const Eigen::VectorXd> &x,
-                      const Eigen::Ref<const Eigen::VectorXd> &y) override {
-
-    (void)x;
-    (void)y;
-    NOT_IMPLEMENTED;
-  }
+                      const Eigen::Ref<const Eigen::VectorXd> &y) override;
 
   virtual double
   lower_bound_time_vel(const Eigen::Ref<const Eigen::VectorXd> &x,
-                       const Eigen::Ref<const Eigen::VectorXd> &y) override {
-
-    (void)x;
-    (void)y;
-    NOT_IMPLEMENTED;
-  }
+                       const Eigen::Ref<const Eigen::VectorXd> &y) override;
 };
 
 struct Quad2d_params {
@@ -783,6 +835,12 @@ struct Model_quad2d : Model_robot {
 
   virtual void write_params(std::ostream &out) override { params.write(out); }
 
+  virtual void set_0_velocity(Eigen::Ref<Eigen::VectorXd> x) override {
+    x(3) = 0;
+    x(4) = 0;
+    x(5) = 0;
+  }
+
   virtual Eigen::VectorXd get_x0(const Eigen::VectorXd &x) override {
     CHECK_EQ(static_cast<size_t>(x.size()), nx, AT);
     Eigen::VectorXd out(nx);
@@ -816,21 +874,11 @@ struct Model_quad2d : Model_robot {
 
   virtual double
   lower_bound_time_pr(const Eigen::Ref<const Eigen::VectorXd> &x,
-                      const Eigen::Ref<const Eigen::VectorXd> &y) override {
-
-    (void)x;
-    (void)y;
-    NOT_IMPLEMENTED;
-  }
+                      const Eigen::Ref<const Eigen::VectorXd> &y) override;
 
   virtual double
   lower_bound_time_vel(const Eigen::Ref<const Eigen::VectorXd> &x,
-                       const Eigen::Ref<const Eigen::VectorXd> &y) override {
-
-    (void)x;
-    (void)y;
-    NOT_IMPLEMENTED;
-  }
+                       const Eigen::Ref<const Eigen::VectorXd> &y) override;
 };
 
 struct Unicycle2_params {
@@ -875,6 +923,11 @@ struct Model_unicycle2 : Model_robot {
                   const Eigen::VectorXd &p_ub = Eigen::VectorXd()
 
   );
+
+  virtual void set_0_velocity(Eigen::Ref<Eigen::VectorXd> x) override {
+    x(3) = 0;
+    x(4) = 0;
+  }
 
   virtual void write_params(std::ostream &out) override { params.write(out); }
 

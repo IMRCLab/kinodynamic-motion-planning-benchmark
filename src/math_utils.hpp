@@ -207,6 +207,7 @@ void inline __get_quat_from_ang_vel_time(
 
   // v = theta * u ( theta \in R , u \in R^3 with ||u||=1)
   // u = v /  || v||
+  // theta is ||v||
   // q = Exp( theta * u ) = e^( theta * u / 2 ) = cos( theta / 2 ) + u sin(
   // theta / 2 )
   //
@@ -223,7 +224,7 @@ void inline __get_quat_from_ang_vel_time(
   //
   double threshold_use_taylor = 1e-6;
   if (theta < threshold_use_taylor) {
-    std::cout << "very small theta " << theta << std::endl;
+    // std::cout << "very small theta " << theta << std::endl;
     q.head<3>() = v * (.5 - theta * theta / 48.);
     q(3) = std::cos(.5 * theta);
 
@@ -500,8 +501,10 @@ void inline so2_interpolation(double &state, double from, double to, double t) {
 
 double inline so3_distance(Eigen::Vector4d x, Eigen::Vector4d y) {
   double max_quaternion_norm_error = 1e-7;
-  assert(std::abs(x.norm() - 1) < max_quaternion_norm_error);
-  assert(std::abs(y.norm() - 1) < max_quaternion_norm_error);
+  // CSTR_V(x);
+  // CSTR_V(y);
+  CHECK_LEQ(std::abs(x.norm() - 1), max_quaternion_norm_error, AT);
+  CHECK_LEQ(std::abs(y.norm() - 1), max_quaternion_norm_error, AT);
   double dq = std::fabs(x.dot(y));
   if (dq > 1.0 - max_quaternion_norm_error)
     return 0.0;
@@ -528,4 +531,29 @@ inline double norm_sq(double *x, size_t n) {
     out += x[i] * x[i];
   }
   return out;
+}
+
+double inline l2_squared(const double *v, const double *w, size_t n) {
+  double out = 0.;
+  for (size_t i = 0; i < n; i++) {
+    out += (v[i] - w[i]) * (v[i] - w[i]);
+  }
+  return out;
+}
+
+double inline l2(const double *v, const double *w, size_t n) {
+  return std::sqrt(l2_squared(v, w, n));
+}
+
+void inline element_wise(double *y, const double *x, const double *r,
+                         size_t n) {
+  for (size_t i = 0; i < n; i++) {
+    y[i] = x[i] * r[i];
+  }
+}
+
+void inline element_wise(double *y, const double *r, size_t n) {
+  for (size_t i = 0; i < n; i++) {
+    y[i] *= r[i];
+  }
 }
