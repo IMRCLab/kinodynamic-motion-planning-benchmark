@@ -237,6 +237,9 @@ void generate_primitives(const Options_trajopt &options_trajopt,
 
     std::vector<double> try_rates{.5, 1., 2.};
 
+    bool is_first = true;
+    bool solved = false;
+    Trajectory traj_first;
     for (const auto &try_rate : try_rates) {
       Trajectory init_guess;
       init_guess.num_time_steps =
@@ -248,17 +251,32 @@ void generate_primitives(const Options_trajopt &options_trajopt,
       trajectory_optimization(problem, init_guess, options_trajopt, traj,
                               opti_out);
 
+      if (is_first) {
+        traj_first = traj;
+        is_first = false;
+      }
+
       if (opti_out.feasible) {
+        solved = true;
         CHECK(traj.states.size(), AT);
         traj.start = traj.states.front();
         traj.goal = traj.states.back();
         trajectories.data.push_back(traj);
         break;
       } else {
-        if (options_primitives.adapt_infeas_primitives) {
-          ERROR_WITH_INFO("not implemented");
-        }
+        // if (options_primitives.adapt_infeas_primitives) {
+        //   ERROR_WITH_INFO("not implemented");
+        // }
       }
+    }
+
+    if (!solved && options_primitives.adapt_infeas_primitives) {
+      std::cout << "adapting a motion primitive" << std::endl;
+      CHECK(traj_first.states.size(), AT);
+      CHECK(traj_first.actions.size(), AT);
+      traj_first.start = traj_first.states.front();
+      traj_first.goal = traj_first.states.back();
+      trajectories.data.push_back(traj_first);
     }
 
     attempts++;
