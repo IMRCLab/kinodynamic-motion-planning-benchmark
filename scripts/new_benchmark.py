@@ -14,6 +14,32 @@ import pandas
 
 import argparse
 
+
+all_problems = [
+    "unicycle_first_order_0/parallelpark_0",
+    "unicycle_first_order_0/bugtrap_0",
+    "unicycle_first_order_0/kink_0",
+    "unicycle_first_order_1/kink_0",
+    "unicycle_first_order_2/wall_0",
+    "unicycle_second_order_0/parallelpark_0",
+    "unicycle_second_order_0/bugtrap_0",
+    "unicycle_second_order_0/kink_0",
+    "car_first_order_with_1_trailers_0/bugtrap_0",
+    "car_first_order_with_1_trailers_0/parallelpark_0",
+    "car_first_order_with_1_trailers_0/kink_0",
+    "quad2d/empty_0",
+    "quad2d/quad_obs_column",
+    "quad2d/quad2d_recovery_wo_obs",
+    # CONTINUE QUADROTOR_0
+    "quadrotor_0/empty_0_easy",
+    "quadrotor_0/recovery",
+    "quadrotor_0/quad_one_obs",
+    "acrobot/swing_up_empty",
+    "acrobot/swing_down_easy",
+    "acrobot/swing_down",
+    "car_first_order_with_1_trailers_0/easy_0"]
+
+
 parser = argparse.ArgumentParser()
 parser.add_argument("-m", "--mode")
 parser.add_argument("-bc", "--bench_cfg")
@@ -457,31 +483,6 @@ def compare(
     print("checking data")
     with open(filename_csv, 'r') as myFile:
         print(myFile.read())
-
-    all_problems = [
-        "unicycle_first_order_0/parallelpark_0",
-        "unicycle_first_order_0/bugtrap_0",
-        "unicycle_first_order_0/kink_0",
-        "unicycle_first_order_1/kink_0",
-        "unicycle_first_order_2/wall_0",
-        "unicycle_second_order_0/parallelpark_0",
-        "unicycle_second_order_0/bugtrap_0",
-        "unicycle_second_order_0/kink_0",
-        "car_first_order_with_1_trailers_0/bugtrap_0",
-        "car_first_order_with_1_trailers_0/parallelpark_0",
-        "car_first_order_with_1_trailers_0/kink_0",
-        "quad2d/empty_0",
-        "quad2d/quad_obs_column",
-        "quad2d/quad2d_recovery_wo_obs",
-        # CONTINUE QUADROTOR_0
-        "quadrotor_0/empty_0_easy",
-        "quadrotor_0/recovery",
-        "quadrotor_0/quad_one_obs",
-
-        "acrobot/swing_up_empty",
-        "acrobot/swing_down_easy",
-        "acrobot/swing_down",
-        "car_first_order_with_1_trailers_0/easy_0"]
 
     for problem in all_problems:
         print(f"problem {problem}")
@@ -942,6 +943,117 @@ def visualize_primitives(motions: list, robot: str,
         plt.show()
 
 
+def fancy_table(filenames: List[str]):
+
+    df = pandas.DataFrame()
+
+    for file in filenames:
+        __df = pandas.read_csv(file)
+        df = pandas.concat([df, __df], axis=0)
+
+    def get_data(frame, alg: str, problem: str, field: str, **kwargs):
+        print(alg, problem, field)
+        __f = frame.loc[(frame["alg"] == alg) & (
+            frame["problem"] == problem)].reset_index()
+        print(__f)
+        print("**" + field + "**")
+        return __f[field]
+
+    # buu = get_data(
+    #     df,
+    #     "idbastar_v0",
+    #     "unicycle_first_order_0/parallelpark_0",
+    #     "time_first_solution")
+
+    data = []
+
+    algs = ["idbastar_v0", "sst_v0", "geo_v1"]
+    fields = ["cost_first_solution", "last_cost", "time_first_solution"]
+
+    def get_column_name(alg: str, field: str):
+        token1 = ""
+        if alg == "idbastar_v0":
+            token1 = "i"
+        elif alg == "sst_v0":
+            token1 = "s"
+        elif alg == "geo_v1":
+            token1 = "g"
+        else:
+            raise KeyError(alg)
+        token2 = ""
+        if field == "cost_first_solution":
+            token2 = "cf"
+        elif field == "time_first_solution":
+            token2 = "tf"
+        elif field == "last_cost":
+            token2 = "lc"
+        else:
+            raise KeyError()
+        return token1 + token2
+
+    # problems = [
+    #     "unicycle_first_order_0/bugtrap_0",
+    #     "unicycle_first_order_0/kink_0",
+    #     "unicycle_first_order_0/parallelpark_0",
+    #     "unicycle_second_order_0/bugtrap_0",
+    #     "unicycle_second_order_0/kink_0",
+    #     "unicycle_second_order_0/parallelpark_0"]
+
+    problems =  df.problem.unique()
+
+    all_df = pandas.DataFrame()
+
+    for problem in problems:
+        row = []
+        headers = []
+        for alg in algs:
+            for field in fields:
+                # D = {"alg": alg,
+                #      "problem": problem,
+                #      "field": field}
+                header = get_column_name(alg, field)
+                headers.append(header)
+                _data = get_data(df, alg, problem, field)
+                row.append(_data[0])
+        print("final")
+        print(row)
+        print(headers)
+
+        new_df = pandas.DataFrame([row], columns=headers, index=[problem])
+        print(new_df)
+        all_df = pandas.concat([all_df, new_df], axis=0)
+    print(all_df)
+    all_df.to_csv("tmp.csv")
+    # now i could just export as table!!
+    # CONTINUE HERE!!!
+
+    str_raw = all_df.to_latex(index=True, float_format="{:.1f}".format)
+    str_ = format_latex_str(str_raw)
+
+    lines = str_.splitlines()
+
+    algs = r"&  \multicolumn{3}{c}{idba*} & \multicolumn{3}{c}{sst} & \multicolumn{3}{c}{geo}\\"
+    mid_rules = r"\cmidrule(lr){2-4}\cmidrule(lr){5-7}\cmidrule(lr){8-10}"
+    lines.insert(2, algs)
+    lines.insert(3, mid_rules)
+
+    now = datetime.now()  # current date and time
+    date_time = now.strftime("%Y-%m-%d--%H-%M-%S")
+    fileout = f"../results_new/tex/merged_{date_time}.tex"
+
+    print("saving", fileout)
+
+    with open(fileout, "w") as f:
+        f.write('\n'.join(lines))
+
+    fileout_log = fileout + ".log"
+    print("saving", fileout_log)
+
+    with open(fileout_log, "w") as f:
+        D = {"input": filenames, "output": fileout, "problems": problems}
+        yaml.dump(D, f)
+
+
 def format_latex_str(str_in: str) -> str:
 
     str_ = str_in[:]
@@ -964,6 +1076,7 @@ def format_latex_str(str_in: str) -> str:
     print(str_)
     return str_
 
+
     # group by problem
     # should I use the latex output of pandas?
 if __name__ == "__main__":
@@ -973,10 +1086,8 @@ if __name__ == "__main__":
     # problem = "quadrotor_0/recovery"
     # alg = "geo_v1"
     # visualize = False
-    # analyze_runs(path_to_dir, problem, alg, visualize) 
+    # analyze_runs(path_to_dir, problem, alg, visualize)
     # sys.exit(0)
-
-
 
     files = [
         "../results_new/car_first_order_with_1_trailers_0/kink_0/idbastar_v0/2023-05-10--16-26-38/report.yaml",
@@ -1001,122 +1112,24 @@ if __name__ == "__main__":
     # create_latex_table(csv_file)
     # sys.exit(1)
 
-    do_fancy_table = False
+    do_fancy_table = True
     if do_fancy_table:
 
-        filenames = ["../results_new/summary/summary_2023-05-10--15-18-08.csv",
-                     "../results_new/summary/summary_2023-05-10--15-41-42.csv"]
+        files = [
+            "/home/quim/stg/wolfgang/kinodynamic-motion-planning-benchmark/results_new/summary/summary_2023-05-10--15-18-08.csv",
+            "/home/quim/stg/wolfgang/kinodynamic-motion-planning-benchmark/results_new/summary/summary_2023-05-10--15-41-42.csv",
+            "/home/quim/stg/wolfgang/kinodynamic-motion-planning-benchmark/results_new/summary/summary_2023-05-10--15-56-06.csv",
+            "/home/quim/stg/wolfgang/kinodynamic-motion-planning-benchmark/results_new/summary/summary_2023-05-11--07-50-08.csv",
+            "/home/quim/stg/wolfgang/kinodynamic-motion-planning-benchmark/results_new/summary/summary_2023-05-11--12-02-25.csv",
+            "/home/quim/stg/wolfgang/kinodynamic-motion-planning-benchmark/results_new/summary/summary_2023-05-11--15-06-40.csv", 
+            "/home/quim/stg/wolfgang/kinodynamic-motion-planning-benchmark/results_new/summary/summary_2023-05-11--17-34-33.csv", 
+        ]
 
-        df = pandas.DataFrame()
 
-        for file in filenames:
-            __df = pandas.read_csv(file)
-            df = pandas.concat([df, __df], axis=0)
 
-        def get_data(frame, alg: str, problem: str, field: str, **kwargs):
-            print(alg, problem, field)
-            __f = frame.loc[(frame["alg"] == alg) & (
-                frame["problem"] == problem)].reset_index()
-            print(__f)
-            print("**" + field + "**")
-            return __f[field]
 
-        # buu = get_data(
-        #     df,
-        #     "idbastar_v0",
-        #     "unicycle_first_order_0/parallelpark_0",
-        #     "time_first_solution")
-
-        data = []
-
-        algs = ["idbastar_v0", "sst_v0", "geo_v1"]
-        fields = ["cost_first_solution", "last_cost", "time_first_solution"]
-
-        def get_column_name(alg: str, field: str):
-            token1 = ""
-            if alg == "idbastar_v0":
-                token1 = "i"
-            elif alg == "sst_v0":
-                token1 = "s"
-            elif alg == "geo_v1":
-                token1 = "g"
-            else:
-                raise KeyError(alg)
-            token2 = ""
-            if field == "cost_first_solution":
-                token2 = "cf"
-            elif field == "time_first_solution":
-                token2 = "tf"
-            elif field == "last_cost":
-                token2 = "lc"
-            else:
-                raise KeyError()
-            return token1 + token2
-
-        problems = [
-            "unicycle_first_order_0/bugtrap_0",
-            "unicycle_first_order_0/kink_0",
-            "unicycle_first_order_0/parallelpark_0",
-            "unicycle_second_order_0/bugtrap_0",
-            "unicycle_second_order_0/kink_0",
-            "unicycle_second_order_0/parallelpark_0"]
-
-        # TODO df.problem.unique()
-
-        all_df = pandas.DataFrame()
-
-        for problem in problems:
-            row = []
-            headers = []
-            for alg in algs:
-                for field in fields:
-                    # D = {"alg": alg,
-                    #      "problem": problem,
-                    #      "field": field}
-                    header = get_column_name(alg, field)
-                    headers.append(header)
-                    _data = get_data(df, alg, problem, field)
-                    row.append(_data[0])
-            print("final")
-            print(row)
-            print(headers)
-
-            new_df = pandas.DataFrame([row], columns=headers, index=[problem])
-            print(new_df)
-            all_df = pandas.concat([all_df, new_df], axis=0)
-        print(all_df)
-        all_df.to_csv("tmp.csv")
-        # now i could just export as table!!
-        # CONTINUE HERE!!!
-
-        str_raw = all_df.to_latex(index=True, float_format="{:.1f}".format)
-        str_ = format_latex_str(str_raw)
-
-        lines = str_.splitlines()
-
-        algs = r"&  \multicolumn{3}{c}{idba*} & \multicolumn{3}{c}{sst} & \multicolumn{3}{c}{geo}\\"
-        mid_rules = r"\cmidrule(lr){2-4}\cmidrule(lr){5-7}\cmidrule(lr){8-10}"
-        lines.insert(2, algs)
-        lines.insert(3, mid_rules)
-
-        now = datetime.now()  # current date and time
-        date_time = now.strftime("%Y-%m-%d--%H-%M-%S")
-        fileout = f"../results_new/tex/merged_{date_time}.tex"
-
-        print("saving", fileout)
-
-        with open(fileout, "w") as f:
-            f.write('\n'.join(lines))
-
-        fileout_log = fileout + ".log"
-        print("saving", fileout_log)
-
-        with open(fileout_log, "w") as f:
-            D = {"input": filenames, "output": fileout, "problems": problems}
-            yaml.dump(D, f)
-
-        # LOG
-
+        fancy_table(files)
+        sys.exit(0)
     if do_compare:
         # folders = ["geo_v0/04-04-2023--15-59-51",
         #            "idbastar_v0/04-04-2023--15-59-51",
