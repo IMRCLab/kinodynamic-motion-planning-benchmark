@@ -38,6 +38,7 @@ struct Options_trajopt {
   bool states_reg = false;
   int solver_id = 0;
   double disturbance = 1e-5;
+  int num_threads = 1;
 
   double th_stop = 1e-2;
   double init_reg = 1e2;

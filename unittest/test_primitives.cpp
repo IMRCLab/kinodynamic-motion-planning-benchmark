@@ -50,8 +50,9 @@ BOOST_AUTO_TEST_CASE(t_improve) {
   options_trajopt.solver_id =
       static_cast<int>(SOLVER::traj_opt_free_time_linear);
 
+  Options_primitives options_primitives;
   improve_motion_primitives(options_trajopt, trajectories, dynamics,
-                            trajectories_out);
+                            trajectories_out, options_primitives);
 
   std::string time_stamp = get_time_stamp();
   trajectories_out.save_file_boost(

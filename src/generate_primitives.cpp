@@ -2,6 +2,7 @@
 #include "croco_macros.hpp"
 #include "crocoddyl/core/utils/timer.hpp"
 #include "ocp.hpp"
+#include <thread>
 
 void sort_motion_primitives(
     const Trajectories &__trajs, Trajectories &trajs_out,
@@ -172,14 +173,25 @@ void split_motion_primitives(const Trajectories &in,
 void improve_motion_primitives(const Options_trajopt &options_trajopt,
                                const Trajectories &__trajs_in,
                                const std::string &dynamics,
-                               Trajectories &trajs_out) {
+                               Trajectories &trajs_out,
+                               const Options_primitives  &options_primitives
+                               ) {
 
   auto robot_model = robot_factory(robot_type_to_path(dynamics).c_str());
 
   Trajectories trajs_in = __trajs_in;
-  size_t num_improves = 0;
-  for (size_t i = 0; i < trajs_in.data.size(); i++) {
+  std::atomic_int num_improves = 0 ;
 
+  trajs_out.data.resize(trajs_in.data.size());
+
+  int NUM_THREADS = options_primitives.num_threads;
+
+  std::vector<std::thread> threads;
+
+
+  auto improve = [](auto &trajs_in, auto &i, auto &robot_model, auto &dynamics,
+                    auto &options_trajopt, auto &trajs_out,
+                    auto &num_improves) {
     auto &traj = trajs_in.data.at(i);
     // make sure that trajectories have a cost...
 
@@ -219,12 +231,30 @@ void improve_motion_primitives(const Options_trajopt &options_trajopt,
       std::cout << "we have a better trajectory!" << std::endl;
       CSTR_(traj_out.cost);
       CSTR_(traj.cost);
-      trajs_out.data.push_back(traj_out);
+      trajs_out.data.at(i) = traj_out;
+
+
       num_improves++;
+
+
     } else {
-      trajs_out.data.push_back(traj);
+      trajs_out.data.at(i) = traj;
     }
+  };
+
+  for (size_t j = 0; j < NUM_THREADS; j++) {
+    threads.push_back(std::thread([&, NUM_THREADS, j] {
+      for (size_t i = j; i < trajs_in.data.size(); i += NUM_THREADS) {
+        improve(trajs_in, i, robot_model, dynamics, options_trajopt, trajs_out,
+                num_improves);
+      }
+    }));
   }
+
+  for (auto &th : threads) {
+    th.join();
+  }
+
   std::cout << "input trajectories: " << trajs_in.data.size() << std::endl;
   std::cout << "num improves: " << num_improves << std::endl;
 }

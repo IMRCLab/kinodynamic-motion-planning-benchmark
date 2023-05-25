@@ -14,9 +14,11 @@ struct Options_primitives {
   size_t min_length_cut = 5;
   size_t max_length_cut = 20;
   size_t max_splits = 10;
+  size_t num_threads = 1;
 
   void print(std::ostream &out, const std::string &be = "",
              const std::string &af = ": ") {
+    STRY(num_threads, out, be, af);
     STRY(time_limit, out, be, af);
     STRY(max_num_primitives, out, be, af);
     STRY(dynamics, out, be, af);
@@ -29,6 +31,7 @@ struct Options_primitives {
   };
 
   void add_options(po::options_description &desc) {
+    set_from_boostop(desc, VAR_WITH_NAME(num_threads));
     set_from_boostop(desc, VAR_WITH_NAME(time_limit));
     set_from_boostop(desc, VAR_WITH_NAME(max_num_primitives));
     set_from_boostop(desc, VAR_WITH_NAME(dynamics));
@@ -54,13 +57,12 @@ void split_motion_primitives(const Trajectories &in,
 void improve_motion_primitives(const Options_trajopt &options_trajopt,
                                const Trajectories &trajs_in,
                                const std::string &dynamics,
-                               Trajectories &trajs_out);
+                               Trajectories &trajs_out,
+                               const Options_primitives &options_primitives);
 
 void generate_primitives(const Options_trajopt &options_trajopt,
                          const Options_primitives &options_primitives,
                          Trajectories &trajectories);
 
 void generate_primitives_random(const Options_primitives &options_primitives,
-                         Trajectories &trajectories);
-
-
+                                Trajectories &trajectories);

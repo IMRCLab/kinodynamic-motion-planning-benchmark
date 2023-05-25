@@ -2882,7 +2882,9 @@ BOOST_AUTO_TEST_CASE(t_data_for_alex) {
   CSTR_(trajectories.data.size());
 
   options_trajopt.solver_id = 14;
-  improve_motion_primitives(options_trajopt, trajectories, dynamics, trajs_opt);
+  Options_primitives options_primitives;
+  improve_motion_primitives(options_trajopt, trajectories, dynamics, trajs_opt,
+                            options_primitives);
 
   trajs_opt.save_file_yaml("car2_v0_alex_opt.yaml");
   CSTR_(trajs_opt.data.size());
