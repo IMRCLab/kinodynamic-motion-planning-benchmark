@@ -393,6 +393,7 @@ struct Options_dbastar {
   int limit_branching_factor = 20;
   bool use_collision_shape = true;
   bool always_add = false;
+  bool new_invariance = false;
 
   std::vector<Heuristic_node> *heu_map_ptr = nullptr;
   std::string heu_map_file;

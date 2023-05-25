@@ -1509,7 +1509,7 @@ using SpaceUni2 = nigh::CartesianSpace<
 using SpaceQuad2d = nigh::CartesianSpace<
     nigh::L2Space<double, 2>,
     nigh::ScaledSpace<nigh::SO2Space<double>, std::ratio<1, 2>>,
-    nigh::ScaledSpace<nigh::L2Space<double, 2>, std::ratio<1, 10>>,
+    nigh::ScaledSpace<nigh::L2Space<double, 2>, std::ratio<1, 5>>,
     nigh::ScaledSpace<nigh::L2Space<double, 1>, std::ratio<1, 10>>>;
 
 using SpaceAcrobot = nigh::CartesianSpace<

@@ -18,13 +18,13 @@ problems:
   # - car_first_order_with_1_trailers_0/bugtrap_0
   # - car_first_order_with_1_trailers_0/parallelpark_0
 
-  # - "quad2d/empty_0"
-  # - "quad2d/quad_obs_column"
-  # - "quad2d/quad2d_recovery_wo_obs"
+  # - quad2d/empty_0
+  # - quad2d/quad_obs_column
+  # - quad2d/quad2d_recovery_wo_obs
   
-  # - "acrobot/swing_up_empty"
-  # - "acrobot/swing_down_easy"
-  # - "acrobot/swing_down"
+  # - acrobot/swing_up_empty
+  # - acrobot/swing_down_easy
+  # - acrobot/swing_down
   
   #  CONTINUE QUADROTOR_0
   - quadrotor_0/empty_0_easy
