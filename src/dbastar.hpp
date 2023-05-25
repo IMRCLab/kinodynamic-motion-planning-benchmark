@@ -130,6 +130,7 @@ class Motion {
 public:
   std::vector<ob::State *> states;
   std::vector<oc::Control *> actions;
+  Trajectory traj;
 
   std::shared_ptr<ShiftableDynamicAABBTreeCollisionManager<double>>
       collision_manager;
@@ -332,8 +333,22 @@ struct Out_info_db {
   double cost = -1;
   bool solved = 0;
   double cost_with_delta_time = -1;
-  void print(std::ostream &out);
+  // void print(std::ostream &out);
   double time_search = -1;
+  std::map<std::string, std::string> data;
+
+  void write_yaml(std::ostream &out) {
+
+    out << STR_(cost) << std::endl;
+    out << STR_(solved) << std::endl;
+    out << STR_(cost_with_delta_time) << std::endl;
+    out << STR_(time_search) << std::endl;
+    out << "data:" << std::endl;
+    for (auto &[k, v] : data) {
+      out << "  " << k << ": " << v << std::endl;
+    }
+  }
+
   // void add_options(po::options_description &desc);
   // void read_from_yaml(YAML::Node &node);
   // void read_from_yaml(const char *file);
@@ -352,10 +367,11 @@ struct Options_dbastar {
   float delta = .3;
   float epsilon = 1.;
   float alpha = .5;
+  float connect_radius_h = .5;
   std::string motionsFile = "";
   std::vector<Motion> *motions_ptr = nullptr; // pointer to loaded motions
   std::string outFile = "out.yaml";
-  bool filterDuplicates = false; // very expensive in high dim systems!
+  bool filterDuplicates = false;     // very expensive in high dim systems!
   bool primitives_new_format = true; // (false=Format of IROS 22)
   float maxCost = std::numeric_limits<float>::infinity();
   int heuristic = 0;
@@ -374,8 +390,8 @@ struct Options_dbastar {
   double epsilon_soft_duplicate = 1.5;
   bool add_node_if_better = false;
   bool debug = false;
-  int limit_branching_factor  = 20;
-  bool use_collision_shape  = true;
+  int limit_branching_factor = 20;
+  bool use_collision_shape = true;
   bool always_add = false;
 
   std::vector<Heuristic_node> *heu_map_ptr = nullptr;
@@ -392,7 +408,8 @@ struct Options_dbastar {
 
   void add_options(po::options_description &desc);
 
-  void __load_data(void *source, bool boost, bool write = false, const std::string &be="");
+  void __load_data(void *source, bool boost, bool write = false,
+                   const std::string &be = "");
 
   void print(std::ostream &out, const std::string &be = "",
              const std::string &af = ": ") const;
@@ -418,6 +435,7 @@ struct Result_db {
 
 struct Time_benchmark {
 
+  double time_hfun = 0.0;
   double time_nearestMotion = 0.0;
   double time_nearestNode = 0.0;
   double time_nearestNode_add = 0.0;
@@ -431,8 +449,29 @@ struct Time_benchmark {
   int num_col_motions = 0;
   int motions_tree_size = 0;
   int states_tree_size = 0;
+  double time_search = 0;
 
   void write(std::ostream &out);
+
+  std::map<std::string, std::string> to_data() const {
+    std::map<std::string, std::string> out;
+    out.insert(NAME_AND_STRING(time_search));
+    out.insert(NAME_AND_STRING(time_nearestMotion));
+    out.insert(NAME_AND_STRING(time_nearestNode));
+    out.insert(NAME_AND_STRING(time_nearestNode_add));
+    out.insert(NAME_AND_STRING(time_nearestNode_search));
+    out.insert(NAME_AND_STRING(time_collisions));
+    out.insert(NAME_AND_STRING(prepare_time));
+    out.insert(NAME_AND_STRING(total_time));
+    out.insert(NAME_AND_STRING(expands));
+    out.insert(NAME_AND_STRING(num_nn_motions));
+    out.insert(NAME_AND_STRING(num_nn_states));
+    out.insert(NAME_AND_STRING(num_col_motions));
+    out.insert(NAME_AND_STRING(motions_tree_size));
+    out.insert(NAME_AND_STRING(states_tree_size));
+    out.insert(NAME_AND_STRING(time_hfun));
+    return out;
+  };
 };
 
 // void generate_env(YAML::Node &env,
@@ -491,7 +530,8 @@ struct Heu_roadmap : Heu_fun {
   // ob::State *__tmp_vel;
 
   Heu_roadmap(std::shared_ptr<RobotOmpl> robot,
-              const std::vector<Heuristic_node> &heu_map, ob::State *goal);
+              const std::vector<Heuristic_node> &heu_map, ob::State *goal,
+              const std::string &robot_type = "");
 
   virtual double h(const ompl::base::State *x) override {
     CHECK(T_heu, AT);
@@ -539,8 +579,8 @@ void dbastar(const Problem &problem, const Options_dbastar &options_dbastar,
 
 void load_motion_primitives_new(const std::string &motionsFile,
                                 RobotOmpl &robot, std::vector<Motion> &motions,
-                                int max_motions, bool cut_actions,
-                                bool shuffle, bool compute_col);
+                                int max_motions, bool cut_actions, bool shuffle,
+                                bool compute_col);
 
 void write_heu_map(const std::vector<Heuristic_node> &heu_map, const char *file,
                    const char *header = nullptr);

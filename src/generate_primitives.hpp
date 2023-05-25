@@ -59,3 +59,8 @@ void improve_motion_primitives(const Options_trajopt &options_trajopt,
 void generate_primitives(const Options_trajopt &options_trajopt,
                          const Options_primitives &options_primitives,
                          Trajectories &trajectories);
+
+void generate_primitives_random(const Options_primitives &options_primitives,
+                         Trajectories &trajectories);
+
+

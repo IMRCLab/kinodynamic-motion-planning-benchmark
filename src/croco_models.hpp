@@ -83,13 +83,12 @@ void modify_x_bound_for_contour(const Eigen::VectorXd &__x_lb,
                                 Eigen::VectorXd &x_lb, Eigen::VectorXd &x_ub,
                                 Eigen::VectorXd &xb_weight, double max_alpha);
 
-using namespace crocoddyl;
 
-struct ActionDataQ : public ActionDataAbstractTpl<double> {
+struct ActionDataQ : public crocoddyl::ActionDataAbstractTpl<double> {
   EIGEN_MAKE_ALIGNED_OPERATOR_NEW
 
   typedef double Scalar;
-  typedef MathBaseTpl<Scalar> MathBase;
+  typedef crocoddyl::MathBaseTpl<Scalar> MathBase;
   typedef ActionDataAbstractTpl<Scalar> Base;
   using Base::cost;
   using Base::Fu;
@@ -106,7 +105,7 @@ struct ActionDataQ : public ActionDataAbstractTpl<double> {
   explicit ActionDataQ(Model<Scalar> *const model) : Base(model) {}
 };
 
-struct StateCrocoQ : StateAbstractTpl<double> {
+struct StateCrocoQ : crocoddyl::StateAbstractTpl<double> {
 
 public:
   typedef double Scalar;
@@ -183,7 +182,7 @@ protected:
 
 struct Dynamics {
 
-  typedef MathBaseTpl<double> MathBase;
+  typedef crocoddyl::MathBaseTpl<double> MathBase;
   typedef typename MathBase::VectorXs VectorXs;
 
   std::shared_ptr<Model_robot> robot_model;
@@ -195,7 +194,7 @@ struct Dynamics {
   Dynamics(std::shared_ptr<Model_robot> robot_model = nullptr,
            const Control_Mode &control_mode = Control_Mode::default_mode);
 
-  std::shared_ptr<StateAbstractTpl<double>> state;
+  std::shared_ptr<crocoddyl::StateAbstractTpl<double>> state;
 
   void virtual print_bounds(std::ostream &out) const {
     out << STR_V(x_ub) << std::endl;
@@ -956,15 +955,15 @@ struct State_cost_model : Cost {
 size_t
 get_total_num_features(const std::vector<boost::shared_ptr<Cost>> &features);
 
-class ActionModelQ : public ActionModelAbstractTpl<double> {
+class ActionModelQ : public crocoddyl::ActionModelAbstractTpl<double> {
 public:
   EIGEN_MAKE_ALIGNED_OPERATOR_NEW
 
   typedef double Scalar;
-  typedef ActionDataAbstractTpl<Scalar> ActionDataAbstract;
+  typedef crocoddyl::ActionDataAbstractTpl<Scalar> ActionDataAbstract;
   typedef ActionModelAbstractTpl<Scalar> Base;
   typedef ActionDataQ Data;
-  typedef MathBaseTpl<Scalar> MathBase;
+  typedef crocoddyl::MathBaseTpl<Scalar> MathBase;
   typedef typename MathBase::VectorXs VectorXs;
   typedef typename MathBase::Vector2s Vector2s;
 
@@ -1003,7 +1002,7 @@ public:
   virtual void print(std::ostream &os) const;
 };
 
-void print_data(boost::shared_ptr<ActionDataAbstractTpl<double>> data);
+void print_data(boost::shared_ptr<crocoddyl::ActionDataAbstractTpl<double>> data);
 
 void check_dyn(boost::shared_ptr<Dynamics> dyn, double eps,
                Eigen::VectorXd x = Eigen::VectorXd(),

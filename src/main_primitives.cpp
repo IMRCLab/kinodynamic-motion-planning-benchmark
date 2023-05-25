@@ -10,6 +10,7 @@ enum class PRIMITIVE_MODE {
   stats = 6,
   cut = 7,
   shuffle = 8,
+  generate_rand = 9
 };
 
 #include "generate_primitives.hpp"
@@ -73,6 +74,17 @@ int main(int argc, const char *argv[]) {
   std::shared_ptr<Model_robot> robot_model =
       robot_factory(robot_type_to_path(options_primitives.dynamics).c_str());
 
+  if (mode == PRIMITIVE_MODE::generate_rand) {
+
+    Trajectories trajectories;
+
+    generate_primitives_random(options_primitives, trajectories);
+
+    trajectories.save_file_boost(out_file.c_str());
+    trajectories.save_file_yaml((out_file +  ".1000.yaml").c_str(), 1000);
+    trajectories.compute_stats("tmp_stats.yaml");
+  }
+
   if (mode == PRIMITIVE_MODE::generate) {
 
     Trajectories trajectories;
@@ -80,7 +92,7 @@ int main(int argc, const char *argv[]) {
     generate_primitives(options_trajopt, options_primitives, trajectories);
 
     trajectories.save_file_boost(out_file.c_str());
-    trajectories.save_file_yaml((out_file + ".yaml").c_str(), 1000);
+    trajectories.save_file_yaml((out_file + ".yaml").c_str());
     trajectories.compute_stats("tmp_stats.yaml");
   }
 
@@ -98,8 +110,6 @@ int main(int argc, const char *argv[]) {
     if (out_file == "auto") {
       out_file = in_file + ".im.bin";
     }
-
-
 
     // Options_trajopt options_trajopt;
     // options_trajopt.solver_id =
@@ -233,6 +243,8 @@ int main(int argc, const char *argv[]) {
     }
     CSTR_(trajectories.data.size());
     trajectories.compute_stats(out_file.c_str());
+    std::filesystem::copy(out_file, "tmp_stats.yaml",
+                          std::filesystem::copy_options::overwrite_existing);
   }
 
   if (mode == PRIMITIVE_MODE::shuffle) {

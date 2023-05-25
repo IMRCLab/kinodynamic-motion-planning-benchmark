@@ -53,6 +53,32 @@ struct Functor {
 // ]
 // distance 0.690961
 
+BOOST_AUTO_TEST_CASE(quad2_fallthrough) {
+
+  Problem problem("../benchmark/quad2d/fall_through.yaml");
+
+  Options_dbastar options_dbastar;
+  options_dbastar.max_motions = 200000;
+  options_dbastar.search_timelimit = 60000;
+  options_dbastar.delta = 1.5;
+  options_dbastar.use_nigh_nn = 1;
+  options_dbastar.limit_branching_factor = 100;
+  // options_dbastar.motionsFile = "../cloud/motionsV2/good/quad2d_v0/quad2d_v0_all.bin.sp1.bin";
+  options_dbastar.motionsFile = "../cloud/motionsV2/good/quad2d_v0/quad2d_v0_DEFand3.sp.bin";
+  options_dbastar.motionsFile = "quad2d_v0_all.bin";
+
+
+  Out_info_db out_info_db;
+  Trajectory traj_out;
+  dbastar(problem, options_dbastar, traj_out, out_info_db);
+  CSTR_(out_info_db.cost);
+  BOOST_TEST(out_info_db.solved);
+}
+
+
+
+
+
 BOOST_AUTO_TEST_CASE(quad3_one_obs) {
 
   Problem problem("../benchmark/quadrotor_0/quad_one_obs.yaml");
@@ -506,9 +532,10 @@ BOOST_AUTO_TEST_CASE(test_bugtrap) {
   options_dbastar.motionsFile = "../cloud/motionsV2/good/unicycle1_v0/"
                                 "unicycle1_v0__ispso__2023_04_03__14_56_57.bin";
   options_dbastar.max_size_heu_map = 500;
-  options_dbastar.use_nigh_nn = 0;
+  options_dbastar.use_nigh_nn = 1;
   options_dbastar.cost_delta_factor = 1; // equivalent number of expands, maybe more clean!!
-  options_dbastar.always_add = 1; // very, very slow!! 
+  options_dbastar.always_add = 0; // very, very slow!! 
+  options_dbastar.use_collision_shape = true;
   Out_info_db out_info_db;
   Trajectory traj_out;
   dbastar(problem, options_dbastar, traj_out, out_info_db);
@@ -561,7 +588,7 @@ BOOST_AUTO_TEST_CASE(parallel_park_1) {
     Out_info_db out_db;
     dbastar(problem, options_dbastar, traj, out_db);
     std::cout << "***" << std::endl;
-    out_db.print(std::cout);
+    out_db.write_yaml(std::cout);
     std::cout << "***" << std::endl;
     BOOST_TEST(out_db.solved);
     BOOST_TEST(out_db.cost < 3.5);
@@ -598,7 +625,7 @@ BOOST_AUTO_TEST_CASE(bugtrap_1) {
     dbastar(problem, options_dbastar, traj, out_db);
 
     std::cout << "***" << std::endl;
-    out_db.print(std::cout);
+    out_db.write_yaml(std::cout);
     std::cout << "***" << std::endl;
     BOOST_TEST(out_db.solved);
     BOOST_TEST(out_db.cost < 35);
@@ -613,7 +640,7 @@ BOOST_AUTO_TEST_CASE(bugtrap_1) {
     dbastar(problem, options_dbastar, traj, out_db);
 
     std::cout << "***" << std::endl;
-    out_db.print(std::cout);
+    out_db.write_yaml(std::cout);
     std::cout << "***" << std::endl;
     BOOST_TEST(out_db.solved);
     BOOST_TEST(out_db.cost < 35);
@@ -649,7 +676,7 @@ BOOST_AUTO_TEST_CASE(t_kink) {
     dbastar(problem, options_dbastar, traj, out_db);
 
     std::cout << "***" << std::endl;
-    out_db.print(std::cout);
+    out_db.write_yaml(std::cout);
     std::cout << "***" << std::endl;
     BOOST_TEST(out_db.solved);
     BOOST_TEST(out_db.cost < 25);
@@ -664,7 +691,7 @@ BOOST_AUTO_TEST_CASE(t_kink) {
     dbastar(problem, options_dbastar, traj, out_db);
 
     std::cout << "***" << std::endl;
-    out_db.print(std::cout);
+    out_db.write_yaml(std::cout);
     std::cout << "***" << std::endl;
     BOOST_TEST(out_db.solved);
     BOOST_TEST(out_db.cost < 25);
@@ -699,7 +726,7 @@ BOOST_AUTO_TEST_CASE(t_parallel2) {
     Trajectory traj;
     dbastar(problem, options_dbastar, traj, out_db);
     std::cout << "***" << std::endl;
-    out_db.print(std::cout);
+    out_db.write_yaml(std::cout);
     std::cout << "***" << std::endl;
     BOOST_TEST(out_db.solved);
     BOOST_TEST(out_db.cost < 7.5);
@@ -714,7 +741,7 @@ BOOST_AUTO_TEST_CASE(t_parallel2) {
     dbastar(problem, options_dbastar, traj, out_db);
 
     std::cout << "***" << std::endl;
-    out_db.print(std::cout);
+    out_db.write_yaml(std::cout);
     std::cout << "***" << std::endl;
     BOOST_TEST(out_db.solved);
     BOOST_TEST(out_db.cost < 7.5);
@@ -749,7 +776,7 @@ BOOST_AUTO_TEST_CASE(t_new_modes) {
     dbastar(problem, options_dbastar, traj, out_db);
 
     std::cout << "***" << std::endl;
-    out_db.print(std::cout);
+    out_db.write_yaml(std::cout);
     std::cout << "***" << std::endl;
 
     BOOST_TEST(out_db.solved);
@@ -765,7 +792,7 @@ BOOST_AUTO_TEST_CASE(t_new_modes) {
     dbastar(problem, options_dbastar, traj, out_db);
 
     std::cout << "***" << std::endl;
-    out_db.print(std::cout);
+    out_db.write_yaml(std::cout);
     std::cout << "***" << std::endl;
 
     BOOST_TEST(out_db.solved);
@@ -799,7 +826,7 @@ BOOST_AUTO_TEST_CASE(t_bug2) {
     Trajectory traj;
     dbastar(problem, options_dbastar, traj, out_db);
     std::cout << "***" << std::endl;
-    out_db.print(std::cout);
+    out_db.write_yaml(std::cout);
     std::cout << "***" << std::endl;
 
     BOOST_TEST(out_db.solved);

@@ -105,11 +105,12 @@ void idbA(const Problem &problem, const Options_idbAStar &options_idbas,
     CSTR_(non_counter_time);
     traj_db.time_stamp = get_time_stamp_ms() - non_counter_time;
     info_out_idbastar.trajs_raw.push_back(traj_db);
+    info_out_idbastar.infos_raw.push_back(out_info_db.data);
 
     if (out_info_db.solved) {
       {
         std::string filename = "trajdb_" + gen_random(6) + ".yaml";
-        std::cout << "saving traj db file " << filename << std::endl;
+        std::cout << "saving traj db file: " << filename << std::endl;
         std::ofstream traj_db_out(filename);
         traj_db.to_yaml_format(traj_db_out);
       }
@@ -121,6 +122,7 @@ void idbA(const Problem &problem, const Options_idbAStar &options_idbas,
 
       traj.time_stamp = get_time_stamp_ms() - non_counter_time;
       info_out_idbastar.trajs_opt.push_back(traj);
+      info_out_idbastar.infos_opt.push_back(result.data);
 
       if (traj.feasible) {
         num_solutions++;

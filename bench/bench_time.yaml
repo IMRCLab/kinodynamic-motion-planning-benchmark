@@ -1,0 +1,44 @@
+trials: 10
+n_cores: 1 # -1=auto
+
+# solve a distribution of problems
+problems:
+  
+  # - env: unicycle_first_order_0/bugtrap_0
+  #   guess: unicycle1_v0/bugtrap_0/delta_03_v0
+  #
+  # - env: unicycle_first_order_0/bugtrap_0
+  #   guess: unicycle1_v0/bugtrap_0/delta_02_v0
+  #
+  # - env: unicycle_first_order_0/bugtrap_0
+  #   guess: unicycle1_v0/bugtrap_0/delta_05_v0
+
+
+
+  - env: unicycle_second_order_0/bugtrap_0
+    guess: unicycle2_v0/bugtrap_0/delta_02_v0
+
+  - env: unicycle_second_order_0/bugtrap_0
+    guess: unicycle2_v0/bugtrap_0/delta_03_v0
+
+  - env: unicycle_second_order_0/bugtrap_0
+    guess: unicycle2_v0/bugtrap_0/delta_05_v0
+
+algs:
+  # - idbastar_v0_heu0
+  # - idbastar_v0_heu1
+  # - idbastar_v0_heuNO
+
+  - idbastar_v0_fixedtime
+  - idbastar_v0_freetime
+  - idbastar_v0_mpc
+  - idbastar_v0_mpcc
+  - idbastar_v0_search
+
+
+
+
+
+  
+
+

@@ -1607,7 +1607,7 @@ Model_unicycle2::Model_unicycle2(const Unicycle2_params &params,
   u_weight.resize(2);
   u_weight.setConstant(.5);
   x_weightb.resize(5);
-  x_weightb << 0, 0, 0, 50, 50;
+  x_weightb << 0, 0, 0, 200, 200;
 
   if (params.shape == "box") {
     collision_geometries.push_back(

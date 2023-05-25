@@ -213,7 +213,6 @@ struct Model_robot {
   size_t nr_reg;
   size_t nr_ineq;
 
-
   bool is_2d;
   size_t translation_invariance = 0; // e.g. 1, 2 , 3, ...
   std::vector<std::string> x_desc;
@@ -423,16 +422,11 @@ struct Model_robot {
   virtual void offset(const Eigen::Ref<const Eigen::VectorXd> &xin,
                       Eigen::Ref<Eigen::VectorXd> p) {
 
-    CHECK_EQ(p.size(), translation_invariance, AT);
+    CHECK_EQ(static_cast<size_t>(p.size()), translation_invariance, AT);
     p = xin.head(translation_invariance);
   }
 
-
-  virtual size_t get_offset_dim() {
-    return translation_invariance;
-  }
-
-
+  virtual size_t get_offset_dim() { return translation_invariance; }
 
   virtual void transform_primitive(const Eigen::Ref<const Eigen::VectorXd> &p,
                                    const std::vector<Eigen::VectorXd> &xs_in,

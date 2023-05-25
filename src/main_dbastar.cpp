@@ -33,16 +33,12 @@
 int main(int argc, char *argv[]) {
 
   Options_dbastar options_dbastar;
-  Out_info_db out_db;
   po::options_description desc("Allowed options");
   options_dbastar.add_options(desc);
-  // inout_db.add_options(desc);
-  std::string cfg_file;
-  std::string data_file;
-  std::string inputFile;
+  std::string cfg_file, results_file, env_file;
   set_from_boostop(desc, VAR_WITH_NAME(cfg_file));
-  set_from_boostop(desc, VAR_WITH_NAME(data_file));
-  set_from_boostop(desc, VAR_WITH_NAME(inputFile));
+  set_from_boostop(desc, VAR_WITH_NAME(results_file));
+  set_from_boostop(desc, VAR_WITH_NAME(env_file));
 
   try {
     po::variables_map vm;
@@ -63,23 +59,31 @@ int main(int argc, char *argv[]) {
     options_dbastar.read_from_yaml(cfg_file.c_str());
   }
 
-  Problem problem;
-  problem.read_from_yaml(inputFile.c_str());
+  Problem problem(env_file.c_str());
+  Trajectory traj;
+  Out_info_db out_db;
 
   std::cout << "*** options_dbastar ***" << std::endl;
   options_dbastar.print(std::cout);
   std::cout << "***" << std::endl;
 
-  std::cout << "*** out_db ***" << std::endl;
-  out_db.print(std::cout);
-  std::cout << "***" << std::endl;
-
-  Trajectory traj;
   dbastar(problem, options_dbastar, traj, out_db);
 
   std::cout << "*** inout_db *** " << std::endl;
-  out_db.print(std::cout);
+  out_db.write_yaml(std::cout);
   std::cout << "***" << std::endl;
+
+  CSTR_(results_file);
+  std::ofstream results(results_file);
+  results << "alg: dbastar" << std::endl;
+  results << "time_stamp: " << get_time_stamp() << std::endl;
+  results << "env_file: " << env_file << std::endl;
+  results << "cfg_file: " << cfg_file << std::endl;
+  results << "results_file: " << results_file << std::endl;
+  results << "options dbastar:" << std::endl;
+  options_dbastar.print(results, "  ");
+  out_db.write_yaml(results);
+
 
   if (out_db.solved) {
     return 0;

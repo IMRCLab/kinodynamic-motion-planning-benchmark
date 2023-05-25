@@ -76,7 +76,6 @@ struct Options_trajopt {
   void read_from_yaml(const char *file);
 };
 
-using namespace crocoddyl;
 
 enum class SOLVER {
   traj_opt = 0,
@@ -106,7 +105,7 @@ to_am_base(boost::shared_ptr<Derived> am) {
   return boost::static_pointer_cast<crocoddyl::ActionModelAbstract>(am);
 };
 
-void print_data(boost::shared_ptr<ActionDataAbstractTpl<double>> data);
+void print_data(boost::shared_ptr<crocoddyl::ActionDataAbstractTpl<double>> data);
 
 struct Generate_params {
   bool free_time = false;
@@ -177,6 +176,7 @@ struct Result_opti {
   bool feasible = false;
   bool success = false;
   double cost = -1;
+  std::map<std::string, std::string> data;
   std::string name;
   std::vector<Eigen::VectorXd> xs_out;
   std::vector<Eigen::VectorXd> us_out;

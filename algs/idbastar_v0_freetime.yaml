@@ -1,0 +1,4 @@
+reference: "idbastar_v0"
+default:
+  dummy: 0
+  max_it: 1

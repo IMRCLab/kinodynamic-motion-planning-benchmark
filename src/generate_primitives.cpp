@@ -229,6 +229,87 @@ void improve_motion_primitives(const Options_trajopt &options_trajopt,
   std::cout << "num improves: " << num_improves << std::endl;
 }
 
+void generate_primitives_random(const Options_primitives &options_primitives,
+                                Trajectories &trajectories) {
+
+  auto robot_model =
+      robot_factory(robot_type_to_path(options_primitives.dynamics).c_str());
+
+  size_t num_translation = robot_model->get_translation_invariance();
+  if (num_translation) {
+    Eigen::VectorXd p_lb(num_translation);
+    Eigen::VectorXd p_ub(num_translation);
+    p_lb.setOnes();
+    p_lb *= -1;
+    p_ub.setOnes();
+    robot_model->setPositionBounds(p_lb, p_ub);
+  }
+
+  auto time_start = std::chrono::steady_clock::now();
+  size_t attempts = 0;
+  bool finished = false;
+  while (!finished) {
+
+    Eigen::VectorXd start(robot_model->nx);
+
+    robot_model->sample_uniform(start);
+
+    if (num_translation) {
+      start.head(num_translation).setZero();
+    }
+
+    std::cout << "Trying to Generate a path from " << std::endl;
+
+    CSTR_V(start);
+
+    int ref = options_primitives.ref_time_steps;
+
+    // random u's
+
+    size_t nu = robot_model->nu;
+    std::vector<Eigen::VectorXd> us;
+    for (size_t i = 0; i < ref; i++) {
+      Eigen::VectorXd u =
+          robot_model->get_u_lb() +
+          .5 * (Eigen::VectorXd::Random(nu) + Eigen::VectorXd::Ones(nu))
+                   .cwiseProduct(
+                       (robot_model->get_u_ub() - robot_model->get_u_lb()));
+      us.push_back(u);
+    }
+
+    std::vector<Eigen::VectorXd> xs(us.size() + 1,
+                                    Eigen::VectorXd::Zero(robot_model->nx));
+    robot_model->rollout(start, us, xs);
+
+    Trajectory traj;
+    traj.start = start;
+    traj.states = xs;
+    traj.actions = us;
+    traj.goal = traj.states.back();
+    trajectories.data.push_back(traj);
+
+    attempts++;
+
+    if (attempts >= options_primitives.max_attempts) {
+      finished = true;
+    }
+
+    if (trajectories.data.size() >= options_primitives.max_num_primitives) {
+      finished = true;
+    }
+
+    if (get_time_stamp_ms(time_start) / 1000. >=
+        options_primitives.time_limit) {
+      finished = true;
+    }
+  }
+
+  CSTR_(attempts);
+  CSTR_(trajectories.data.size());
+  double success_rate = double(trajectories.data.size()) / attempts;
+  CSTR_(success_rate);
+}
+
 void generate_primitives(const Options_trajopt &options_trajopt,
                          const Options_primitives &options_primitives,
                          Trajectories &trajectories) {

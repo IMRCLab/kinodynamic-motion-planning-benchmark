@@ -488,8 +488,23 @@ void Info_out::to_yaml(std::ostream &out, const std::string &be,
   out << "trajs_raw:" << std::endl;
   for (size_t i = 0; i < trajs_raw.size(); i++) {
     out << be << "  -" << std::endl;
-    std::string prefix = "   ";
     trajs_raw.at(i).to_yaml_format(out, be + prefix);
+  }
+
+  out << "infos_opt:" << std::endl;
+  for (size_t i = 0; i < infos_opt.size(); i++) {
+    out << be << "  -" << std::endl;
+    for (const auto &[k, v] : infos_opt.at(i)) {
+      out << be + prefix << k << ": " << v << std::endl;
+    }
+  }
+
+  out << "infos_raw:" << std::endl;
+  for (size_t i = 0; i < infos_raw.size(); i++) {
+    out << be << "  -" << std::endl;
+    for (const auto &[k, v] : infos_raw.at(i)) {
+      out << be + prefix << k << ": " << v << std::endl;
+    }
   }
 }
 

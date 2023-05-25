@@ -1011,7 +1011,7 @@ void ActionModelQ::calcDiff(const boost::shared_ptr<ActionDataAbstract> &data,
   }
 }
 
-boost::shared_ptr<ActionDataAbstract> ActionModelQ::createData() {
+boost::shared_ptr<crocoddyl::ActionDataAbstract> ActionModelQ::createData() {
   return boost::allocate_shared<Data>(Eigen::aligned_allocator<Data>(), this);
 }
 bool ActionModelQ::checkData(
@@ -1028,7 +1028,7 @@ void ActionModelQ::print(std::ostream &os) const {
   os << "wrapper" << std::endl;
 }
 
-void print_data(boost::shared_ptr<ActionDataAbstractTpl<double>> data) {
+void print_data(boost::shared_ptr<crocoddyl::ActionDataAbstractTpl<double>> data) {
   std::cout << "***\n";
   std::cout << "xnext\n" << data->xnext << std::endl;
   std::cout << "Fx:\n" << data->Fx << std::endl;

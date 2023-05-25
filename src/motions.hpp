@@ -124,9 +124,6 @@ struct Trajectory {
   Trajectory() = default;
   Trajectory(const char *file) { read_from_yaml(file); }
 
-
-
-
   Eigen::VectorXd start;
   Eigen::VectorXd goal;
   std::vector<Eigen::VectorXd> states;
@@ -225,7 +222,7 @@ double max_rollout_error(std::shared_ptr<Model_robot> robot,
 
 void resample_trajectory(std::vector<Eigen::VectorXd> &xs_out,
                          std::vector<Eigen::VectorXd> &us_out,
-                         Eigen::VectorXd& times,
+                         Eigen::VectorXd &times,
                          const std::vector<Eigen::VectorXd> &xs,
                          const std::vector<Eigen::VectorXd> &us,
                          const Eigen::VectorXd &ts, double ref_dt,
@@ -236,6 +233,8 @@ struct Info_out {
   double cost = 1e8;
   std::vector<Trajectory> trajs_raw;
   std::vector<Trajectory> trajs_opt;
+  std::vector<std::map<std::string, std::string>> infos_raw;
+  std::vector<std::map<std::string, std::string>> infos_opt;
 
   Info_out() = default;
   ~Info_out() = default;

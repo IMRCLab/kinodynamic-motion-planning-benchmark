@@ -3,6 +3,81 @@
 
 int main(int argc, const char *argv[]) {
 
+  srand(time(0));
+
+  Options_trajopt options_trajopt;
+  std::string env_file = "";
+  std::string init_file = "";
+  std::string cfg_file = "";
+  std::string results_file = "";
+
+  po::options_description desc("Allowed options");
+  options_trajopt.add_options(desc);
+  set_from_boostop(desc, VAR_WITH_NAME(env_file));
+  set_from_boostop(desc, VAR_WITH_NAME(init_file));
+  set_from_boostop(desc, VAR_WITH_NAME(cfg_file));
+  set_from_boostop(desc, VAR_WITH_NAME(results_file));
+
+  try {
+    po::variables_map vm;
+    po::store(po::parse_command_line(argc, argv, desc), vm);
+    po::notify(vm);
+    if (vm.count("help") != 0u) {
+      std::cout << desc << "\n";
+      return 0;
+    }
+  } catch (po::error &e) {
+    std::cerr << e.what() << std::endl << std::endl;
+    std::cerr << desc << std::endl;
+    return 1;
+  }
+  // print options
+
+  if (cfg_file != "") {
+    options_trajopt.read_from_yaml(cfg_file.c_str());
+  }
+
+  std::cout << "*** options_trajopt ***" << std::endl;
+  options_trajopt.print(std::cout);
+  std::cout << "***" << std::endl;
+
+  Problem problem(env_file.c_str());
+  Trajectory traj_out;
+  Trajectory traj_db;
+  traj_db.read_from_yaml(init_file.c_str());
+
+  Result_opti result;
+  // load the initial guess
+
+  trajectory_optimization(problem, traj_db, options_trajopt, traj_out, result);
+
+
+  CSTR_(results_file);
+  std::ofstream results(results_file);
+
+  results << "alg: idbastar" << std::endl;
+  results << "time_stamp: " << get_time_stamp() << std::endl;
+  results << "env_file: " << env_file << std::endl;
+  results << "init_file: " << init_file << std::endl;
+  results << "cfg_file: " << cfg_file << std::endl;
+  results << "results_file: " << results_file << std::endl;
+  results << "options trajopt:" << std::endl;
+
+  options_trajopt.print(results, "  ");
+  result.write_yaml(results);
+  results << "options trajopt:" << std::endl;
+
+  results << "trajs_opt:" << std::endl;
+  results << "  -" << std::endl;
+  traj_out.to_yaml_format(results, "    ");
+
+  // saving only the trajectory
+  std::string file = results_file + ".trajopt.yaml";
+  std::ofstream out(file);
+  traj_out.to_yaml_format(out);
+
+#if 0
+
   std::string env_file = "";
   std::string init_guess = "";
   std::string config_file = "";
@@ -10,6 +85,10 @@ int main(int argc, const char *argv[]) {
   std::string out_bench = "out_bench.yaml";
   std::string yaml_solver_file = "";
   std::string yaml_problem_file = "";
+
+  std::string cfg_file = "";
+
+
 
   Options_trajopt options_trajopt;
   Problem problem;
@@ -118,6 +197,8 @@ int main(int argc, const char *argv[]) {
     ff << "solver_file: " << yaml_solver_file << std::endl;
     ff << "problem_file: " << yaml_problem_file << std::endl;
   }
+
+#endif
 
   if (result.feasible) {
     std::cout << "croco success -- returning " << std::endl;

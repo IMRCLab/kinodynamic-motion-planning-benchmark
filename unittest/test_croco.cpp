@@ -3353,3 +3353,67 @@ BOOST_AUTO_TEST_CASE(test_quad2d_recovery_new) {
     traj_out.to_yaml_format(out);
   }
 }
+
+BOOST_AUTO_TEST_CASE(uni1_mpc) {
+
+  Trajectory traj_in, traj_out;
+  traj_in.read_from_yaml("../unittest/traj_db_uni1_bugtrap.yaml");
+  Problem problem("../benchmark/unicycle_first_order_0/bugtrap_0.yaml");
+
+  std::shared_ptr<Model_robot> robot =
+      std::make_shared<Model_unicycle1>("../models/unicycle1_v0.yaml");
+
+  traj_in.start = problem.start;
+  traj_in.goal = problem.goal;
+  traj_in.check(robot, true);
+
+  Options_trajopt options_trajopt;
+  options_trajopt.solver_id = 10;
+  options_trajopt.smooth_traj = true;
+  // smooth_traj
+  options_trajopt.window_optimize = 40;
+  options_trajopt.window_shift = 20;
+  options_trajopt.max_iter = 20;
+
+  Result_opti opti_out;
+
+  trajectory_optimization(problem, traj_in, options_trajopt, traj_out,
+                          opti_out);
+
+  {
+    std::ofstream out("out_opt.yaml");
+    traj_out.to_yaml_format(out);
+  }
+}
+
+BOOST_AUTO_TEST_CASE(uni2_mpc) {
+
+  Trajectory traj_in, traj_out;
+  traj_in.read_from_yaml("../build/trajdb_zHo6Qf.yaml");
+  Problem problem("../benchmark/unicycle_second_order_0/bugtrap_0.yaml");
+
+  std::shared_ptr<Model_robot> robot =
+      std::make_shared<Model_unicycle2>("../models/unicycle2_v0.yaml");
+
+  traj_in.start = problem.start;
+  traj_in.goal = problem.goal;
+  traj_in.check(robot, true);
+
+  Options_trajopt options_trajopt;
+  options_trajopt.solver_id = 10;
+  options_trajopt.smooth_traj = true;
+  // smooth_traj
+  options_trajopt.window_optimize = 40;
+  options_trajopt.window_shift = 15;
+  options_trajopt.max_iter = 20;
+
+  Result_opti opti_out;
+
+  trajectory_optimization(problem, traj_in, options_trajopt, traj_out,
+                          opti_out);
+
+  {
+    std::ofstream out("out_opt.yaml");
+    traj_out.to_yaml_format(out);
+  }
+}

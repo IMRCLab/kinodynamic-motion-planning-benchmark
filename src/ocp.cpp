@@ -510,7 +510,7 @@ generate_problem(const Generate_params &gen_args,
           nx, nu, nx, gen_args.states_weights.at(t), gen_args.states.at(t));
       feats_run.push_back(state_feature);
     }
-    bool add_margin_to_bounds = 1;
+    const bool add_margin_to_bounds = 1;
     if (dyn->x_lb.size() && dyn->x_weightb.sum() > 1e-10) {
 
       Eigen::VectorXd v = dyn->x_lb;
@@ -1145,6 +1145,12 @@ void __trajectory_optimization(const Problem &problem,
   bool store_iterations = true;
   CSTR_(store_iterations);
 
+  std::cout
+      << "WARNING: "
+      << "Cleaning data in opti_out at beginning of __trajectory_optimization"
+      << std::endl;
+  opti_out.data.clear();
+
   auto callback_quim = mk<crocoddyl::CallbackVerboseQ>();
 
   {
@@ -1416,12 +1422,12 @@ void __trajectory_optimization(const Problem &problem,
 
           std::cout << "previous state is " << previous_state.format(FMT)
                     << std::endl;
-          auto it =
-              std::min_element(path->x.begin(), path->x.end(),
-                               [&](const auto &a, const auto &b) {
-                                 return (a - previous_state).squaredNorm() <=
-                                        (b - previous_state).squaredNorm();
-                               });
+          auto it = std::min_element(
+              path->x.begin(), path->x.end(),
+              [&](const auto &a, const auto &b) {
+                return model_robot->distance(a, previous_state) <
+                       model_robot->distance(b, previous_state);
+              });
 
           size_t index = std::distance(path->x.begin(), it);
           std::cout << "starting with approx index " << index << std::endl;
@@ -1511,11 +1517,12 @@ void __trajectory_optimization(const Problem &problem,
                           << std::endl;
                 Vxd last = xs_warmstart_adptative.back().head(_nx);
 
-                auto it = std::min_element(path->x.begin(), path->x.end(),
-                                           [&](const auto &a, const auto &b) {
-                                             return (a - last).squaredNorm() <=
-                                                    (b - last).squaredNorm();
-                                           });
+                auto it =
+                    std::min_element(path->x.begin(), path->x.end(),
+                                     [&](const auto &a, const auto &b) {
+                                       return model_robot->distance(a, last) <
+                                              model_robot->distance(b, last);
+                                     });
 
                 size_t last_index = std::distance(path->x.begin(), it);
                 double alpha_of_last = path->times(last_index);
@@ -1619,8 +1626,8 @@ void __trajectory_optimization(const Problem &problem,
         // approx alpha of first state
         auto it = std::min_element(
             path->x.begin(), path->x.end(), [&](const auto &a, const auto &b) {
-              return (a - previous_state).squaredNorm() <=
-                     (b - previous_state).squaredNorm();
+              return model_robot->distance(a, previous_state) <=
+                     model_robot->distance(b, previous_state);
             });
         size_t first_index = std::distance(path->x.begin(), it);
         double alpha_of_first = path->times(first_index);
@@ -1747,11 +1754,12 @@ void __trajectory_optimization(const Problem &problem,
                         << std::endl;
               Vxd last = xs_warmstart_mpcc.back().head(_nx);
 
-              auto it = std::min_element(path->x.begin(), path->x.end(),
-                                         [&](const auto &a, const auto &b) {
-                                           return (a - last).squaredNorm() <=
-                                                  (b - last).squaredNorm();
-                                         });
+              auto it =
+                  std::min_element(path->x.begin(), path->x.end(),
+                                   [&](const auto &a, const auto &b) {
+                                     return model_robot->distance(a, last) <=
+                                            model_robot->distance(b, last);
+                                   });
 
               size_t last_index = std::distance(path->x.begin(), it);
               double alpha_of_last = path->times(last_index);
@@ -2044,7 +2052,7 @@ void __trajectory_optimization(const Problem &problem,
 
         for (size_t i = 0; i < ddp.get_xs().size(); i++) {
           auto &x = ddp.get_xs().at(i);
-          if ((x.head(_nx) - goal).norm() < 1e-1) {
+          if (model_robot->distance(x.head(_nx), goal) < 1e-1) {
             std::cout << "one state is close to goal! " << std::endl;
             close_to_goal = true;
           }
@@ -2530,6 +2538,9 @@ void __trajectory_optimization(const Problem &problem,
               ";"
               "ddp_time=" +
               std::to_string(ddp_time) + "\"";
+
+  opti_out.data.insert({"ddp_time", std::to_string(ddp_time)});
+
   if (opti_out.success) {
 
     double traj_tol = 1e-2;
@@ -2580,6 +2591,8 @@ void trajectory_optimization(const Problem &problem,
                              const Options_trajopt &options_trajopt,
                              Trajectory &traj, Result_opti &opti_out) {
 
+  double time_ddp_total = 0;
+  Stopwatch watch;
   Options_trajopt options_trajopt_local = options_trajopt;
 
   std::shared_ptr<Model_robot> model_robot =
@@ -2700,6 +2713,8 @@ void trajectory_optimization(const Problem &problem,
 
       __trajectory_optimization(problem, model_robot, tmp_init_guess,
                                 options_trajopt_local, tmp_solution, opti_out);
+      time_ddp_total += std::stod(opti_out.data.at("ddp_time"));
+      CSTR_(time_ddp_total);
 
       if (!opti_out.success) {
         std::cout << "warning"
@@ -2726,6 +2741,8 @@ void trajectory_optimization(const Problem &problem,
                                   options_trajopt_local, tmp_solution,
                                   opti_out);
 
+        time_ddp_total += std::stod(opti_out.data.at("ddp_time"));
+        CSTR_(time_ddp_total);
         if (!opti_out.success) {
           std::cout << "warning"
                     << " "
@@ -2753,6 +2770,8 @@ void trajectory_optimization(const Problem &problem,
     __trajectory_optimization(problem, model_robot, tmp_init_guess,
                               options_trajopt_local, tmp_solution, opti_out);
 
+    time_ddp_total += std::stod(opti_out.data.at("ddp_time"));
+    CSTR_(time_ddp_total);
     if (!opti_out.success) {
       std::cout << "warning"
                 << " "
@@ -2774,6 +2793,8 @@ void trajectory_optimization(const Problem &problem,
 
       __trajectory_optimization(problem, model_robot, tmp_solution,
                                 options_trajopt_local, traj, opti_out);
+      time_ddp_total += std::stod(opti_out.data.at("ddp_time"));
+      CSTR_(time_ddp_total);
     }
     CHECK_EQ(traj.feasible, opti_out.feasible, AT);
 
@@ -2843,6 +2864,11 @@ void trajectory_optimization(const Problem &problem,
       __trajectory_optimization(problem, model_robot, traj_rate_i,
                                 options_trajopt_local, traj_out,
                                 opti_out_local);
+
+      CHECK((opti_out_local.data.find("ddp_time") != opti_out_local.data.end()),
+            AT);
+      time_ddp_total += std::stod(opti_out_local.data.at("ddp_time"));
+      CSTR_(time_ddp_total);
     };
 
     Vxd rates = Vxd::LinSpaced(options_trajopt_local.tsearch_num_check,
@@ -2946,6 +2972,9 @@ void trajectory_optimization(const Problem &problem,
     __trajectory_optimization(problem, model_robot, tmp_init_guess,
                               options_trajopt_local, tmp_solution, opti_out);
 
+    time_ddp_total += std::stod(opti_out.data.at("ddp_time"));
+    CSTR_(time_ddp_total);
+
     if (!opti_out.success) {
       std::cout << "warning"
                 << " "
@@ -2954,7 +2983,6 @@ void trajectory_optimization(const Problem &problem,
     }
 
     if (do_final_repair_step) {
-
       std::cout << "time proxi was feasible, doing final step " << std::endl;
       options_trajopt_local.control_bounds = true;
       options_trajopt_local.solver_id = static_cast<int>(SOLVER::traj_opt);
@@ -2964,6 +2992,8 @@ void trajectory_optimization(const Problem &problem,
 
       __trajectory_optimization(problem, model_robot, tmp_solution,
                                 options_trajopt_local, traj, opti_out);
+      time_ddp_total += std::stod(opti_out.data.at("ddp_time"));
+      CSTR_(time_ddp_total);
     }
 
     CHECK_EQ(traj.feasible, opti_out.feasible, AT);
@@ -2983,6 +3013,8 @@ void trajectory_optimization(const Problem &problem,
 
     __trajectory_optimization(problem, model_robot, tmp_init_guess,
                               options_trajopt_local, tmp_solution, opti_out);
+    time_ddp_total += std::stod(opti_out.data.at("ddp_time"));
+    CSTR_(time_ddp_total);
 
     if (!opti_out.success) {
       std::cout << "warning"
@@ -3002,6 +3034,8 @@ void trajectory_optimization(const Problem &problem,
 
       __trajectory_optimization(problem, model_robot, tmp_solution,
                                 options_trajopt_local, traj, opti_out);
+      time_ddp_total += std::stod(opti_out.data.at("ddp_time"));
+      CSTR_(time_ddp_total);
     }
     CHECK_EQ(traj.feasible, opti_out.feasible, AT);
   } break;
@@ -3019,6 +3053,8 @@ void trajectory_optimization(const Problem &problem,
 
     __trajectory_optimization(problem, model_robot, tmp_init_guess,
                               options_trajopt_local, tmp_solution, opti_out);
+    time_ddp_total += std::stod(opti_out.data.at("ddp_time"));
+    CSTR_(time_ddp_total);
 
     // solve without bounds  --
 
@@ -3042,6 +3078,8 @@ void trajectory_optimization(const Problem &problem,
 
       __trajectory_optimization(problem, model_robot, tmp_solution,
                                 options_trajopt_local, traj, opti_out);
+      time_ddp_total += std::stod(opti_out.data.at("ddp_time"));
+      CSTR_(time_ddp_total);
     }
     CHECK_EQ(traj.feasible, opti_out.feasible, AT);
   } break;
@@ -3049,6 +3087,8 @@ void trajectory_optimization(const Problem &problem,
   default: {
     __trajectory_optimization(problem, model_robot, tmp_init_guess,
                               options_trajopt_local, traj, opti_out);
+    time_ddp_total += std::stod(opti_out.data.at("ddp_time"));
+    CSTR_(time_ddp_total);
     CHECK_EQ(traj.feasible, opti_out.feasible, AT);
   }
   }
@@ -3062,12 +3102,22 @@ void trajectory_optimization(const Problem &problem,
     traj_welf = from_quim_to_welf(traj, robot_derived->u_nominal);
     traj = traj_welf;
   }
+
+  double time_raw = watch.elapsed_ms();
+  opti_out.data.insert({"time_raw", std::to_string(time_raw)});
+  opti_out.data.insert({"time_ddp_total", std::to_string(time_ddp_total)});
 }
 
 void Result_opti::write_yaml(std::ostream &out) {
   out << "feasible: " << feasible << std::endl;
   out << "success: " << success << std::endl;
   out << "cost: " << cost << std::endl;
+  if (data.size()) {
+    out << "info:" << std::endl;
+    for (const auto &[k, v] : data) {
+      out << "  " << k << ": " << v << std::endl;
+    }
+  }
 
   out << "xs_out: " << std::endl;
   for (auto &x : xs_out)

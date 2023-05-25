@@ -1,0 +1,21 @@
+reference: "idbastar_v0_freetime"
+default:
+  solver_id: 10
+  dummy: 0
+  smooth_traj: true
+  window_optimize: 40
+  window_shift:  20
+
+unicycle1_v0:
+  default:
+    max_iter: 20
+
+unicycle2_v0:
+  # TODO: check why I don't get 100% accuracy
+  default: 
+    window_optimize: 40
+    window_shift: 20 
+    max_iter: 30
+    weight_goal: 50
+
+
