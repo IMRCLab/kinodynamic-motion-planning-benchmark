@@ -6,6 +6,10 @@
 
 #define VAR_WITH_NAME(variable) variable, #variable
 
+
+#define NAME_AND_STRING(variable) std::make_pair(#variable, std::to_string(variable))
+
+
 #define STRINGIFY(x) #x
 #define TOSTRING(x) STRINGIFY(x)
 #define AT __FILE__ ":" TOSTRING(__LINE__)

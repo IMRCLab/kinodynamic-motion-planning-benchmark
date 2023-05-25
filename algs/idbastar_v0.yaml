@@ -37,15 +37,18 @@ quad2d_v0:
   # rotational velocity.
   default:
     motionsFile: "../cloud/motionsV2/good/quad2d_v0/quad2d_v0_all.bin.sp1.bin"
+    # motionsFile: "../cloud/motionsV2/good/quad2d_v0/quad2d_v0_DEFand3.sp.bin"
     num_primitives_0: 5000
     max_motions_primitives: 100000
     delta_0: .7
-    use_nigh_nn: true
     weight_goal: 200
     smooth_traj: true
     max_iter: 150
     delta_factor_goal: .7
   quad2d_recovery_wo_obs:
+    num_primitives_0: 100000 #  I need more!!!
+    delta_0: .4
+  fall_through:
     num_primitives_0: 100000 #  I need more!!!
     delta_0: .4
 
@@ -59,7 +62,6 @@ acrobot_v0:
     # solver_id: 0 # TODO: check why Jacobians are not working with free time!
     solver_id: 0
     linear_search: true
-    use_nigh_nn: true # library for knn 
     # motionsFile: "../cloud/motionsV2/good/acrobot_v0/acrobot_v0_all.bin.sp.bin.so.bin"
     motionsFile: "../cloud/motionsV2/good/acrobot_v0/acrobot_v0_all2.bin.sp.bin"
     num_primitives_0: 100000
@@ -75,10 +77,8 @@ quad3d_v0:
     smooth_traj: true
     delta_factor_goal: .5
     solver_id: 0
-    use_nigh_nn: true # library for knn 
-    # motionsFile: "../cloud/motionsV2/good/quad3d_v0/quad3d_v0_all.bin.sp.bin"
     motionsFile: "../cloud/motionsV2/good/quad3d_v0/quad3d_v0_sp1_merged.bin"
-    # motionsFile: "../cloud/motionsV2/good/quad3d_v0/quad3d_v0_all.bin.sp.bin.c10000.bin"
+    # motionsFile: "../cloud/motionsV2/good/quad3d_v0/quad3d_v0_sp1_merged_v2.bin"
     num_primitives_0: 120000
     max_motions_primitives: 500000
     check_cols: false
@@ -93,7 +93,6 @@ quad3d_v0:
 
 car1_v0:
   default:
-    use_nigh_nn: true
     motionsFile: "../cloud/motionsV2/good/car1_v0/car1_v0_all.bin.sp.bin"
     num_primitives_0: 2000
     max_motions_primitives: 20000

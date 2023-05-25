@@ -3,7 +3,13 @@ reference: idbastar_v0
 
 default: 
   dummy: 0
+  max_it: 1
+  delta_0: .5
+  search_timelimit: 60000
+  num_primitives_0: 500
+
 
 unicycle2_v0:
   default:
-    delta_0: .5
+    delta_0: .2
+    num_primitives_0: 1000
