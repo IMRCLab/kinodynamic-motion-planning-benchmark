@@ -13,6 +13,8 @@ import csv
 import pandas
 
 import argparse
+import os
+import shutil
 
 
 all_problems = [
@@ -30,7 +32,6 @@ all_problems = [
     "quad2d/empty_0",
     "quad2d/quad_obs_column",
     "quad2d/quad2d_recovery_wo_obs",
-    # CONTINUE QUADROTOR_0
     "quadrotor_0/empty_0_easy",
     "quadrotor_0/recovery",
     "quadrotor_0/quad_one_obs",
@@ -62,7 +63,15 @@ do_compare = False
 do_benchmark = False
 do_debug = False
 do_vis_primitives = False
+do_bench_time = False
+do_fancy_table = False
+do_bench_search = False
 
+if mode == "bench_time":
+    do_bench_time = True
+
+if mode == "bench_search":
+    do_bench_search = True
 
 if mode == "compare":
     do_compare = True
@@ -76,6 +85,8 @@ elif mode == "debug":
 elif mode == "vis":
     do_vis_primitives = True
 
+elif mode == "fancy":
+    do_fancy_table = True
 
 import sys
 sys.path.append('..')
@@ -192,10 +203,20 @@ color_map = {
     "geo_v0": "green",
     "geo_v1": "red",
     "idbastar_v0": "cyan",
+    "idbastar_v0_heu0": "lightgreen",
     "idbastar_v0_heu1": "yellow",
+    "idbastar_v0_heuNO": "turquoise",
+    "idbastar_v0_rand": "magenta",
     "idbastar_tmp": "deeppink",
     "idbastar_v0_mpcc": "black",
-    "idbastar_v0_search": "orange"
+    "idbastar_v0_search": "orange",
+    "idbastar_v0_OptPRIM": "skyblue",
+
+    "idbastar_v0_fixedtime": "chocolate",
+    "idbastar_v0_freetime": "darkgray",
+    "idbastar_v0_mpc": "lawngreen",
+    "idbastar_v0_mpcc": "hotpink",
+    "idbastar_v0_search": "orangered"
 }
 
 
@@ -241,6 +262,73 @@ def get_config(alg: str, dynamics: str, problem: str):
         cfg[k] = v
 
     return cfg
+
+
+def solve_problem_time(
+        env: str,
+        guess: str,
+        alg: str,
+        out: str) -> List[str]:
+    # load params
+
+    problem = env
+
+    # get the dynamics
+    with open(problem, 'r') as f:
+        data_problem = yaml.safe_load(f)
+
+    print(f"data_problem {data_problem}")
+
+    dynamics = data_problem["robots"][0]["type"]
+    print(f"dynamics {dynamics}")
+
+    cfg = get_config(alg, dynamics, problem)
+
+    print("merged cfg\n", cfg)
+
+    cfg_out = out + ".cfg.yaml"
+
+    with open(cfg_out, "w") as f:
+        yaml.dump(cfg, f)
+
+    cmd = ["./croco_main", "--env_file",
+           problem, "--init_file",
+           guess, "--results_file",
+           out, "--cfg", cfg_out]
+
+    return cmd
+
+
+def solve_problem_search(
+        env: str,
+        alg: str,
+        out: str) -> List[str]:
+
+    problem = env
+
+    # get the dynamics
+    with open(problem, 'r') as f:
+        data_problem = yaml.safe_load(f)
+
+    print(f"data_problem {data_problem}")
+
+    dynamics = data_problem["robots"][0]["type"]
+    print(f"dynamics {dynamics}")
+
+    cfg = get_config(alg, dynamics, problem)
+
+    print("merged cfg\n", cfg)
+
+    cfg_out = out + ".cfg.yaml"
+
+    with open(cfg_out, "w") as f:
+        yaml.dump(cfg, f)
+
+    cmd = ["./main_dbastar", "--env_file",
+           problem, "--results_file",
+           out, "--cfg", cfg_out]
+
+    return cmd
 
 
 def solve_problem_with_alg(
@@ -306,13 +394,14 @@ def solve_problem_with_alg(
 
 
 class Experiment():
-    def __init__(self, path, problem, alg):
+    def __init__(self, path, problem, alg, guess=""):
         self.path = path
         self.problem = problem
         self.alg = alg
+        self.guess = guess
 
     def __str__(self):
-        print(f"path:{self.path} problem:{self.problem} alg:{self.alg}")
+        return f"path:{self.path}\n problem:{self.problem}\n alg:{self.alg}\n guess:{self.guess}"
 
 
 redirect_output = True
@@ -323,8 +412,15 @@ def run_cmd(cmd: str):
 
     if redirect_output:
         id = str(uuid.uuid4())[:7]
-        stdout_name = f"stdout-{id}.log"
-        stderr_name = f"stderr-{id}.log"
+        stdout_name = f"tmp_stdout/stdout-{id}.log"
+        stderr_name = f"tmp_stderr/stderr-{id}.log"
+
+        directories = ["tmp_stdout/", "tmp_stderr/"]
+
+        for d in directories:
+            if not os.path.exists(d):
+                os.makedirs(d)
+
         print(
             *
             cmd,
@@ -337,6 +433,552 @@ def run_cmd(cmd: str):
     else:
         subprocess.run(cmd)
     print("**\n**\nDONE RUNNING cpp\n**\n")
+
+
+def compare_search(
+        files: List[str],
+        interactive: bool = False):
+    # continue HERE
+
+    print("calling compare_search:")
+    print(f"files {files}")
+
+    # load
+    datas = []
+    for file in files:
+        print("loading ", file)
+        with open(file, 'r') as f:
+            data = yaml.safe_load(f)
+            datas.append(data)
+    print("datas\n", datas)
+
+    # print("artificially adding the problem...")
+    # for data in datas:
+    #     data["problem"] = "unicycle_first_order_0/bugtrap_0"
+    # print(datas)
+
+    # organize by problem
+
+    D = {}
+    fields = [
+        "problem",
+        "alg",
+        "time_search_mean",
+        "time_search_std",
+        "cost_mean",
+        "cost_std",
+        "expands_mean",
+        "expands_std",
+        "success_rate"]
+
+    fields.sort()
+
+    reduced_data = []
+    for d in datas:
+        # take only some fields
+        dd = {}
+        for field in fields:
+            dd[field] = d[field]
+        reduced_data.append(dd)
+
+    # save as csv file
+
+    # id = str(uuid.uuid4())[:7]
+    now = datetime.now()  # current date and time
+    date_time = now.strftime("%Y-%m-%d--%H-%M-%S")
+    filename_csv = f"../results_new_timeopt/summary/summary_time_{date_time}.csv"
+    pathlib.Path(filename_csv).parent.mkdir(parents=True, exist_ok=True)
+
+    # log file
+
+    filename_csv_log = filename_csv + ".log"
+
+    with open(filename_csv_log, "w") as f:
+        dd = {"input": files, "output": filename_csv}
+        yaml.dump(dd, f)
+
+        # input
+
+        # f.writelines(files)
+        # f.write("---")
+        # f.write(filename_csv)
+
+    print("saving reduced data to", filename_csv)
+    with open(filename_csv, 'w') as f:
+        writer = csv.writer(f)
+        writer.writerow(fields)
+        for dictionary in reduced_data:
+            writer.writerow(dictionary.values())
+
+    import shutil
+    shutil.copy(filename_csv, '/tmp/tmp_reduced_data.csv')
+
+    from matplotlib.backends.backend_pdf import PdfPages
+
+    filename_pdf = f"../results_new_search/plots/plot_search_{date_time}.pdf"
+    pathlib.Path(filename_pdf).parent.mkdir(parents=True, exist_ok=True)
+
+    pp = PdfPages(filename_pdf)
+    print(f"writing pdf to {filename_pdf}")
+
+    filename_log_pdf = filename_pdf + ".log"
+
+    with open(filename_log_pdf, "w") as f:
+        dd = {"input": files, "output": filename_pdf}
+        yaml.dump(dd, f)
+
+    # fig, ax = plt.subplots(2, 1, sharex=True)
+
+    all_problems = set([data["problem"] for data in reduced_data])
+
+    D = {}
+
+    for problem in all_problems:
+        D[problem] = [
+            data for data in reduced_data if data["problem"] == problem ]
+         
+    for problem in all_problems:
+
+        fig, ax = plt.subplots(4, 1, sharex=True)
+        fig.suptitle(problem)
+
+        for i, d in enumerate(D[problem]):
+
+
+
+            for ff,field in enumerate(["time_search" , "cost" , "expands"]):
+                y = d[field+"_mean"]
+                e = d[field+"_std"]
+                ax[ff].errorbar(
+                    i,
+                    y,
+                    e,
+                    linestyle='None',
+                    marker='^',
+                    label=d["alg"])
+
+                # y = d["cost_mean"]
+                # e = d["cost_std"]
+                # ax[1].errorbar(
+                #     i,
+                #     y,
+                #     e,
+                #     linestyle='None',
+                #     marker='^',
+                #     label=d["alg"])
+
+
+
+
+
+            y = d["success_rate"]
+
+            ax[3].plot([i], [y], 'o')
+
+        ax[1].legend()
+        ax[0].set_ylabel("time [ms]")
+        ax[1].set_ylabel("cost [s]")
+        ax[2].set_ylabel("nodes")
+        ax[3].set_ylabel("success")
+
+        ax[0].set_xticks([])
+        ax[1].set_xticks([])
+        ax[2].set_xticks([])
+        ax[3].set_xticks([])
+
+        pp.savefig(fig)
+
+        if interactive:
+            plt.show()
+
+    pp.close()
+    shutil.copy(filename_pdf, '/tmp/tmp_compare_search.pdf')
+
+
+def compare_time(
+        files: List[str],
+        interactive: bool = False):
+
+    print("calling compare:")
+    print(f"files {files}")
+
+    # load
+    datas = []
+    for file in files:
+        print("loading ", file)
+        with open(file, 'r') as f:
+            data = yaml.safe_load(f)
+            datas.append(data)
+    print("datas\n", datas)
+
+    # print("artificially adding the problem...")
+    # for data in datas:
+    #     data["problem"] = "unicycle_first_order_0/bugtrap_0"
+    # print(datas)
+
+    # organize by problem
+
+    D = {}
+    fields = [
+        "problem",
+        "alg",
+        "guess",
+        "time_mean",
+        "success_rate",
+        "time_std",
+        "cost_std",
+        "cost_mean"]
+
+    fields.sort()
+
+    reduced_data = []
+    for d in datas:
+        # take only some fields
+        dd = {}
+        for field in fields:
+            dd[field] = d[field]
+        reduced_data.append(dd)
+
+    # save as csv file
+
+    # id = str(uuid.uuid4())[:7]
+    now = datetime.now()  # current date and time
+    date_time = now.strftime("%Y-%m-%d--%H-%M-%S")
+    filename_csv = f"../results_new_search/summary/summary_search_{date_time}.csv"
+    pathlib.Path(filename_csv).parent.mkdir(parents=True, exist_ok=True)
+
+    # log file
+
+    filename_csv_log = filename_csv + ".log"
+
+    with open(filename_csv_log, "w") as f:
+        dd = {"input": files, "output": filename_csv}
+        yaml.dump(dd, f)
+
+        # input
+
+        # f.writelines(files)
+        # f.write("---")
+        # f.write(filename_csv)
+
+    print("saving reduced data to", filename_csv)
+    with open(filename_csv, 'w') as f:
+        writer = csv.writer(f)
+        writer.writerow(fields)
+        for dictionary in reduced_data:
+            writer.writerow(dictionary.values())
+
+    import shutil
+    shutil.copy(filename_csv, '/tmp/tmp_reduced_data.csv')
+
+    from matplotlib.backends.backend_pdf import PdfPages
+
+    filename_pdf = f"../results_new_timeopt/plots/plot_time_{date_time}.pdf"
+    pathlib.Path(filename_pdf).parent.mkdir(parents=True, exist_ok=True)
+
+    pp = PdfPages(filename_pdf)
+    print(f"writing pdf to {filename_pdf}")
+
+    filename_log_pdf = filename_pdf + ".log"
+
+    with open(filename_log_pdf, "w") as f:
+        dd = {"input": files, "output": filename_pdf}
+        yaml.dump(dd, f)
+
+    # fig, ax = plt.subplots(2, 1, sharex=True)
+
+    all_problems = set([data["problem"] + "+" + data["guess"]
+                       for data in reduced_data])
+
+    D = {}
+
+    for problem in all_problems:
+        D[problem] = [
+            data for data in reduced_data if data["problem"] +
+            "+" +
+            data["guess"] == problem]
+
+    for problem in all_problems:
+
+        fig, ax = plt.subplots(3, 1, sharex=True)
+        fig.suptitle(problem)
+
+        for i, d in enumerate(D[problem]):
+
+            y = d["time_mean"]
+            e = d["time_std"]
+            ax[0].errorbar(
+                i,
+                y,
+                e,
+                linestyle='None',
+                marker='^',
+                label=d["alg"])
+
+            y = d["cost_mean"]
+            e = d["cost_std"]
+            ax[1].errorbar(
+                i,
+                y,
+                e,
+                linestyle='None',
+                marker='^',
+                label=d["alg"])
+
+            y = d["success_rate"]
+
+            ax[2].plot([i], [y], 'o')
+
+        ax[1].legend()
+        ax[0].set_ylabel("time [ms]")
+        ax[1].set_ylabel("cost [s]")
+        ax[2].set_ylabel("success")
+
+        ax[0].set_xticks([])
+        ax[1].set_xticks([])
+        ax[2].set_xticks([])
+
+        pp.savefig(fig)
+
+        if interactive:
+            plt.show()
+
+    pp.close()
+    shutil.copy(filename_pdf, '/tmp/tmp_compare_time.pdf')
+    # create_latex_table(filename_csv)
+    #
+    # # check
+    # print("checking data")
+    # with open(filename_csv, 'r') as myFile:
+    #     print(myFile.read())
+    #
+    # for problem in all_problems:
+    #     print(f"problem {problem}")
+    #     # check if data belongs to this problem
+    #     _datas = []
+    #     for data in datas:
+    #         print("**")
+    #         print(data["problem"])
+    #         print(problem)
+    #         print("**")
+    #         print("**")
+    #         if data["problem"] == problem:
+    #             print("match!")
+    #             _datas.append(data)
+    #     D[problem] = _datas
+    # print("D", D)
+    #
+    # # now print the data!
+    #
+    # from matplotlib.backends.backend_pdf import PdfPages
+    #
+    # filename_pdf = f"../results_new/plots/plot_{date_time}.pdf"
+    #
+    # print(f"writing pdf to {filename_pdf}")
+    #
+    # filename_log_pdf = filename_pdf + ".log"
+    #
+    # with open(filename_log_pdf, "w") as f:
+    #     dd = {"input": files, "output": filename_pdf}
+    #     yaml.dump(dd, f)
+    #
+    # pp = PdfPages(filename_pdf)
+    #
+    # for problem in all_problems:
+    #
+    #     if D[problem]:
+    #         fig, ax = plt.subplots(2, 1, sharex=True)
+    #         fig.suptitle(problem)
+    #         for d in D[problem]:
+    #             print("d", d)
+    #             alg = d["alg"]
+    #             times = d["times"]
+    #             success = d["success"]
+    #             cost_mean = d["cost_mean"]
+    #             cost_std = d["cost_std"]
+    #             color = color_map[alg]
+    #
+    #             ax[0].plot(times, cost_mean, color=color, label=alg)
+    #             ax[0].fill_between(times,
+    #                                np.array(cost_mean) + np.array(cost_std),
+    #                                np.array(cost_mean) - np.array(cost_std),
+    #                                facecolor = color,
+    #                                alpha = 0.5)
+    #             ax[1].plot(times, success, color = color, label = alg)
+    #
+    #             ax[0].set_xscale('log')
+    #             ax[1].set_xscale('log')
+    #
+    #         ax[1].legend()
+    #         ax[0].set_ylabel("cost")
+    #         ax[1].set_xlabel("time [s]")
+    #         ax[1].set_ylabel("success %")
+    #         ax[1].set_ylim(-10, 110)
+    #         ax[1].set_xlim(.1, MAX_TIME_PLOTS)
+    #
+    #         if (interactive):
+    #             plt.show()
+    #
+    #         pp.savefig(fig)
+    #         plt.close(fig)
+    # pp.close()
+    #
+    # import shutil
+    # shutil.copy(filename_pdf, '/tmp/tmp_compare.pdf')
+    #
+
+
+def benchmark_search(bench_cfg: str):
+
+    with open(bench_cfg) as f:
+        data = yaml.safe_load(f)
+
+    print("bench cfg")
+    print(data)
+    problems = data["problems"]
+    algs = data["algs"]
+    trials = data["trials"]
+    n_cores = data["n_cores"]
+
+    if n_cores == -1:
+        n_cores = int(multiprocessing.cpu_count() / 2)
+
+    print(f"problems {problems}")
+    print(f"algs {algs}")
+
+    base_path_problem = "../benchmark/"
+    folder_results = "../results_new_search/"
+
+    now = datetime.now()  # current date and time
+    date_time = now.strftime("%Y-%m-%d--%H-%M-%S")
+    cmds = []
+    paths = []
+
+    experiments = []
+
+    for problem in problems:
+        for alg in algs:
+            path_name = problem
+            print(f"path_name: {path_name}")
+            path = folder_results + path_name + "/" + alg + "/" + date_time
+            paths.append(path)
+            pathlib.Path(path).mkdir(parents=True, exist_ok=True)
+            experiments.append(
+                Experiment(
+                    path=path,
+                    problem=problem,
+                    alg=alg))
+            for i in range(trials):
+                out = path + f"/run_{i}_out.yaml"
+                cmd = solve_problem_search(
+                    base_path_problem + problem + ".yaml",
+                    alg, out)
+                cmds.append(cmd)
+    print("commands are: ")
+    for i, cmd in enumerate(cmds):
+        print(i, cmd)
+
+    print(f"Start a pool with {n_cores}:")
+    with Pool(n_cores) as p:
+        p.map(run_cmd, cmds)
+    print("Pool is DONE")
+
+    fileouts = []
+    for experiment in experiments:
+        print(f"experiment: {experiment}")
+        fileout, _ = analyze_search(
+            experiment.path,
+            experiment.problem,
+            experiment.alg, False)
+        fileouts.append(fileout)
+
+    compare_search(fileouts)
+    # TODO: what to compare?
+
+
+def benchmark_opti(bench_cfg: str):
+
+    with open(bench_cfg) as f:
+        data = yaml.safe_load(f)
+
+    print("bench cfg")
+    print(data)
+    problems = data["problems"]
+    algs = data["algs"]
+    trials = data["trials"]
+    n_cores = data["n_cores"]
+
+    if n_cores == -1:
+        n_cores = int(multiprocessing.cpu_count() / 2)
+
+    print(f"problems {problems}")
+    print(f"algs {algs}")
+
+    base_path_problem = "../benchmark/"
+    base_guess = "../benchmark_initguess/"
+    folder_results = "../results_new_timeopt/"
+
+    now = datetime.now()  # current date and time
+    date_time = now.strftime("%Y-%m-%d--%H-%M-%S")
+    cmds = []
+    paths = []
+
+    experiments = []
+
+    def get_path_name_for_init_guess(env: str, guess: str) -> str:
+        env_ = env.split('/')
+        guess_ = guess.split('/')
+        print(f"guess_ {guess_}")
+        out = env_ + [guess_[-1]]
+        return '/'.join(out)
+
+    for problem in problems:
+        env = problem["env"]
+        guess = problem["guess"]
+        print(f"env {env}")
+        print(f"guess {guess}")
+        for alg in algs:
+            path_name = get_path_name_for_init_guess(env, guess)
+            print(f"path_name: {path_name}")
+            path = folder_results + path_name + "/" + alg + "/" + date_time
+            paths.append(path)
+            pathlib.Path(path).mkdir(parents=True, exist_ok=True)
+            experiments.append(
+                Experiment(
+                    path=path,
+                    problem=env,
+                    alg=alg,
+                    guess=guess))
+            for i in range(trials):
+                out = path + f"/run_{i}_out.yaml"
+                cmd = solve_problem_time(
+                    base_path_problem + env + ".yaml",
+                    base_guess + guess + ".yaml",
+                    alg, out)
+                cmds.append(cmd)
+    print("commands are: ")
+    for i, cmd in enumerate(cmds):
+        print(i, cmd)
+
+    print(f"Start a pool with {n_cores}:")
+    with Pool(n_cores) as p:
+        p.map(run_cmd, cmds)
+    print("Pool is DONE")
+
+    fileouts = []
+    for experiment in experiments:
+        print(f"experiment: {experiment}")
+        fileout, _ = analyze_runs_time(
+            experiment.path,
+            experiment.problem,
+            experiment.guess,
+            experiment.alg,
+            visualize=False)
+        fileouts.append(fileout)
+
+    compare_time(fileouts)
+
+    # compare(fileouts, False)
 
 
 def benchmark(bench_cfg: str):
@@ -484,6 +1126,10 @@ def compare(
     with open(filename_csv, 'r') as myFile:
         print(myFile.read())
 
+
+    all_problems = set([data["problem"] for data in reduced_data])
+
+
     for problem in all_problems:
         print(f"problem {problem}")
         # check if data belongs to this problem
@@ -515,6 +1161,7 @@ def compare(
         yaml.dump(dd, f)
 
     pp = PdfPages(filename_pdf)
+
 
     for problem in all_problems:
 
@@ -673,6 +1320,123 @@ def first(iterable, condition):
     """
 
     return next(x for x in iterable if condition(x))
+
+
+def analyze_search(path_to_dir: str,
+                   problem: str,
+                   alg: str,
+                   visualize: bool, **kwargs) -> Tuple[str, str]:
+
+    print(
+        f"ARGS: path_to_dir:{path_to_dir}\nproblem:{problem}\nalg:{alg}\nvisualize:{visualize}")
+    __files = [f for f in pathlib.Path(
+        path_to_dir).iterdir() if f.is_file()]
+
+    files = [f for f in __files if "cfg" not in f.name and "debug" not in f.name and f.suffix ==
+             ".yaml" and "report" not in f.name and "traj" not in f.name]
+
+    print(f"files ", [f.name for f in files])
+
+    Ds = []
+
+    for file in [str(f) for f in files]:
+        print(f"loading file: {file}")
+        with open(file) as f:
+            data = yaml.safe_load(f)
+            # I am interested in cost of solution
+            D = {
+                "cost": data["cost"],
+                "solved": data["solved"],
+                "expands": data["data"]["expands"],
+                "time_search": data["data"]["time_search"]}
+            Ds.append(D)
+
+    data_out = {}
+    data_out["data_raw"] = Ds
+
+    for k in ["cost", "solved", "expands", "time_search"]:
+        data_out[k + "_mean"] = float(np.mean([d[k] for d in Ds]))
+        data_out[k + "_std"] = float(np.std([d[k] for d in Ds]))
+
+    data_out["success_rate"] = float(
+        np.sum([d["solved"] for d in Ds]) / len(Ds))
+
+    data_out["alg"] = alg
+    data_out["files"] = [str(file) for file in files]
+    data_out["path_to_dir"] = path_to_dir
+    data_out["problem"] = problem
+
+    fileout = path_to_dir + "/report.yaml"
+    print(f"writing file {fileout}")
+    with open(fileout, "w") as f:
+        yaml.dump(data_out, f)
+
+    # todo: create a figure!
+
+    figureout = ""
+
+    return fileout, figureout
+
+
+def analyze_runs_time(path_to_dir: str,
+                      problem: str,
+                      guess: str,
+                      alg: str,
+                      visualize: bool, **kwargs) -> Tuple[str, str]:
+    print(
+        f"path_to_dir:{path_to_dir}\nproblem:{problem}\nguess:{guess}\nalg:{alg}\nvisualize:{visualize}")
+    __files = [f for f in pathlib.Path(
+        path_to_dir).iterdir() if f.is_file()]
+
+    # filter some files out.
+
+    files = [f for f in __files if "cfg" not in f.name and "debug" not in f.name and f.suffix ==
+             ".yaml" and "report" not in f.name and "traj" not in f.name]
+
+    print(f"files ", [f.name for f in files])
+
+    Ds = []
+
+    for file in [str(f) for f in files]:
+        print(f"loading file: {file}")
+        with open(file) as f:
+            data = yaml.safe_load(f)
+            cost = data["cost"]
+            # time = data["info"]["time_ddp_total"] # OR time_raw
+            time = data["info"]["time_raw"]  # OR time_raw
+            # TODO: read feasible from the file!!
+            D = {"cost": cost, "time": time, "feasible": 1}
+            Ds.append(D)
+
+    data_out = {}
+    data_out["data_raw"] = Ds
+    cost_mean = np.mean([d["cost"] for d in Ds])
+    time_mean = np.mean([d["time"] for d in Ds])
+    success_rate = np.sum([d["feasible"] for d in Ds]) / len(Ds)
+
+    cost_std = np.std([d["cost"] for d in Ds])
+    time_std = np.std([d["time"] for d in Ds])
+
+    data_out["cost_mean"] = float(cost_mean)
+    data_out["time_mean"] = float(time_mean)
+    data_out["cost_std"] = float(cost_std)
+    data_out["time_std"] = float(time_std)
+    data_out["success_rate"] = float(success_rate)
+    data_out["alg"] = alg
+    data_out["files"] = [str(file) for file in files]
+    data_out["path_to_dir"] = path_to_dir
+    data_out["problem"] = problem
+    data_out["guess"] = guess
+
+    fileout = path_to_dir + "/report.yaml"
+    with open(fileout, "w") as f:
+        yaml.dump(data_out, f)
+
+    # todo: create a figure!
+
+    figureout = ""
+
+    return fileout, figureout
 
 
 def analyze_runs(path_to_dir: str,
@@ -999,7 +1763,7 @@ def fancy_table(filenames: List[str]):
     #     "unicycle_second_order_0/kink_0",
     #     "unicycle_second_order_0/parallelpark_0"]
 
-    problems =  df.problem.unique()
+    problems = df.problem.unique()
 
     all_df = pandas.DataFrame()
 
@@ -1025,7 +1789,6 @@ def fancy_table(filenames: List[str]):
     print(all_df)
     all_df.to_csv("tmp.csv")
     # now i could just export as table!!
-    # CONTINUE HERE!!!
 
     str_raw = all_df.to_latex(index=True, float_format="{:.1f}".format)
     str_ = format_latex_str(str_raw)
@@ -1076,43 +1839,10 @@ def format_latex_str(str_in: str) -> str:
     print(str_)
     return str_
 
-
     # group by problem
     # should I use the latex output of pandas?
 if __name__ == "__main__":
 
-
-    # path_to_dir= "../results_new/quadrotor_0/recovery/geo_v1/2023-05-11--15-54-45"
-    # problem = "quadrotor_0/recovery"
-    # alg = "geo_v1"
-    # visualize = False
-    # analyze_runs(path_to_dir, problem, alg, visualize)
-    # sys.exit(0)
-
-    files = [
-        "../results_new/car_first_order_with_1_trailers_0/kink_0/idbastar_v0/2023-05-10--16-26-38/report.yaml",
-        "../results_new/car_first_order_with_1_trailers_0/kink_0/sst_v0/2023-05-10--16-26-38/report.yaml",
-        "../results_new/car_first_order_with_1_trailers_0/kink_0/geo_v1/2023-05-10--16-26-38/report.yaml",
-        "../results_new/car_first_order_with_1_trailers_0/bugtrap_0/idbastar_v0/2023-05-10--16-26-38/report.yaml",
-        "../results_new/car_first_order_with_1_trailers_0/bugtrap_0/sst_v0/2023-05-10--16-26-38/report.yaml",
-        "../results_new/car_first_order_with_1_trailers_0/bugtrap_0/geo_v1/2023-05-10--16-26-38/report.yaml",
-        "../results_new/car_first_order_with_1_trailers_0/parallelpark_0/idbastar_v0/2023-05-10--16-26-38/report.yaml",
-        "../results_new/car_first_order_with_1_trailers_0/parallelpark_0/sst_v0/2023-05-10--16-26-38/report.yaml",
-        "../results_new/car_first_order_with_1_trailers_0/parallelpark_0/geo_v1/2023-05-10--16-26-38/report.yaml"]
-
-    # files = ['../results_new/unicycle_second_order_0/bugtrap_0/idbastar_v0/2023-05-10--12-51-39/report.yaml', '../results_new/unicycle_second_order_0/bugtrap_0/idbastar_tmp/2023-05-10--12-51-39/report.yaml']
-    #
-    # compare(files )
-    # raise Exception('DONE')
-
-    # fileout, _ = analyze_runs(path_to_dir="/home/quim/stg/wolfgang/kinodynamic-motion-planning-benchmark/results_new/unicycle_first_order_0/kink_0/sst_v0/2023-04-27--17-34-46/",
-    # problem="unicycle_first_order_0/kink_0", alg="sst_v0", visualize=True)
-
-    # csv_file = "../results_new/summary/summary_2023-04-27--13-03-13.csv"
-    # create_latex_table(csv_file)
-    # sys.exit(1)
-
-    do_fancy_table = True
     if do_fancy_table:
 
         files = [
@@ -1121,12 +1851,9 @@ if __name__ == "__main__":
             "/home/quim/stg/wolfgang/kinodynamic-motion-planning-benchmark/results_new/summary/summary_2023-05-10--15-56-06.csv",
             "/home/quim/stg/wolfgang/kinodynamic-motion-planning-benchmark/results_new/summary/summary_2023-05-11--07-50-08.csv",
             "/home/quim/stg/wolfgang/kinodynamic-motion-planning-benchmark/results_new/summary/summary_2023-05-11--12-02-25.csv",
-            "/home/quim/stg/wolfgang/kinodynamic-motion-planning-benchmark/results_new/summary/summary_2023-05-11--15-06-40.csv", 
-            "/home/quim/stg/wolfgang/kinodynamic-motion-planning-benchmark/results_new/summary/summary_2023-05-11--17-34-33.csv", 
+            "/home/quim/stg/wolfgang/kinodynamic-motion-planning-benchmark/results_new/summary/summary_2023-05-11--15-06-40.csv",
+            "/home/quim/stg/wolfgang/kinodynamic-motion-planning-benchmark/results_new/summary/summary_2023-05-11--17-34-33.csv",
         ]
-
-
-
 
         fancy_table(files)
         sys.exit(0)
@@ -1145,6 +1872,13 @@ if __name__ == "__main__":
         compare(files, interactive=True)
     if do_benchmark:
         benchmark(bench_cfg)
+
+    if do_bench_time:
+        benchmark_opti(bench_cfg)
+
+    if do_bench_search:
+        benchmark_search(bench_cfg)
+
     if do_debug:
         file = "../results_new/unicycle_second_order_0/parallelpark_0/idbastar_v0/04-06-2023--14-52-41/run_1_out.yaml"
         with open(file, "r") as f:
@@ -1206,5 +1940,4 @@ if __name__ == "__main__":
 
     # stats of primitives
     # Get the stats...
-    # Continue here!!
     # visualize_primitives(file,robot, "primitives.pdf")

@@ -859,6 +859,7 @@ void Options_dbastar::__load_data(void *source, bool boost, bool write,
   loader.source = source;
   loader.be = be;
 
+  loader.set(VAR_WITH_NAME(new_invariance));
   loader.set(VAR_WITH_NAME(connect_radius_h));
   loader.set(VAR_WITH_NAME(always_add));
   loader.set(VAR_WITH_NAME(use_collision_shape));
@@ -1752,7 +1753,6 @@ Heu_roadmap::Heu_roadmap(std::shared_ptr<RobotOmpl> robot,
 void dbastar(const Problem &problem, const Options_dbastar &options_dbastar,
              Trajectory &traj_out, Out_info_db &out_info_db) {
 
-  bool new_invariance = true;
 
   // TODO:
   // - disable motions should not be on the search tree!
@@ -2553,7 +2553,7 @@ void dbastar(const Problem &problem, const Options_dbastar &options_dbastar,
     si->copyState(fakeMotion.states[0], current->state);
 
     // CHANGE THIS
-    if (!new_invariance) {
+    if (!options_dbastar_local.new_invariance) {
       if (robot->isTranslationInvariant())
         robot->setPosition(fakeMotion.states[0], fcl::Vector3d(0, 0, 0));
     } else {
@@ -2629,7 +2629,7 @@ void dbastar(const Problem &problem, const Options_dbastar &options_dbastar,
       si->copyState(tmpState, motion->states.back());
       si->copyState(tmpState2, motion->states.front());
 
-      if (!new_invariance) {
+      if (!options_dbastar_local.new_invariance) {
         if (robot->isTranslationInvariant()) {
           current_pos = robot->getTransform(current->state).translation();
           offset = current_pos + computed_offset;
