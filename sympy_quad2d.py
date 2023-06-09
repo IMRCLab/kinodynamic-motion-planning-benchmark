@@ -4,8 +4,6 @@ from sympy.physics.mechanics import *
 from datetime import datetime
 
 
-##
-
 def nice_latex(inn: str):
 
     out = inn[:]
@@ -70,16 +68,17 @@ r = sp.Symbol("r")
 
 U_pole = m_p * g * (y - r * sp.cos(o + q))
 T_pole = .5 * m_p * ((v_x + r * (vq + w) * sp.cos(o + q))
-                     ** 2 + (v_y + r * (vq + w) * sp.sin(o + q)))
+                     ** 2 + (v_y + r * (vq + w) * sp.sin(o + q)) ** 2)
 
 
-L = T + T_pole - U - U_pole
+L = sp.simplify(T + T_pole - U - U_pole)
 F = [-(f_1 + f_2) * sp.sin(o), (f_1 + f_2) * sp.cos(o), l * (f_1 - f_2), 0]
 
 eq = - _gradient(L, [x, y, o, q]) + \
     sp.diff(_gradient(L, [v_x, v_y, w, vq]), t) - sp.Matrix(F).T
 
 
+eq = sp.simplify(eq)
 sol = sp.solve(eq, [sp.Derivative(x, (t, 2)), sp.Derivative(y, (t, 2)),
                     sp.Derivative(o, (t, 2)), sp.Derivative(q, (t, 2))])
 
@@ -126,6 +125,23 @@ _ydotdot = ydotdot.subs(Dsubs)
 _odotdot = odotdot.subs(Dsubs)
 _qdotdot = qdotdot.subs(Dsubs)
 
+
+# _xdotdot.subs({_o:.1 , m:.2 , m_p:.3 , f_1:.4 , f_2:.5, r:0, _q:0})
+
+print(
+    _xdotdot.subs({_o: .1, m: .2, m_p: .3, f_1: .4, f_2: .5,
+                   r: 0.2, _q: 0.5, _vq: .2, _w: .7}))
+
+print(_ydotdot.subs({_o: .1, m: .2, m_p: .3, f_1: .4, f_2: .5,
+                     r: 0.2, _q: 0.5, _vq: .2, _w: .7}))
+
+
+print(_odotdot.subs({_o: .1, m: .2, m_p: .3, f_1: .4, f_2: .5,
+                     r: 0.2, _q: 0.5, _vq: .2, _w: .7}))
+
+
+print(_qdotdot.subs({_o: .1, m: .2, m_p: .3, f_1: .4, f_2: .5,
+                     r: 0.2, _q: 0.5, _vq: .2, _w: .7}))
 
 fdotdot = sp.Matrix([_xdotdot, _ydotdot, _odotdot, _qdotdot])
 
@@ -199,11 +215,9 @@ const double r = data[4];
 const double g = data[5];""" + "\n"
 
 
-
-
 footer = "\n}"
-write_c_code  = False
-if write_c_code :
+write_c_code = False
+if write_c_code:
     with open("src/quadpole_acceleration_auto.h", "w") as f:
         f.write(header)
         f.write(assign_vars)
@@ -219,11 +233,3 @@ if write_c_code :
         f.write("\n")
         f.writelines(["}"])
         f.write(footer)
-
-
-# %%
-
-# def _gradient(f, v): return sp.Matrix([f]).jacobian(v)
-
-
-# lets take some derivatives...

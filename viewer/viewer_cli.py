@@ -6,6 +6,7 @@ sys.path.append(str(Path(__file__).parent) )
 import argparse
 import viewer_utils
 import quad2d_viewer
+import quad2dpole_viewer
 import quad3d_viewer
 import acrobot_viewer
 import  unicycle1_viewer
@@ -25,6 +26,9 @@ def get_robot_viewer(robot : str)  -> robot_viewer.RobotViewer:
 
     elif robot =="quad2d":
         viewer = quad2d_viewer.Quad2dViewer()
+
+    elif robot =="quad2dpole":
+        viewer = quad2dpole_viewer.Quad2dpoleViewer()
 
     elif robot =="acrobot":
         viewer = acrobot_viewer.AcrobotViewer()
