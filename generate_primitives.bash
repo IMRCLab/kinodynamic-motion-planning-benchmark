@@ -46,21 +46,37 @@ time_stamp=$(date +%Y_%m_%d__%H_%M_%S)
 }
 
 
+quad_3d_ompl_primitive() {
+num_primitives=$1
+time_stamp=$(date +%Y_%m_%d__%H_%M_%S)
+./main_primitives --dynamics quad3d_omplapp  --out_file  "data_6/tmp_quad_3d_omplapp${time_stamp}.bin"  --mode_gen_id 0  --max_num_primitives $num_primitives --max_iter 300 --ref_x0 1  --ref_time_steps 300 --weight_goal 300 --time_limit 1e8 > /dev/null
+}
+
+quad2d_pole() {
+num_primitives=$1
+time_stamp=$(date +%Y_%m_%d__%H_%M_%S)
+./main_primitives --dynamics quad2dpole_v0  --out_file  "data_x/tmp_quad2dpole_v0_${time_stamp}.bin"  --mode_gen_id 0  --max_num_primitives $num_primitives --max_iter 300 --ref_x0 1  --ref_time_steps 300 --weight_goal 300 --time_limit 1e8 > /dev/null
+}
 
 
-# i want 10.000 of each!
+quad2d_pole 2
 
-# quad_3d_primitive 10
+# quad_3d_ompl_primitive 4
 
-num_primitives=5000
-for i in {1..50}
-do
-  # car_primitive 100  &
-  quad_3d_primitive $num_primitives  &
-  # quad_2d_primitive $num_primitives &
-  # acrobot_primitive $num_primitives &
-sleep 2
-done
+#
+# # i want 10.000 of each!
+#
+# # quad_3d_primitive 10
+#
+# num_primitives=5000
+# for i in {1..50}
+# do
+#   # car_primitive 100  &
+#   quad_3d_primitive $num_primitives  &
+#   # quad_2d_primitive $num_primitives &
+#   # acrobot_primitive $num_primitives &
+# sleep 2
+# done
 
 
 
