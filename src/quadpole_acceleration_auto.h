@@ -1,6 +1,6 @@
 #include <cmath>
 void quadpole_2d( const double* x , const double* u , const double* data,  double* fdotdot , double * Jx , double * Ju) {
-// Auto generated 2023-06-08--10-09-31 from sympy
+// Auto generated 2023-06-08--16-58-03 from sympy
 using namespace std;
 const double xx = x[0];
 const double yy = x[1];
@@ -18,27 +18,27 @@ const double m_p = data[2];
 const double l = data[3];
 const double r = data[4];
 const double g = data[5];
-fdotdot[0] = (-f1*sin(oo) - f2*sin(oo) + g*m_p*tan(oo + qq))/m;
-fdotdot[1] = (f1*cos(oo) + f2*cos(oo) - g*m - g*m_p)/m;
+fdotdot[0] = (-1.0*f1*m*sin(oo) + 0.25*f1*m_p*(sin(oo + 2*qq) + sin(3*oo + 2*qq)) + 1.0*f1*m_p*sin(oo)*pow(sin(oo + qq), 2) - 1.0*f1*m_p*sin(oo) - 1.0*f2*m*sin(oo) + 0.25*f2*m_p*(sin(oo + 2*qq) + sin(3*oo + 2*qq)) + 1.0*f2*m_p*sin(oo)*pow(sin(oo + qq), 2) - 1.0*f2*m_p*sin(oo) + 1.0*m*m_p*r*pow(vvq, 2)*sin(oo + qq) + 2.0*m*m_p*r*vvq*ww*sin(oo + qq) + 1.0*m*m_p*r*pow(ww, 2)*sin(oo + qq) - 1.0*pow(m_p, 2)*r*pow(vvq, 2)*pow(sin(oo + qq), 3) - 1.0*pow(m_p, 2)*r*pow(vvq, 2)*sin(oo + qq)*pow(cos(oo + qq), 2) + 1.0*pow(m_p, 2)*r*pow(vvq, 2)*sin(oo + qq) - 2.0*pow(m_p, 2)*r*vvq*ww*pow(sin(oo + qq), 3) - 2.0*pow(m_p, 2)*r*vvq*ww*sin(oo + qq)*pow(cos(oo + qq), 2) + 2.0*pow(m_p, 2)*r*vvq*ww*sin(oo + qq) - 1.0*pow(m_p, 2)*r*pow(ww, 2)*pow(sin(oo + qq), 3) - 1.0*pow(m_p, 2)*r*pow(ww, 2)*sin(oo + qq)*pow(cos(oo + qq), 2) + 1.0*pow(m_p, 2)*r*pow(ww, 2)*sin(oo + qq))/(m*(m + m_p));
+fdotdot[1] = (1.0*f1*m*cos(oo) - 0.25*f1*m_p*(cos(oo + 2*qq) - cos(3*oo + 2*qq)) - 1.0*f1*m_p*cos(oo)*pow(cos(oo + qq), 2) + 1.0*f1*m_p*cos(oo) + 1.0*f2*m*cos(oo) - 0.25*f2*m_p*(cos(oo + 2*qq) - cos(3*oo + 2*qq)) - 1.0*f2*m_p*cos(oo)*pow(cos(oo + qq), 2) + 1.0*f2*m_p*cos(oo) - 1.0*g*pow(m, 2) + 1.0*g*m*m_p*pow(sin(oo + qq), 2) + 1.0*g*m*m_p*pow(cos(oo + qq), 2) - 2.0*g*m*m_p + 1.0*g*pow(m_p, 2)*pow(sin(oo + qq), 2) + 1.0*g*pow(m_p, 2)*pow(cos(oo + qq), 2) - 1.0*g*pow(m_p, 2) - 1.0*m*m_p*r*pow(vvq, 2)*cos(oo + qq) - 2.0*m*m_p*r*vvq*ww*cos(oo + qq) - 1.0*m*m_p*r*pow(ww, 2)*cos(oo + qq) + 1.0*pow(m_p, 2)*r*pow(vvq, 2)*pow(sin(oo + qq), 2)*cos(oo + qq) + 1.0*pow(m_p, 2)*r*pow(vvq, 2)*pow(cos(oo + qq), 3) - 1.0*pow(m_p, 2)*r*pow(vvq, 2)*cos(oo + qq) + 2.0*pow(m_p, 2)*r*vvq*ww*pow(sin(oo + qq), 2)*cos(oo + qq) + 2.0*pow(m_p, 2)*r*vvq*ww*pow(cos(oo + qq), 3) - 2.0*pow(m_p, 2)*r*vvq*ww*cos(oo + qq) + 1.0*pow(m_p, 2)*r*pow(ww, 2)*pow(sin(oo + qq), 2)*cos(oo + qq) + 1.0*pow(m_p, 2)*r*pow(ww, 2)*pow(cos(oo + qq), 3) - 1.0*pow(m_p, 2)*r*pow(ww, 2)*cos(oo + qq))/(m*(m + m_p));
 fdotdot[2] = l*(f1 - f2)/I;
-fdotdot[3] = (-I*g*m*sin(oo + qq) - I*g*m_p*sin(oo + qq) + (1.0/2.0)*I*m*r*(pow(vvq, 2) + 2.0*vvq*ww + pow(ww, 2))*sin(2*oo + 2*qq) + I*(f1 + f2)*sin(oo)*cos(oo + qq) + l*m*r*(-f1 + f2)*pow(cos(oo + qq), 2))/(I*m*r*pow(cos(oo + qq), 2));
+fdotdot[3] = -f1*sin(qq)/(m*r) - f2*sin(qq)/(m*r) - f1*l/I + f2*l/I;
 if(Jx) {
 Jx[0] = 0;
 Jx[1] = 0;
-Jx[2] = (-f1*cos(oo) - f2*cos(oo) + g*m_p*(pow(tan(oo + qq), 2) + 1))/m;
-Jx[3] = g*m_p*(pow(tan(oo + qq), 2) + 1)/m;
+Jx[2] = (-1.0*f1*m*cos(oo) + 0.25*f1*m_p*(cos(oo + 2*qq) + 3*cos(3*oo + 2*qq)) + 2.0*f1*m_p*sin(oo)*sin(oo + qq)*cos(oo + qq) + 1.0*f1*m_p*pow(sin(oo + qq), 2)*cos(oo) - 1.0*f1*m_p*cos(oo) - 1.0*f2*m*cos(oo) + 0.25*f2*m_p*(cos(oo + 2*qq) + 3*cos(3*oo + 2*qq)) + 2.0*f2*m_p*sin(oo)*sin(oo + qq)*cos(oo + qq) + 1.0*f2*m_p*pow(sin(oo + qq), 2)*cos(oo) - 1.0*f2*m_p*cos(oo) + 1.0*m*m_p*r*pow(vvq, 2)*cos(oo + qq) + 2.0*m*m_p*r*vvq*ww*cos(oo + qq) + 1.0*m*m_p*r*pow(ww, 2)*cos(oo + qq) - 1.0*pow(m_p, 2)*r*pow(vvq, 2)*pow(sin(oo + qq), 2)*cos(oo + qq) - 1.0*pow(m_p, 2)*r*pow(vvq, 2)*pow(cos(oo + qq), 3) + 1.0*pow(m_p, 2)*r*pow(vvq, 2)*cos(oo + qq) - 2.0*pow(m_p, 2)*r*vvq*ww*pow(sin(oo + qq), 2)*cos(oo + qq) - 2.0*pow(m_p, 2)*r*vvq*ww*pow(cos(oo + qq), 3) + 2.0*pow(m_p, 2)*r*vvq*ww*cos(oo + qq) - 1.0*pow(m_p, 2)*r*pow(ww, 2)*pow(sin(oo + qq), 2)*cos(oo + qq) - 1.0*pow(m_p, 2)*r*pow(ww, 2)*pow(cos(oo + qq), 3) + 1.0*pow(m_p, 2)*r*pow(ww, 2)*cos(oo + qq))/(m*(m + m_p));
+Jx[3] = (0.25*f1*m_p*(2*cos(oo + 2*qq) + 2*cos(3*oo + 2*qq)) + 2.0*f1*m_p*sin(oo)*sin(oo + qq)*cos(oo + qq) + 0.25*f2*m_p*(2*cos(oo + 2*qq) + 2*cos(3*oo + 2*qq)) + 2.0*f2*m_p*sin(oo)*sin(oo + qq)*cos(oo + qq) + 1.0*m*m_p*r*pow(vvq, 2)*cos(oo + qq) + 2.0*m*m_p*r*vvq*ww*cos(oo + qq) + 1.0*m*m_p*r*pow(ww, 2)*cos(oo + qq) - 1.0*pow(m_p, 2)*r*pow(vvq, 2)*pow(sin(oo + qq), 2)*cos(oo + qq) - 1.0*pow(m_p, 2)*r*pow(vvq, 2)*pow(cos(oo + qq), 3) + 1.0*pow(m_p, 2)*r*pow(vvq, 2)*cos(oo + qq) - 2.0*pow(m_p, 2)*r*vvq*ww*pow(sin(oo + qq), 2)*cos(oo + qq) - 2.0*pow(m_p, 2)*r*vvq*ww*pow(cos(oo + qq), 3) + 2.0*pow(m_p, 2)*r*vvq*ww*cos(oo + qq) - 1.0*pow(m_p, 2)*r*pow(ww, 2)*pow(sin(oo + qq), 2)*cos(oo + qq) - 1.0*pow(m_p, 2)*r*pow(ww, 2)*pow(cos(oo + qq), 3) + 1.0*pow(m_p, 2)*r*pow(ww, 2)*cos(oo + qq))/(m*(m + m_p));
 Jx[4] = 0;
 Jx[5] = 0;
-Jx[6] = 0;
-Jx[7] = 0;
+Jx[6] = (2.0*m*m_p*r*vvq*sin(oo + qq) + 2.0*m*m_p*r*ww*sin(oo + qq) - 2.0*pow(m_p, 2)*r*vvq*pow(sin(oo + qq), 3) - 2.0*pow(m_p, 2)*r*vvq*sin(oo + qq)*pow(cos(oo + qq), 2) + 2.0*pow(m_p, 2)*r*vvq*sin(oo + qq) - 2.0*pow(m_p, 2)*r*ww*pow(sin(oo + qq), 3) - 2.0*pow(m_p, 2)*r*ww*sin(oo + qq)*pow(cos(oo + qq), 2) + 2.0*pow(m_p, 2)*r*ww*sin(oo + qq))/(m*(m + m_p));
+Jx[7] = (2.0*m*m_p*r*vvq*sin(oo + qq) + 2.0*m*m_p*r*ww*sin(oo + qq) - 2.0*pow(m_p, 2)*r*vvq*pow(sin(oo + qq), 3) - 2.0*pow(m_p, 2)*r*vvq*sin(oo + qq)*pow(cos(oo + qq), 2) + 2.0*pow(m_p, 2)*r*vvq*sin(oo + qq) - 2.0*pow(m_p, 2)*r*ww*pow(sin(oo + qq), 3) - 2.0*pow(m_p, 2)*r*ww*sin(oo + qq)*pow(cos(oo + qq), 2) + 2.0*pow(m_p, 2)*r*ww*sin(oo + qq))/(m*(m + m_p));
 Jx[8] = 0;
 Jx[9] = 0;
-Jx[10] = (-f1*sin(oo) - f2*sin(oo))/m;
-Jx[11] = 0;
+Jx[10] = (-1.0*f1*m*sin(oo) - 0.25*f1*m_p*(-sin(oo + 2*qq) + 3*sin(3*oo + 2*qq)) + 1.0*f1*m_p*sin(oo)*pow(cos(oo + qq), 2) - 1.0*f1*m_p*sin(oo) + 2.0*f1*m_p*sin(oo + qq)*cos(oo)*cos(oo + qq) - 1.0*f2*m*sin(oo) - 0.25*f2*m_p*(-sin(oo + 2*qq) + 3*sin(3*oo + 2*qq)) + 1.0*f2*m_p*sin(oo)*pow(cos(oo + qq), 2) - 1.0*f2*m_p*sin(oo) + 2.0*f2*m_p*sin(oo + qq)*cos(oo)*cos(oo + qq) + 1.0*m*m_p*r*pow(vvq, 2)*sin(oo + qq) + 2.0*m*m_p*r*vvq*ww*sin(oo + qq) + 1.0*m*m_p*r*pow(ww, 2)*sin(oo + qq) - 1.0*pow(m_p, 2)*r*pow(vvq, 2)*pow(sin(oo + qq), 3) - 1.0*pow(m_p, 2)*r*pow(vvq, 2)*sin(oo + qq)*pow(cos(oo + qq), 2) + 1.0*pow(m_p, 2)*r*pow(vvq, 2)*sin(oo + qq) - 2.0*pow(m_p, 2)*r*vvq*ww*pow(sin(oo + qq), 3) - 2.0*pow(m_p, 2)*r*vvq*ww*sin(oo + qq)*pow(cos(oo + qq), 2) + 2.0*pow(m_p, 2)*r*vvq*ww*sin(oo + qq) - 1.0*pow(m_p, 2)*r*pow(ww, 2)*pow(sin(oo + qq), 3) - 1.0*pow(m_p, 2)*r*pow(ww, 2)*sin(oo + qq)*pow(cos(oo + qq), 2) + 1.0*pow(m_p, 2)*r*pow(ww, 2)*sin(oo + qq))/(m*(m + m_p));
+Jx[11] = (-0.25*f1*m_p*(-2*sin(oo + 2*qq) + 2*sin(3*oo + 2*qq)) + 2.0*f1*m_p*sin(oo + qq)*cos(oo)*cos(oo + qq) - 0.25*f2*m_p*(-2*sin(oo + 2*qq) + 2*sin(3*oo + 2*qq)) + 2.0*f2*m_p*sin(oo + qq)*cos(oo)*cos(oo + qq) + 1.0*m*m_p*r*pow(vvq, 2)*sin(oo + qq) + 2.0*m*m_p*r*vvq*ww*sin(oo + qq) + 1.0*m*m_p*r*pow(ww, 2)*sin(oo + qq) - 1.0*pow(m_p, 2)*r*pow(vvq, 2)*pow(sin(oo + qq), 3) - 1.0*pow(m_p, 2)*r*pow(vvq, 2)*sin(oo + qq)*pow(cos(oo + qq), 2) + 1.0*pow(m_p, 2)*r*pow(vvq, 2)*sin(oo + qq) - 2.0*pow(m_p, 2)*r*vvq*ww*pow(sin(oo + qq), 3) - 2.0*pow(m_p, 2)*r*vvq*ww*sin(oo + qq)*pow(cos(oo + qq), 2) + 2.0*pow(m_p, 2)*r*vvq*ww*sin(oo + qq) - 1.0*pow(m_p, 2)*r*pow(ww, 2)*pow(sin(oo + qq), 3) - 1.0*pow(m_p, 2)*r*pow(ww, 2)*sin(oo + qq)*pow(cos(oo + qq), 2) + 1.0*pow(m_p, 2)*r*pow(ww, 2)*sin(oo + qq))/(m*(m + m_p));
 Jx[12] = 0;
 Jx[13] = 0;
-Jx[14] = 0;
-Jx[15] = 0;
+Jx[14] = (-2.0*m*m_p*r*vvq*cos(oo + qq) - 2.0*m*m_p*r*ww*cos(oo + qq) + 2.0*pow(m_p, 2)*r*vvq*pow(sin(oo + qq), 2)*cos(oo + qq) + 2.0*pow(m_p, 2)*r*vvq*pow(cos(oo + qq), 3) - 2.0*pow(m_p, 2)*r*vvq*cos(oo + qq) + 2.0*pow(m_p, 2)*r*ww*pow(sin(oo + qq), 2)*cos(oo + qq) + 2.0*pow(m_p, 2)*r*ww*pow(cos(oo + qq), 3) - 2.0*pow(m_p, 2)*r*ww*cos(oo + qq))/(m*(m + m_p));
+Jx[15] = (-2.0*m*m_p*r*vvq*cos(oo + qq) - 2.0*m*m_p*r*ww*cos(oo + qq) + 2.0*pow(m_p, 2)*r*vvq*pow(sin(oo + qq), 2)*cos(oo + qq) + 2.0*pow(m_p, 2)*r*vvq*pow(cos(oo + qq), 3) - 2.0*pow(m_p, 2)*r*vvq*cos(oo + qq) + 2.0*pow(m_p, 2)*r*ww*pow(sin(oo + qq), 2)*cos(oo + qq) + 2.0*pow(m_p, 2)*r*ww*pow(cos(oo + qq), 3) - 2.0*pow(m_p, 2)*r*ww*cos(oo + qq))/(m*(m + m_p));
 Jx[16] = 0;
 Jx[17] = 0;
 Jx[18] = 0;
@@ -49,21 +49,21 @@ Jx[22] = 0;
 Jx[23] = 0;
 Jx[24] = 0;
 Jx[25] = 0;
-Jx[26] = 2*(-I*g*m*sin(oo + qq) - I*g*m_p*sin(oo + qq) + (1.0/2.0)*I*m*r*(pow(vvq, 2) + 2.0*vvq*ww + pow(ww, 2))*sin(2*oo + 2*qq) + I*(f1 + f2)*sin(oo)*cos(oo + qq) + l*m*r*(-f1 + f2)*pow(cos(oo + qq), 2))*sin(oo + qq)/(I*m*r*pow(cos(oo + qq), 3)) + (-I*g*m*cos(oo + qq) - I*g*m_p*cos(oo + qq) + I*m*r*(pow(vvq, 2) + 2.0*vvq*ww + pow(ww, 2))*cos(2*oo + 2*qq) - I*(f1 + f2)*sin(oo)*sin(oo + qq) + I*(f1 + f2)*cos(oo)*cos(oo + qq) - 2*l*m*r*(-f1 + f2)*sin(oo + qq)*cos(oo + qq))/(I*m*r*pow(cos(oo + qq), 2));
-Jx[27] = 2*(-I*g*m*sin(oo + qq) - I*g*m_p*sin(oo + qq) + (1.0/2.0)*I*m*r*(pow(vvq, 2) + 2.0*vvq*ww + pow(ww, 2))*sin(2*oo + 2*qq) + I*(f1 + f2)*sin(oo)*cos(oo + qq) + l*m*r*(-f1 + f2)*pow(cos(oo + qq), 2))*sin(oo + qq)/(I*m*r*pow(cos(oo + qq), 3)) + (-I*g*m*cos(oo + qq) - I*g*m_p*cos(oo + qq) + I*m*r*(pow(vvq, 2) + 2.0*vvq*ww + pow(ww, 2))*cos(2*oo + 2*qq) - I*(f1 + f2)*sin(oo)*sin(oo + qq) - 2*l*m*r*(-f1 + f2)*sin(oo + qq)*cos(oo + qq))/(I*m*r*pow(cos(oo + qq), 2));
+Jx[26] = 0;
+Jx[27] = -f1*cos(qq)/(m*r) - f2*cos(qq)/(m*r);
 Jx[28] = 0;
 Jx[29] = 0;
-Jx[30] = (1.0/2.0)*(2.0*vvq + 2*ww)*sin(2*oo + 2*qq)/pow(cos(oo + qq), 2);
-Jx[31] = (1.0/2.0)*(2*vvq + 2.0*ww)*sin(2*oo + 2*qq)/pow(cos(oo + qq), 2);
+Jx[30] = 0;
+Jx[31] = 0;
 }
 if(Ju) {
-Ju[0] = -sin(oo)/m;
-Ju[1] = -sin(oo)/m;
-Ju[2] = cos(oo)/m;
-Ju[3] = cos(oo)/m;
+Ju[0] = (-1.0*m*sin(oo) + 0.25*m_p*(sin(oo + 2*qq) + sin(3*oo + 2*qq)) + 1.0*m_p*sin(oo)*pow(sin(oo + qq), 2) - 1.0*m_p*sin(oo))/(m*(m + m_p));
+Ju[1] = (-1.0*m*sin(oo) + 0.25*m_p*(sin(oo + 2*qq) + sin(3*oo + 2*qq)) + 1.0*m_p*sin(oo)*pow(sin(oo + qq), 2) - 1.0*m_p*sin(oo))/(m*(m + m_p));
+Ju[2] = (1.0*m*cos(oo) - 0.25*m_p*(cos(oo + 2*qq) - cos(3*oo + 2*qq)) - 1.0*m_p*cos(oo)*pow(cos(oo + qq), 2) + 1.0*m_p*cos(oo))/(m*(m + m_p));
+Ju[3] = (1.0*m*cos(oo) - 0.25*m_p*(cos(oo + 2*qq) - cos(3*oo + 2*qq)) - 1.0*m_p*cos(oo)*pow(cos(oo + qq), 2) + 1.0*m_p*cos(oo))/(m*(m + m_p));
 Ju[4] = l/I;
 Ju[5] = -l/I;
-Ju[6] = (I*sin(oo)*cos(oo + qq) - l*m*r*pow(cos(oo + qq), 2))/(I*m*r*pow(cos(oo + qq), 2));
-Ju[7] = (I*sin(oo)*cos(oo + qq) + l*m*r*pow(cos(oo + qq), 2))/(I*m*r*pow(cos(oo + qq), 2));
+Ju[6] = -sin(qq)/(m*r) - l/I;
+Ju[7] = -sin(qq)/(m*r) + l/I;
 }
 }
