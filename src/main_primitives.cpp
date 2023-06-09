@@ -12,7 +12,8 @@ enum class PRIMITIVE_MODE {
   shuffle = 8,
   generate_rand = 9,
   make_canonical = 10,
-  yamltobin = 11
+  bintoyaml = 11,
+  yamltobin = 12,
 };
 
 #include "generate_primitives.hpp"
@@ -109,6 +110,31 @@ int main(int argc, const char *argv[]) {
     trajectories.save_file_boost(out_file.c_str());
     trajectories.save_file_yaml((out_file + ".1000.yaml").c_str(), 1000);
     trajectories.compute_stats("tmp_stats.yaml");
+  }
+
+  if (mode == PRIMITIVE_MODE::bintoyaml) {
+
+    Trajectories trajectories;
+    trajectories.load_file_boost(in_file.c_str());
+
+    // Should I partition?
+
+    size_t max_primitives_per_file = 20000;
+    size_t num_files = trajectories.data.size() / max_primitives_per_file;
+    if (trajectories.data.size() % max_primitives_per_file != 0) {
+      num_files += 1;
+    }
+
+    for (size_t i = 0; i < num_files; i++) {
+
+      Trajectories tt;
+      size_t start_index = i * max_primitives_per_file;
+      size_t end_index =
+          std::min((i + 1) * max_primitives_per_file, trajectories.data.size());
+      tt.data = {trajectories.data.begin() + start_index,
+                 trajectories.data.begin() + end_index};
+      tt.save_file_yaml((in_file + ".p" + std::to_string(i) + ".yaml").c_str());
+    }
   }
 
   if (mode == PRIMITIVE_MODE::generate) {
