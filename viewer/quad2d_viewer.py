@@ -66,6 +66,8 @@ class Quad2dViewer(RobotViewer):
         self.labels_u = ["f1", "f2"]
 
 
+
+
 if __name__ == "__main__":
 
     viewer = Quad2dViewer()

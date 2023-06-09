@@ -1,6 +1,7 @@
 #pragma once
 #include "croco_macros.hpp"
 #include "crocoddyl/core/utils/timer.hpp"
+#include "motions.hpp"
 #include "ocp.hpp"
 
 struct Options_primitives {
@@ -66,3 +67,6 @@ void generate_primitives(const Options_trajopt &options_trajopt,
 
 void generate_primitives_random(const Options_primitives &options_primitives,
                                 Trajectories &trajectories);
+void make_canonical(const Trajectories &trajectories,
+                    Trajectories &trajectories_out,
+                    const std::string &dynamics);

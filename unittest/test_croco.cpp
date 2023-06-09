@@ -800,6 +800,12 @@ BOOST_AUTO_TEST_CASE(quad3d) {
   check_dyn(dyn, 1e-6);
 }
 
+BOOST_AUTO_TEST_CASE(quad3d_ompl) {
+  ptr<Dynamics> dyn =
+      mk<Dynamics>(mks<Model_quad3d>("../models/quad3d_omplapp.yaml"));
+  check_dyn(dyn, 1e-6);
+}
+
 BOOST_AUTO_TEST_CASE(unicycle2) {
   ptr<Dynamics> dyn = mk<Dynamics>(mks<Model_unicycle2>());
   check_dyn(dyn, 1e-5);
@@ -972,6 +978,67 @@ BOOST_AUTO_TEST_CASE(traj_opt_no_bounds) {
 }
 #endif
 
+BOOST_AUTO_TEST_CASE(easy_quad_ompl) {
+
+  Problem problem1("../benchmark/quadrotor_ompl/empty_easy_ompl.yaml");
+  Problem problem2("../benchmark/quadrotor_ompl/empty_easy_2_ompl.yaml");
+
+  size_t i = 0;
+  for (auto &ptr : {&problem1, &problem2}) {
+
+    auto &problem = *ptr;
+    Trajectory traj_in, traj_out;
+    traj_in.num_time_steps = 300;
+
+    Options_trajopt options_trajopt;
+    options_trajopt.solver_id = 0;
+    options_trajopt.smooth_traj = false;
+    options_trajopt.weight_goal = 200;
+    options_trajopt.max_iter = 100;
+
+    Result_opti opti_out;
+
+    trajectory_optimization(problem, traj_in, options_trajopt, traj_out,
+                            opti_out);
+
+    {
+      std::ofstream out("out_opt_" + std::to_string(i) + ".yaml");
+      traj_out.to_yaml_format(out);
+      i++;
+    }
+
+    BOOST_TEST(opti_out.feasible);
+  }
+}
+
+BOOST_AUTO_TEST_CASE(recovery_quad3d_ompl) {
+
+  Problem problem("../benchmark/quadrotor_ompl/recovery_ompl.yaml");
+
+  Trajectory traj_in, traj_out;
+  traj_in.num_time_steps = 400;
+
+  Options_trajopt options_trajopt;
+  options_trajopt.solver_id = 0;
+  options_trajopt.smooth_traj = true;
+  options_trajopt.weight_goal = 300;
+  options_trajopt.max_iter = 200;
+  options_trajopt.ref_x0 = 1;
+  options_trajopt.control_bounds = 1;
+
+  Result_opti opti_out;
+
+  trajectory_optimization(problem, traj_in, options_trajopt, traj_out,
+                          opti_out);
+
+  {
+    std::ofstream out("out_opt_.yaml");
+    traj_out.to_yaml_format(out);
+  }
+
+  BOOST_TEST(opti_out.feasible);
+}
+
 BOOST_AUTO_TEST_CASE(jac_quadrotor) {
 
   Options_trajopt options_trajopt;
@@ -979,39 +1046,42 @@ BOOST_AUTO_TEST_CASE(jac_quadrotor) {
   size_t nx(13), nu(4);
   size_t N = 5;
 
-  {
+  Eigen::VectorXd goal = Eigen::VectorXd::Zero(13);
+  goal(6) = 1;
+  goal(0) = .1;
+  goal(1) = .1;
+  goal(2) = .1;
+  Eigen::VectorXd start = Eigen::VectorXd::Zero(13);
+  start(6) = 1;
+  start += .1 * Eigen::VectorXd::Random(13);
+  start.segment(3, 4).normalize();
 
-    Eigen::VectorXd goal = Eigen::VectorXd::Zero(13);
-    goal(6) = 1;
-    goal(0) = .1;
-    goal(1) = .1;
-    goal(2) = .1;
-    Eigen::VectorXd start = Eigen::VectorXd::Zero(13);
-    start(6) = 1;
-    start += .1 * Eigen::VectorXd::Random(13);
+  std::vector<Eigen::VectorXd> xs(N + 1);
+  std::vector<Eigen::VectorXd> us(N);
+
+  for (auto &x : xs) {
+    x = start;
+    x += .1 * Eigen::VectorXd::Random(13);
     start.segment(3, 4).normalize();
+  }
 
-    std::vector<Eigen::VectorXd> xs(N + 1);
-    std::vector<Eigen::VectorXd> us(N);
+  for (auto &u : us) {
+    u = Eigen::VectorXd::Zero(4);
+    u += .1 * Eigen::VectorXd::Random(4);
+  }
 
-    for (auto &x : xs) {
-      x = start;
-      x += .1 * Eigen::VectorXd::Random(13);
-      start.segment(3, 4).normalize();
-    }
+  //
+  //
+  //
+  //
 
-    for (auto &u : us) {
-      u = Eigen::VectorXd::Zero(4);
-      u += .1 * Eigen::VectorXd::Random(4);
-    }
+  // auto model_robot = mks<Model_quad3d>();
 
-    //
-    //
-    //
-    //
+  for (auto &model_robot :
+       {mks<Model_quad3d>(), mks<Model_quad3d>("../model/quad3d_v0.yaml"),
+        mks<Model_quad3d>("../models/quad3d_omplapp.yaml")}) {
 
-    auto model_robot = mks<Model_quad3d>();
-
+    CSTR_(model_robot->params.filename);
     Generate_params gen_args;
     gen_args.name = "quadrotor_0";
     gen_args.N = N;
@@ -3408,6 +3478,86 @@ BOOST_AUTO_TEST_CASE(uni2_mpc) {
   options_trajopt.window_optimize = 40;
   options_trajopt.window_shift = 15;
   options_trajopt.max_iter = 20;
+
+  Result_opti opti_out;
+
+  trajectory_optimization(problem, traj_in, options_trajopt, traj_out,
+                          opti_out);
+
+  {
+    std::ofstream out("out_opt.yaml");
+    traj_out.to_yaml_format(out);
+  }
+}
+
+BOOST_AUTO_TEST_CASE(quadpole2d_dyn) {
+  ptr<Dynamics> dyn = mk<Dynamics>(mks<Model_quad2dpole>());
+  check_dyn(dyn, 1e-6, Eigen::VectorXd(), Eigen::VectorXd(), 200);
+  // NICE!! :)
+}
+
+BOOST_AUTO_TEST_CASE(quadpole2d_problem) {
+
+  Problem problem("../benchmark/quad2dpole/empty_0.yaml");
+
+  Trajectory traj_in, traj_out;
+  traj_in.num_time_steps = 300;
+
+  Options_trajopt options_trajopt;
+  options_trajopt.solver_id = 0;
+  options_trajopt.smooth_traj = false;
+  options_trajopt.weight_goal = 200;
+  options_trajopt.max_iter = 100;
+
+  Result_opti opti_out;
+
+  trajectory_optimization(problem, traj_in, options_trajopt, traj_out,
+                          opti_out);
+
+  {
+    std::ofstream out("out_opt.yaml");
+    traj_out.to_yaml_format(out);
+  }
+}
+
+BOOST_AUTO_TEST_CASE(quadpole2d_problem_hover) {
+
+  Problem problem("../benchmark/quad2dpole/hover_up_0.yaml");
+
+  Trajectory traj_in, traj_out;
+  traj_in.num_time_steps = 300;
+
+  Options_trajopt options_trajopt;
+  options_trajopt.solver_id = 0;
+  options_trajopt.smooth_traj = false;
+  options_trajopt.weight_goal = 200;
+  options_trajopt.max_iter = 100;
+
+  Result_opti opti_out;
+
+  trajectory_optimization(problem, traj_in, options_trajopt, traj_out,
+                          opti_out);
+
+  {
+    std::ofstream out("out_opt.yaml");
+    traj_out.to_yaml_format(out);
+  }
+}
+
+BOOST_AUTO_TEST_CASE(quadpole2d_problem_hard) {
+
+  Problem problem("../benchmark/quad2dpole/up.yaml");
+
+  Trajectory traj_in, traj_out;
+  traj_in.num_time_steps = 500;
+
+  Options_trajopt options_trajopt;
+  options_trajopt.solver_id = 0;
+  options_trajopt.smooth_traj = false;
+  options_trajopt.weight_goal = 100;
+  options_trajopt.max_iter = 10000;
+  options_trajopt.noise_level = 1e-2;
+  // options_trajopt.use_finite_diff = true;
 
   Result_opti opti_out;
 

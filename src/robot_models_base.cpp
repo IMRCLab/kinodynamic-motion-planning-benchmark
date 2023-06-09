@@ -403,6 +403,28 @@ void Model_robot::collision_distance_diff(
       x.head(nx_col), dd.head(nx_col), eps);
 }
 
+bool Model_robot::is_control_valid(const Eigen::Ref<const Eigen::VectorXd> &u) {
+
+  assert(u.size() == u_lb.size());
+  assert(u.size() == u_ub.size());
+
+  double d = check_bounds_distance(u, u_lb, u_ub);
+  const double tol = 1e-12;
+  assert(d >= 0);
+  return d < tol;
+}
+
+bool Model_robot::is_state_valid(const Eigen::Ref<const Eigen::VectorXd> &x) {
+
+  assert(x.size() == x_lb.size());
+  assert(x.size() == x_ub.size());
+
+  double d = check_bounds_distance(x, x_lb, x_ub);
+  const double tol = 1e-12;
+  assert(d >= 0);
+  return d < tol;
+}
+
 // void Model_unicycle1_R2SO2::step(Eigen::Ref<Eigen::VectorXd> xnext,
 //                                  const Eigen::Ref<const Eigen::VectorXd> &x,
 //                                  const Eigen::Ref<const Eigen::VectorXd> &u,

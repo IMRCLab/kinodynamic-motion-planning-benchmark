@@ -27,6 +27,7 @@
 #include "fcl/geometry/shape/sphere.h"
 #include "general_utils.hpp"
 #include "math_utils.hpp"
+#include "quadpole_acceleration_auto.h"
 #include "robot_models.hpp"
 
 using vstr = std::vector<std::string>;
@@ -405,6 +406,8 @@ Model_acrobot::Model_acrobot(const Acrobot_params &acrobot_params,
     : Model_robot(std::make_shared<RnSOn>(2, 2, std::vector<size_t>{0, 1}), 1),
       params(acrobot_params) {
   is_2d = false;
+  translation_invariance = 0;
+  invariance_reuse_col_shape = false;
 
   name = "acrobot";
 
@@ -412,7 +415,6 @@ Model_acrobot::Model_acrobot(const Acrobot_params &acrobot_params,
   std::cout << "Parameters" << std::endl;
   this->params.write(std::cout);
   std::cout << "***" << std::endl;
-  translation_invariance = 0;
   nx_col = 2;
   nx_pr = 2;
   distance_weights.resize(4);
@@ -893,22 +895,37 @@ Model_quad3d::Model_quad3d(const Quad3d_params &params,
   this->params.write(std::cout);
   std::cout << "***" << std::endl;
 
-  u_0.setOnes();
+  if (params.motor_control) {
+    u_0.setOnes();
+  } else {
+    u_0 << 1, 0, 0, 0;
+  }
 
   translation_invariance = 3;
+  invariance_reuse_col_shape = false;
   nx_col = 7;
   nx_pr = 7;
   is_2d = false;
-  u_0 << 1., 1., 1., 1.;
 
   ref_dt = params.dt;
   distance_weights = params.distance_weights;
 
   arm = 0.707106781 * params.arm_length;
-  B0 << 1, 1, 1, 1, -arm, -arm, arm, arm, -arm, arm, arm, -arm, -params.t2t,
-      params.t2t, -params.t2t, params.t2t;
+  u_nominal = params.m * g / 4.;
 
-  B0inv = B0.inverse();
+  if (params.motor_control) {
+    B0 << 1, 1, 1, 1, -arm, -arm, arm, arm, -arm, arm, arm, -arm, -params.t2t,
+        params.t2t, -params.t2t, params.t2t;
+    B0 *= u_nominal;
+    B0inv = B0.inverse();
+  } else {
+    B0.setIdentity();
+    double nominal_angular_acceleration = 20;
+    B0(0, 0) *= u_nominal * 4;
+    B0(1, 1) *= nominal_angular_acceleration;
+    B0(2, 2) *= nominal_angular_acceleration;
+    B0(3, 3) *= nominal_angular_acceleration;
+  }
 
   name = "quad3d";
   x_desc = {"x [m]",      "y [m]",      "z [m]",     "qx []",    "qy []",
@@ -939,9 +956,15 @@ Model_quad3d::Model_quad3d(const Quad3d_params &params,
   Ftau_selection_B0 = Ftau_selection * B0;
 
   // Bounds
-  u_lb = Eigen::Vector4d(0, 0, 0, 0);
-  u_ub =
-      Eigen::Vector4d(params.max_f, params.max_f, params.max_f, params.max_f);
+
+  if (params.motor_control) {
+    u_lb = Eigen::Vector4d(0, 0, 0, 0);
+    u_ub =
+        Eigen::Vector4d(params.max_f, params.max_f, params.max_f, params.max_f);
+  } else {
+    u_lb = params.u_lb;
+    u_ub = params.u_ub;
+  }
 
   x_lb.segment(0, 7) << RM_low__, RM_low__, RM_low__, RM_low__, RM_low__,
       RM_low__, RM_low__;
@@ -964,7 +987,6 @@ Model_quad3d::Model_quad3d(const Quad3d_params &params,
   inverseJ_skew = Skew(inverseJ_v);
   J_skew = Skew(params.J_v);
 
-  u_nominal = params.m * g / 4.;
   m_inv = 1. / params.m;
   m = params.m;
   grav_v = Eigen::Vector3d(0, 0, -params.m * g);
@@ -1027,12 +1049,12 @@ void Model_quad3d::transform_primitive(
   if (p.size() == 3) {
     Model_robot::transform_primitive(p, xs_in, us_in, xs_out, us_out);
   } else {
+    xs_out = xs_in;
     xs_out.at(0) = xs_in.at(0);
     xs_out.at(0).head(3) += p.head(3);
     xs_out.at(0).segment(7, 3) += p.tail(3);
 
     rollout(xs_out.at(0), us_in, xs_out);
-    us_out = us_in;
   }
 }
 
@@ -1040,23 +1062,12 @@ void Model_quad3d::calcV(Eigen::Ref<Eigen::VectorXd> ff,
                          const Eigen::Ref<const Eigen::VectorXd> &x,
                          const Eigen::Ref<const Eigen::VectorXd> &u) {
 
-  // CSTR_V(u);
-  // CSTR_V(x);
-  // CSTR_V(ff);
-  Eigen::Vector4d f = u_nominal * u;
   Eigen::Vector3d f_u;
   Eigen::Vector3d tau_u;
 
-  if (params.motor_control) {
-    Eigen::Vector4d eta = B0 * f;
-    f_u << 0, 0, eta(0);
-    tau_u << eta(1), eta(2), eta(3);
-
-    // eta = B0 f
-
-  } else {
-    CHECK(false, AT);
-  }
+  Eigen::Vector4d eta = B0 * u;
+  f_u << 0, 0, eta(0);
+  tau_u << eta(1), eta(2), eta(3);
 
   Eigen::Vector4d q = x.segment(3, 4).head<4>().normalized();
   Eigen::Vector3d vel = x.segment(7, 3).head<3>();
@@ -1086,17 +1097,12 @@ void Model_quad3d::calcDiffV(Eigen::Ref<Eigen::MatrixXd> Jv_x,
 
   // x = [ p , q , v , w ]
 
-  Eigen::Vector4d f = u_nominal * u;
   Eigen::Vector3d f_u;
   Eigen::Vector3d tau_u;
-
-  if (params.motor_control) {
-    Eigen::Vector4d eta = B0 * f;
-    f_u << 0, 0, eta(0);
-    tau_u << eta(1), eta(2), eta(3);
-  } else {
-    CHECK(false, AT);
-  }
+  Eigen::Vector4d eta = B0 * u;
+  std::cout << STR_V(u) << std::endl;
+  f_u << 0, 0, eta(0);
+  tau_u << eta(1), eta(2), eta(3);
 
   const Eigen::Vector4d &xq = x.segment<4>(3);
   Eigen::Ref<const Eigen::Vector3d> w = x.segment(10, 3).head<3>();
@@ -1117,10 +1123,9 @@ void Model_quad3d::calcDiffV(Eigen::Ref<Eigen::MatrixXd> Jv_x,
   Jv_x.block<3, 3>(10 - 1, 10).noalias() =
       inverseJ_M * (Skew(J_v.cwiseProduct(w)) - Skew(w) * J_M); // daa / dw
 
-  Jv_u.block<3, 4>(7 - 1, 0).noalias() =
-      u_nominal * m_inv * R * Fu_selection_B0; // da / df
+  Jv_u.block<3, 4>(7 - 1, 0).noalias() = m_inv * R * Fu_selection_B0; // da / df
   Jv_u.block<3, 4>(10 - 1, 0).noalias() =
-      u_nominal * inverseJ_M * Ftau_selection_B0; // daa / df
+      inverseJ_M * Ftau_selection_B0; // daa / df
   //
   //
   // std::cout << "Jv_x \n" << Jv_x << std::endl;
@@ -1366,6 +1371,62 @@ Model_quad3d::lower_bound_time_vel(const Eigen::Ref<const Eigen::VectorXd> &x,
   return *std::max_element(maxs.cbegin(), maxs.cend());
 }
 
+Model_quad2dpole::Model_quad2dpole(const Quad2dpole_params &params,
+                                   const Eigen::VectorXd &p_lb,
+                                   const Eigen::VectorXd &p_ub)
+
+    : Model_robot(std::make_shared<RnSOn>(6, 2, std::vector<size_t>{2, 3}), 2),
+      params(params) {
+  is_2d = true;
+  translation_invariance = 2;
+  ref_dt = params.dt;
+  name = "quad2dpole";
+  invariance_reuse_col_shape = false;
+  u_0.setOnes();
+  distance_weights = params.distance_weights;
+
+  std::cout << "Robot name " << name << std::endl;
+  std::cout << "Parameters" << std::endl;
+  this->params.write(std::cout);
+  std::cout << "***" << std::endl;
+
+  // TODO: check
+  nx_col = 3;
+  nx_pr = 3;
+  x_desc = {"x [m]",      "y [m]",      "yaw[rad]", "q[rad]",
+            "xdot [m/s]", "ydot [m/s]", "w[rad/s]", "vq [rad/s]"};
+  u_desc = {"f1 []", "f2 []"};
+
+  u_lb.setZero();
+  u_ub.setConstant(params.max_f);
+
+  x_lb << RM_low__, RM_low__, -params.yaw_max , RM_low__, -params.max_vel,
+      -params.max_vel, -params.max_angular_vel, -params.max_angular_vel;
+
+  x_ub << RM_max__, RM_max__, params.yaw_max, RM_max__, params.max_vel,
+      params.max_vel, params.max_angular_vel, params.max_angular_vel;
+
+  u_nominal = params.m * g / 2;
+
+  u_weight = V2d(.5, .5);
+  x_weightb = 10. * Vxd::Ones(8);
+  x_weightb.head<4>() = V4d::Zero();
+
+  if (params.shape == "box") {
+    collision_geometries.push_back(
+        std::make_shared<fcl::Boxd>(params.size(0), params.size(1), 1.0));
+  } else if (params.shape == "sphere") {
+    std::make_shared<fcl::Sphered>(params.size(0));
+  } else {
+    ERROR_WITH_INFO("not implemented");
+  }
+
+  if (p_lb.size() && p_ub.size()) {
+    set_position_lb(p_lb);
+    set_position_ub(p_ub);
+  }
+}
+
 Model_quad2d::Model_quad2d(const Quad2d_params &params,
 
                            const Eigen::VectorXd &p_lb,
@@ -1377,6 +1438,7 @@ Model_quad2d::Model_quad2d(const Quad2d_params &params,
   translation_invariance = 2;
   ref_dt = params.dt;
   name = "quad2d";
+  invariance_reuse_col_shape = false;
   u_0.setOnes();
   distance_weights = params.distance_weights;
 
@@ -1427,6 +1489,33 @@ void Model_quad2d::sample_uniform(Eigen::Ref<Eigen::VectorXd> x) {
   x(2) = (M_PI * Eigen::Matrix<double, 1, 1>::Random())(0);
 }
 
+void Model_quad2dpole::sample_uniform(Eigen::Ref<Eigen::VectorXd> x) {
+  x = x_lb + (x_ub - x_lb)
+                 .cwiseProduct(.5 * (Eigen::VectorXd::Random(nx) +
+                                     Eigen::VectorXd::Ones(nx)));
+  x(2) = (params.yaw_max * Eigen::Matrix<double, 1, 1>::Random())(0); // yaw is restricted
+  x(3) = (M_PI * Eigen::Matrix<double, 1, 1>::Random())(0);
+}
+
+void Model_quad2dpole::calcV(Eigen::Ref<Eigen::VectorXd> v,
+                             const Eigen::Ref<const Eigen::VectorXd> &x,
+                             const Eigen::Ref<const Eigen::VectorXd> &u) {
+
+  CHECK_EQ(v.size(), 8, AT);
+  CHECK_EQ(x.size(), 8, AT);
+  CHECK_EQ(u.size(), 2, AT);
+
+  double data[6] = {params.I, params.m, params.m_p, params.l, params.r, g};
+  double out[4];
+
+  Eigen::Vector2d uu = u * u_nominal;
+
+  quadpole_2d(x.data(), uu.data(), data, out, nullptr, nullptr);
+
+  v.head(4) = x.segment(4, 4);
+  v.segment(4, 4) << out[0], out[1], out[2], out[3];
+}
+
 void Model_quad2d::calcV(Eigen::Ref<Eigen::VectorXd> v,
                          const Eigen::Ref<const Eigen::VectorXd> &x,
                          const Eigen::Ref<const Eigen::VectorXd> &u) {
@@ -1459,6 +1548,54 @@ void Model_quad2d::calcV(Eigen::Ref<Eigen::VectorXd> v,
 
   v.head(3) = x.segment(3, 3);
   v.segment(3, 3) << xdotdot, ydotdot, thetadotdot;
+}
+
+void Model_quad2dpole::calcDiffV(Eigen::Ref<Eigen::MatrixXd> Jv_x,
+                                 Eigen::Ref<Eigen::MatrixXd> Jv_u,
+                                 const Eigen::Ref<const Eigen::VectorXd> &x,
+                                 const Eigen::Ref<const Eigen::VectorXd> &u) {
+
+  assert(static_cast<size_t>(Jv_x.rows()) == 8);
+  assert(static_cast<size_t>(Jv_u.rows()) == 8);
+
+  assert(static_cast<size_t>(Jv_x.cols()) == 8);
+  assert(static_cast<size_t>(Jv_u.cols()) == 2);
+
+  assert(static_cast<size_t>(x.size()) == 8);
+  assert(static_cast<size_t>(u.size()) == 2);
+
+  CHECK_EQ(x.size(), 8, AT);
+  CHECK_EQ(u.size(), 2, AT);
+
+  double data[6] = {params.I, params.m, params.m_p, params.l, params.r, g};
+  double out[4];
+  double Jx[32];
+  double Ju[8];
+
+  Eigen::Vector2d uu = u * u_nominal;
+
+  quadpole_2d(x.data(), uu.data(), data, out, Jx, Ju);
+
+  // duu / du
+
+  Jv_x.block(0, 4, 4, 4).setIdentity();
+
+  // print_vec(Ju, 8);
+  // print_vec(Jx, 32);
+
+  for (size_t i = 0; i < 4; i++) {
+    for (size_t j = 0; j < 2; j++) {
+      Jv_u(4 + i, j) = u_nominal * Ju[i * 2 + j];
+      // Jv_u(4+i, j) =  Ju[i*2+4];
+    }
+  }
+
+  for (size_t i = 0; i < 4; i++) {
+    for (size_t j = 0; j < 8; j++) {
+      Jv_x(4 + i, j) = Jx[i * 8 + j];
+      // Jv_x(4+i, j) =  Jx[i*2+4]; ??
+    }
+  }
 }
 
 void Model_quad2d::calcDiffV(Eigen::Ref<Eigen::MatrixXd> Jv_x,
@@ -1520,6 +1657,42 @@ double Model_quad2d::distance(const Eigen::Ref<const Eigen::VectorXd> &x,
   return raw_d.dot(params.distance_weights);
 }
 
+double Model_quad2dpole::distance(const Eigen::Ref<const Eigen::VectorXd> &x,
+                                  const Eigen::Ref<const Eigen::VectorXd> &y) {
+  assert(x.size() == 8);
+  assert(y.size() == 8);
+  assert(y[2] <= M_PI && y[2] >= -M_PI);
+  assert(x[2] <= M_PI && x[2] >= -M_PI);
+
+  assert(y[3] <= M_PI && y[3] >= -M_PI);
+  assert(x[3] <= M_PI && x[3] >= -M_PI);
+
+  Vector6d raw_d;
+  raw_d << (x.head<2>() - y.head<2>()).norm(), so2_distance(x(2), y(2)),
+      so2_distance(x(3), y(3)), (x.segment<2>(4) - y.segment<2>(4)).norm(),
+      std::fabs(x(5) - y(5)), std::fabs(x(6) - y(6));
+
+  return raw_d.dot(params.distance_weights);
+}
+
+void Model_quad2dpole::interpolate(
+    Eigen::Ref<Eigen::VectorXd> xt,
+    const Eigen::Ref<const Eigen::VectorXd> &from,
+    const Eigen::Ref<const Eigen::VectorXd> &to, double dt) {
+  assert(dt <= 1);
+  assert(dt >= 0);
+
+  assert(xt.size() == 8);
+  assert(from.size() == 8);
+  assert(to.size() == 8);
+
+  xt.head<2>() = from.head<2>() + dt * (to.head<2>() - from.head<2>());
+  so2_interpolation(xt(2), from(2), to(2), dt);
+  so2_interpolation(xt(3), from(3), to(3), dt);
+  xt.segment<4>(4) =
+      from.segment<4>(4) + dt * (to.segment<4>(4) - from.segment<4>(4));
+}
+
 void Model_quad2d::interpolate(Eigen::Ref<Eigen::VectorXd> xt,
                                const Eigen::Ref<const Eigen::VectorXd> &from,
                                const Eigen::Ref<const Eigen::VectorXd> &to,
@@ -1537,6 +1710,13 @@ void Model_quad2d::interpolate(Eigen::Ref<Eigen::VectorXd> xt,
       from.segment<3>(3) + dt * (to.segment<3>(3) - from.segment<3>(3));
 }
 
+double Model_quad2dpole::lower_bound_time_vel(
+    const Eigen::Ref<const Eigen::VectorXd> &x,
+    const Eigen::Ref<const Eigen::VectorXd> &y) {
+
+  NOT_IMPLEMENTED;
+}
+
 double
 Model_quad2d::lower_bound_time_vel(const Eigen::Ref<const Eigen::VectorXd> &x,
                                    const Eigen::Ref<const Eigen::VectorXd> &y) {
@@ -1549,6 +1729,13 @@ Model_quad2d::lower_bound_time_vel(const Eigen::Ref<const Eigen::VectorXd> &x,
   return *it;
 }
 
+double Model_quad2dpole::lower_bound_time_pr(
+    const Eigen::Ref<const Eigen::VectorXd> &x,
+    const Eigen::Ref<const Eigen::VectorXd> &y) {
+
+  NOT_IMPLEMENTED;
+}
+
 double
 Model_quad2d::lower_bound_time_pr(const Eigen::Ref<const Eigen::VectorXd> &x,
                                   const Eigen::Ref<const Eigen::VectorXd> &y) {
@@ -1559,6 +1746,13 @@ Model_quad2d::lower_bound_time_pr(const Eigen::Ref<const Eigen::VectorXd> &x,
 
   auto it = std::max_element(maxs.cbegin(), maxs.cend());
   return *it;
+}
+
+double
+Model_quad2dpole::lower_bound_time(const Eigen::Ref<const Eigen::VectorXd> &x,
+                                   const Eigen::Ref<const Eigen::VectorXd> &y) {
+
+  NOT_IMPLEMENTED;
 }
 
 double
@@ -1760,6 +1954,35 @@ void Unicycle1_params::read_from_yaml(YAML::Node &node) {
   set_from_yaml(node, VAR_WITH_NAME(min_angular_vel));
   set_from_yaml(node, VAR_WITH_NAME(shape));
   set_from_yaml(node, VAR_WITH_NAME(dt));
+  set_from_yaml_eigen(node, VAR_WITH_NAME(size));
+  set_from_yaml_eigen(node, VAR_WITH_NAME(distance_weights));
+}
+
+void Quad2dpole_params::read_from_yaml(YAML::Node &node) {
+
+  set_from_yaml(node, VAR_WITH_NAME(yaw_max));
+  set_from_yaml(node, VAR_WITH_NAME(m_p));
+  set_from_yaml(node, VAR_WITH_NAME(r));
+
+  set_from_yaml(node, VAR_WITH_NAME(max_vel));
+  set_from_yaml(node, VAR_WITH_NAME(max_f));
+  set_from_yaml(node, VAR_WITH_NAME(dt));
+
+  set_from_yaml(node, VAR_WITH_NAME(max_vel));
+  set_from_yaml(node, VAR_WITH_NAME(max_angular_vel));
+  set_from_yaml(node, VAR_WITH_NAME(max_acc));
+  set_from_yaml(node, VAR_WITH_NAME(max_angular_acc));
+
+  set_from_yaml(node, VAR_WITH_NAME(m));
+  set_from_yaml(node, VAR_WITH_NAME(I));
+  set_from_yaml(node, VAR_WITH_NAME(l));
+
+  set_from_yaml(node, VAR_WITH_NAME(drag_against_vel));
+  set_from_yaml(node, VAR_WITH_NAME(k_drag_linear));
+  set_from_yaml(node, VAR_WITH_NAME(k_drag_angular));
+
+  set_from_yaml(node, VAR_WITH_NAME(shape));
+
   set_from_yaml_eigen(node, VAR_WITH_NAME(size));
   set_from_yaml_eigen(node, VAR_WITH_NAME(distance_weights));
 }
@@ -1971,6 +2194,13 @@ void Unicycle1_params::read_from_yaml(const char *file) {
   read_from_yaml(node);
 }
 
+void Quad2dpole_params::read_from_yaml(const char *file) {
+  std::cout << "loading file: " << file << std::endl;
+  filename = file;
+  YAML::Node node = YAML::LoadFile(file);
+  read_from_yaml(node);
+}
+
 void Quad2d_params::read_from_yaml(const char *file) {
   std::cout << "loading file: " << file << std::endl;
   filename = file;
@@ -2058,9 +2288,10 @@ void Quad3d_params::read_from_yaml(YAML::Node &node) {
   set_from_yaml(node, VAR_WITH_NAME(t2t));
   set_from_yaml(node, VAR_WITH_NAME(dt));
   set_from_yaml(node, VAR_WITH_NAME(shape));
-
   set_from_yaml_eigen(node, VAR_WITH_NAME(J_v));
   set_from_yaml_eigen(node, VAR_WITH_NAME(distance_weights));
+  set_from_yaml_eigen(node, VAR_WITH_NAME(u_ub));
+  set_from_yaml_eigen(node, VAR_WITH_NAME(u_lb));
 
   set_from_yaml_eigenx(node, VAR_WITH_NAME(size));
 }
@@ -2099,6 +2330,8 @@ std::unique_ptr<Model_robot> robot_factory(const char *file) {
     return std::make_unique<Model_car_with_trailers>(file);
   } else if (dynamics == "car2") {
     return std::make_unique<Model_car2>(file);
+  } else if (dynamics == "quad2dpole") {
+    return std::make_unique<Model_quad2dpole>(file);
   } else {
     ERROR_WITH_INFO("dynamics not implemented");
   }

@@ -1028,7 +1028,8 @@ void ActionModelQ::print(std::ostream &os) const {
   os << "wrapper" << std::endl;
 }
 
-void print_data(boost::shared_ptr<crocoddyl::ActionDataAbstractTpl<double>> data) {
+void print_data(
+    boost::shared_ptr<crocoddyl::ActionDataAbstractTpl<double>> data) {
   std::cout << "***\n";
   std::cout << "xnext\n" << data->xnext << std::endl;
   std::cout << "Fx:\n" << data->Fx << std::endl;
@@ -1123,7 +1124,9 @@ void check_dyn(boost::shared_ptr<Dynamics> dyn, double eps, Vxd x, Vxd u,
     std::cout << FxD << std::endl;
     std::cout << "Fx - FxD" << std::endl;
     std::cout << Fx - FxD << std::endl;
-    CHECK(((Fx - FxD).cwiseAbs().maxCoeff() < margin_rate * eps), AT);
+    CHECK(((Fx - FxD).cwiseAbs().maxCoeff() < margin_rate * eps),
+          "max_error is " + std::to_string((Fx - FxD).cwiseAbs().maxCoeff()) +
+              ":" AT);
   }
 
   if (!check2) {

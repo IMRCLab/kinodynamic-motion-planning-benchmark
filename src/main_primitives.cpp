@@ -11,7 +11,9 @@ enum class PRIMITIVE_MODE {
   cut = 7,
   shuffle = 8,
   generate_rand = 9,
-  bintoyaml = 10,
+  make_canonical = 10,
+  bintoyaml = 11,
+  yamltobin = 12,
 };
 
 #include "generate_primitives.hpp"
@@ -74,6 +76,30 @@ int main(int argc, const char *argv[]) {
 
   std::shared_ptr<Model_robot> robot_model =
       robot_factory(robot_type_to_path(options_primitives.dynamics).c_str());
+
+  if (mode == PRIMITIVE_MODE::make_canonical) {
+
+    Trajectories trajectories, trajectories_out;
+
+    trajectories.load_file_boost(in_file.c_str());
+
+    if (options_primitives.max_num_primitives > 0 &&
+        static_cast<size_t>(options_primitives.max_num_primitives) <
+            trajectories.data.size()) {
+      trajectories.data.resize(options_primitives.max_num_primitives);
+    }
+
+    if (out_file == "auto") {
+      out_file = in_file + ".ca.bin";
+    }
+
+    make_canonical(trajectories, trajectories_out, options_primitives.dynamics);
+
+    trajectories_out.save_file_boost(out_file.c_str());
+    trajectories_out.save_file_yaml((out_file + ".yaml").c_str(), 1000);
+
+    trajectories_out.compute_stats("tmp_stats.yaml");
+  }
 
   if (mode == PRIMITIVE_MODE::generate_rand) {
 

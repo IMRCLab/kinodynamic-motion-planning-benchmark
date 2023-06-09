@@ -1749,10 +1749,15 @@ Heu_roadmap::Heu_roadmap(std::shared_ptr<RobotOmpl> robot,
   }
 }
 
+// TODO:
+// CHECK all states in the trajectory -- DONE
+// CHECK that new formulation of invariance also solves other problems.
+// CHECK which delta can we achieve, and whether this leads to better
+// optimization 3d quadcopter model of OMPL app. 2d quadcopter with pole.
+
 // continue here: cost lower bound for the quadcopter
 void dbastar(const Problem &problem, const Options_dbastar &options_dbastar,
              Trajectory &traj_out, Out_info_db &out_info_db) {
-
 
   // TODO:
   // - disable motions should not be on the search tree!
@@ -2198,7 +2203,8 @@ void dbastar(const Problem &problem, const Options_dbastar &options_dbastar,
   auto is_motion_valid_timed = [&](auto &motion, auto &offset,
                                    bool &motionValid, Trajectory &traj) {
     if (options_dbastar_local.check_cols) {
-      if (options_dbastar_local.use_collision_shape) {
+      if (options_dbastar_local.use_collision_shape &&
+          robot->diff_model->invariance_reuse_col_shape) {
 
         auto out = timed_fun([&] {
           motion->collision_manager->shift(offset);
@@ -2249,8 +2255,12 @@ void dbastar(const Problem &problem, const Options_dbastar &options_dbastar,
           queue.push(Segment{index_start, index_last});
 
           size_t index_resolution = 1;
-          // I could use a spatial resolution also...
 
+          if (robot->diff_model->ref_dt < .05) {
+            index_resolution = 5;
+          }
+
+          // I could use a spatial resolution also...
 
           motionValid = true;
           while (!queue.empty()) {
@@ -2259,6 +2269,10 @@ void dbastar(const Problem &problem, const Options_dbastar &options_dbastar,
             queue.pop();
 
             if (gi - si > index_resolution) {
+
+              // check if they are very close -> HOW exactly?
+              // auto &gix = traj.states.at(gi);
+              // auto &six = traj.states.at(si);
 
               size_t ii = int((si + gi) / 2);
 
@@ -2424,7 +2438,6 @@ void dbastar(const Problem &problem, const Options_dbastar &options_dbastar,
             .count());
   };
 
-  Stopwatch watch;
   double min_distance_to_goal = std::numeric_limits<double>::max();
   ob::State *best_state = si->getStateSpace()->allocState();
 
@@ -2432,6 +2445,19 @@ void dbastar(const Problem &problem, const Options_dbastar &options_dbastar,
   std::vector<AStarNode *> closed_list;
 
   Trajectory tmp_traj;
+
+  int final_number_of_primitives = T_m->size();
+
+  Eigen::VectorXd goalState_eig(robot->diff_model->nx);
+  Eigen::VectorXd __current_state(robot->diff_model->nx);
+  Eigen::VectorXd __canonical_state(robot->diff_model->nx);
+  Eigen::VectorXd offsete(robot->diff_model->get_offset_dim());
+  Eigen::VectorXd offseteX(robot->diff_model->get_offset_dim());
+  Eigen::VectorXd ___current_state(robot->diff_model->nx);
+
+  robot->toEigen(goalState, goalState_eig);
+
+  Stopwatch watch;
 
   while (true) {
 
@@ -2558,8 +2584,6 @@ void dbastar(const Problem &problem, const Options_dbastar &options_dbastar,
         robot->setPosition(fakeMotion.states[0], fcl::Vector3d(0, 0, 0));
     } else {
       // new
-      Eigen::VectorXd __current_state(robot->diff_model->nx);
-      Eigen::VectorXd __canonical_state(robot->diff_model->nx);
       robot->toEigen(current->state, __current_state);
       robot->diff_model->canonical_state(__current_state, __canonical_state);
       robot->fromEigen(fakeMotion.states[0], __canonical_state);
@@ -2638,33 +2662,43 @@ void dbastar(const Problem &problem, const Options_dbastar &options_dbastar,
           robot->setPosition(tmpState2, current_pos);
         }
       } else {
-        Eigen::VectorXd offsete(robot->diff_model->get_offset_dim());
-        Eigen::VectorXd offseteX(robot->diff_model->get_offset_dim());
-        Eigen::VectorXd __current_state(robot->diff_model->nx);
 
-        std::vector<Eigen::VectorXd> xs_out, us_out;
-
-        robot->toEigen(current->state, __current_state);
-        robot->diff_model->offset(__current_state, offsete);
+        robot->toEigen(current->state, ___current_state);
+        robot->diff_model->offset(___current_state, offsete);
         robot->diff_model->transform_primitive(
-            offsete, motion->traj.states, motion->traj.actions, xs_out, us_out);
+            offsete, motion->traj.states, motion->traj.actions, tmp_traj.states,
+            tmp_traj.actions);
 
-        tmp_traj.states = xs_out;
-        tmp_traj.actions = us_out;
-
-        robot->fromEigen(tmpState, xs_out.back());
-        robot->fromEigen(tmpState2, xs_out.front());
+        robot->fromEigen(tmpState, tmp_traj.states.back());
+        robot->fromEigen(tmpState2, tmp_traj.states.front());
 
         // which is the current offset?
-        robot->diff_model->offset(xs_out.front(), offseteX);
-        offset.head(robot->diff_model->get_offset_dim()) =
-            offseteX.head(robot->diff_model->get_offset_dim());
+        robot->diff_model->offset(tmp_traj.states.front(), offseteX);
+        offset.head(robot->diff_model->translation_invariance) =
+            offseteX.head(robot->diff_model->translation_invariance);
       }
 
-      if (!si->satisfiesBounds(tmpState)) {
-        // std::cout << "Not satisfies bounds " << std::endl;
-        continue;
+      if (!options_dbastar_local.new_invariance) {
+        if (!si->satisfiesBounds(tmpState)) {
+          // todo: CHECK all the states!!
+          // std::cout << "Not satisfies bounds " << std::endl;
+          continue;
+        }
+      } else {
+        // check all the states in the trajectory
+
+        bool invalid = false;
+        for (auto &state : tmp_traj.states) {
+          if (!robot->diff_model->is_state_valid(state)) {
+            invalid = true;
+            break;
+          }
+        }
+        if (invalid)
+          continue;
       }
+
+      // check all the stte
 
       // std::cout << "states:" << std::endl;
       // si->printState(tmpState2);
@@ -2863,7 +2897,8 @@ void dbastar(const Problem &problem, const Options_dbastar &options_dbastar,
                   // old_fscore
                   //           << " -- new -- " << entry->fScore <<
                   //           std::endl;
-                  open.update(entry->handle); // increase?
+                  open.update(entry->handle); // increase? decrease? check the
+                                              // original implementation
                 } else {
                   auto handle = open.push(entry);
                   entry->handle = handle;
@@ -3088,6 +3123,7 @@ void dbastar(const Problem &problem, const Options_dbastar &options_dbastar,
     }
   }
 
+  // TODO: this only works with offset!!
   if (solution) {
     state_to_eigen(traj_out.start, si, startState);
     state_to_eigen(traj_out.goal, si, goalState);
@@ -3122,71 +3158,135 @@ void dbastar(const Problem &problem, const Options_dbastar &options_dbastar,
 
     si->copyState(tmpStateq, startState);
 
-    for (size_t i = 0; i < result.size() - 1; ++i) {
-      // Compute intermediate states
-      const auto node_state = result[i]->state;
-      fcl::Vector3d current_pos(0, 0, 0);
+    if (!options_dbastar_local.new_invariance) {
+      for (size_t i = 0; i < result.size() - 1; ++i) {
+        // Compute intermediate states
+        const auto node_state = result[i]->state;
+        fcl::Vector3d current_pos(0, 0, 0);
 
-      if (robot->isTranslationInvariant())
-        current_pos = robot->getTransform(node_state).translation();
-      const auto &motion = motions.at(result[i + 1]->used_motion);
-      out << space6 + "# ";
-      printState(out, si, node_state); // debug
-      out << std::endl;
-      out << space6 + "# motion " << motion.idx << " with cost " << motion.cost
-          << std::endl; // debug
-      // skip last state each
+        if (robot->isTranslationInvariant())
+          current_pos = robot->getTransform(node_state).translation();
+        const auto &motion = motions.at(result[i + 1]->used_motion);
+        out << space6 + "# ";
+        printState(out, si, node_state); // debug
+        out << std::endl;
+        out << space6 + "# motion " << motion.idx << " with cost "
+            << motion.cost << std::endl; // debug
+        // skip last state each
 
-      for (size_t k = 0; k < motion.states.size(); ++k) {
-        const auto state = motion.states[k];
-        si->copyState(tmpState, state);
+        for (size_t k = 0; k < motion.states.size(); ++k) {
+          const auto state = motion.states[k];
+          si->copyState(tmpState, state);
 
-        if (robot->isTranslationInvariant()) {
-          const fcl::Vector3d relative_pos =
-              robot->getTransform(state).translation();
-          robot->setPosition(tmpState, current_pos +
-                                           result[i + 1]->used_offset +
-                                           relative_pos);
-        }
-
-        if (k < motion.states.size() - 1) {
-          if (k == 0) {
-            out << space6 + "# jump from ";
-            printState(out, si, tmpStateq); // debug
-            out << " to ";
-            printState(out, si, tmpState);                         // debug
-            out << " delta " << si->distance(tmpStateq, tmpState); // debug
-            double min_time = robot->cost_lower_bound(tmpStateq, tmpState);
-            time_jumps += min_time;
-            out << " min time " << min_time; // debug
-            out << std::endl;
+          if (robot->isTranslationInvariant()) {
+            const fcl::Vector3d relative_pos =
+                robot->getTransform(state).translation();
+            robot->setPosition(tmpState, current_pos +
+                                             result[i + 1]->used_offset +
+                                             relative_pos);
           }
 
-          out << space6 + "- ";
-          Eigen::VectorXd x;
-          state_to_eigen(x, si, tmpState);
-          traj_out.states.push_back(x);
+          if (k < motion.states.size() - 1) {
+            if (k == 0) {
+              out << space6 + "# jump from ";
+              printState(out, si, tmpStateq); // debug
+              out << " to ";
+              printState(out, si, tmpState);                         // debug
+              out << " delta " << si->distance(tmpStateq, tmpState); // debug
+              double min_time = robot->cost_lower_bound(tmpStateq, tmpState);
+              time_jumps += min_time;
+              out << " min time " << min_time; // debug
+              out << std::endl;
+            }
 
-        } else {
-          out << space6 + "# "; // debug
-          si->copyState(tmpStateq, tmpState);
+            out << space6 + "- ";
+            Eigen::VectorXd x;
+            state_to_eigen(x, si, tmpState);
+            traj_out.states.push_back(x);
+
+          } else {
+            out << space6 + "# "; // debug
+            si->copyState(tmpStateq, tmpState);
+          }
+
+          printState(out, si, tmpState);
+
+          out << std::endl;
         }
-
-        printState(out, si, tmpState);
-
         out << std::endl;
       }
-      out << std::endl;
-    }
-    out << space6 + "- ";
+      out << space6 + "- ";
 
-    // printing the last state
-    Eigen::VectorXd x;
-    state_to_eigen(x, si, tmpState);
-    traj_out.states.push_back(x);
-    printState(out, si, result.back()->state);
-    std::cout << " time jumps " << time_jumps << std::endl;
-    out << std::endl;
+      // printing the last state
+      Eigen::VectorXd x;
+      state_to_eigen(x, si, tmpState);
+      traj_out.states.push_back(x);
+      printState(out, si, result.back()->state);
+      out << std::endl;
+      std::cout << " time jumps " << time_jumps << std::endl;
+    } else {
+#if 1
+
+      auto &mm = robot->diff_model;
+
+      Eigen::VectorXd __tmp(robot->diff_model->nx);
+      Eigen::VectorXd __offset(robot->diff_model->get_offset_dim());
+      for (size_t i = 0; i < result.size() - 1; ++i) {
+        const auto node_state = result[i]->state;
+        const auto &motion = motions.at(result[i + 1]->used_motion);
+        out << space6 + "# (node_state) ";
+        printState(out, si, node_state); // debug
+        out << std::endl;
+        out << space6 + "# motion " << motion.idx << " with cost "
+            << motion.cost << std::endl; // debug
+        out << space6 + "# motion first state "
+            << motion.traj.states.front().format(FMT) << std::endl;
+        out << space6 + "# motion last state "
+            << motion.traj.states.back().format(FMT) << std::endl;
+        //
+        //
+        //
+        //
+        // transform the motion to match the state
+
+        // get the motion
+        robot->toEigen(node_state, __tmp);
+        robot->diff_model->offset(__tmp, __offset);
+        out << space6 + "# (tmp) " << __tmp.format(FMT) << std::endl;
+        out << space6 + "# (offset) " << __offset.format(FMT) << std::endl;
+        ;
+
+        std::vector<Eigen::VectorXd> xs;
+        std::vector<Eigen::VectorXd> us;
+        auto &traj = motion.traj;
+        robot->diff_model->transform_primitive(__offset, traj.states,
+                                               traj.actions, xs, us);
+        // TODO: missing additional offset, if any
+
+        out << space6 + "# (traj.states.front) "
+            << traj.states.front().format(FMT) << std::endl;
+        out << space6 + "# (xs.front) " << xs.front().format(FMT) << std::endl;
+
+        for (size_t k = 0; k < xs.size(); ++k) {
+          if (k < motion.states.size() - 1) {
+            // print the state
+            out << space6 << "- ";
+            traj_out.states.push_back(xs.at(k));
+          } else {
+            out << space6 << "# (last state) ";
+          }
+          out << xs.at(k).format(FMT) << std::endl;
+        }
+
+        // Continue here!!
+        // Just get state + motion
+        // skip last, then state... and so on!!!
+      }
+      out << space6 << "# (using goal as last state) " << std::endl;
+      out << space6 << " - " << goalState_eig.format(FMT) << std::endl;
+      traj_out.states.push_back(goalState_eig);
+#endif
+    }
     out << "    actions:" << std::endl;
 
     int action_counter = 0;
@@ -3414,6 +3514,15 @@ void dbastar(const Problem &problem, const Options_dbastar &options_dbastar,
   out_info_db.data = time_bench.to_data();
   out_info_db.data.insert(std::make_pair(
       "terminate_status", terminate_status_str[static_cast<int>(status)]));
+
+  out_info_db.data.insert(
+      std::make_pair("delta", std::to_string(options_dbastar_local.delta)));
+
+  out_info_db.data.insert(std::make_pair(
+      "num_primitives", std::to_string(final_number_of_primitives)));
+
+  out_info_db.data.insert(std::make_pair(
+      "num_primitives_", std::to_string(final_number_of_primitives)));
 
   // lets check the
 
