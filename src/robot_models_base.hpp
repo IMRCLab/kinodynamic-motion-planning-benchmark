@@ -213,6 +213,7 @@ struct Model_robot {
   size_t nr_reg;
   size_t nr_ineq;
 
+  bool invariance_reuse_col_shape = true;
   bool is_2d;
   size_t translation_invariance = 0; // e.g. 1, 2 , 3, ...
   std::vector<std::string> x_desc;
@@ -332,6 +333,10 @@ struct Model_robot {
   virtual void step(Eigen::Ref<Eigen::VectorXd> xnext,
                     const Eigen::Ref<const Eigen::VectorXd> &x,
                     const Eigen::Ref<const Eigen::VectorXd> &u, double dt);
+
+  virtual bool is_control_valid(const Eigen::Ref<const Eigen::VectorXd> &u);
+
+  virtual bool is_state_valid(const Eigen::Ref<const Eigen::VectorXd> &x);
 
   virtual void stepR4(Eigen::Ref<Eigen::VectorXd> xnext,
                       const Eigen::Ref<const Eigen::VectorXd> &x,
