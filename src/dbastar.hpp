@@ -394,6 +394,7 @@ struct Options_dbastar {
   bool use_collision_shape = true;
   bool always_add = false;
   bool new_invariance = false;
+  double col_resolution = .01 ;  // in meters
 
   std::vector<Heuristic_node> *heu_map_ptr = nullptr;
   std::string heu_map_file;

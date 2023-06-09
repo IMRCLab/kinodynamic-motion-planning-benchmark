@@ -10,7 +10,9 @@ enum class PRIMITIVE_MODE {
   stats = 6,
   cut = 7,
   shuffle = 8,
-  generate_rand = 9
+  generate_rand = 9,
+  make_canonical = 10,
+  yamltobin = 11
 };
 
 #include "generate_primitives.hpp"
@@ -74,6 +76,30 @@ int main(int argc, const char *argv[]) {
   std::shared_ptr<Model_robot> robot_model =
       robot_factory(robot_type_to_path(options_primitives.dynamics).c_str());
 
+  if (mode == PRIMITIVE_MODE::make_canonical) {
+
+    Trajectories trajectories, trajectories_out;
+
+    trajectories.load_file_boost(in_file.c_str());
+
+    if (options_primitives.max_num_primitives > 0 &&
+        static_cast<size_t>(options_primitives.max_num_primitives) <
+            trajectories.data.size()) {
+      trajectories.data.resize(options_primitives.max_num_primitives);
+    }
+
+    if (out_file == "auto") {
+      out_file = in_file + ".ca.bin";
+    }
+
+    make_canonical(trajectories, trajectories_out, options_primitives.dynamics);
+
+    trajectories_out.save_file_boost(out_file.c_str());
+    trajectories_out.save_file_yaml((out_file + ".yaml").c_str(), 1000);
+
+    trajectories_out.compute_stats("tmp_stats.yaml");
+  }
+
   if (mode == PRIMITIVE_MODE::generate_rand) {
 
     Trajectories trajectories;
@@ -81,7 +107,7 @@ int main(int argc, const char *argv[]) {
     generate_primitives_random(options_primitives, trajectories);
 
     trajectories.save_file_boost(out_file.c_str());
-    trajectories.save_file_yaml((out_file +  ".1000.yaml").c_str(), 1000);
+    trajectories.save_file_yaml((out_file + ".1000.yaml").c_str(), 1000);
     trajectories.compute_stats("tmp_stats.yaml");
   }
 
@@ -116,7 +142,8 @@ int main(int argc, const char *argv[]) {
     //     static_cast<int>(SOLVER::traj_opt_free_time_linear);
 
     improve_motion_primitives(options_trajopt, trajectories,
-                              options_primitives.dynamics, trajectories_out, options_primitives);
+                              options_primitives.dynamics, trajectories_out,
+                              options_primitives);
 
     trajectories_out.save_file_boost(out_file.c_str());
     trajectories_out.save_file_yaml((out_file + ".yaml").c_str(), 1000);

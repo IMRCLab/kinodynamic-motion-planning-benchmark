@@ -63,10 +63,11 @@ BOOST_AUTO_TEST_CASE(quad2_fallthrough) {
   options_dbastar.delta = 1.5;
   options_dbastar.use_nigh_nn = 1;
   options_dbastar.limit_branching_factor = 100;
-  // options_dbastar.motionsFile = "../cloud/motionsV2/good/quad2d_v0/quad2d_v0_all.bin.sp1.bin";
-  options_dbastar.motionsFile = "../cloud/motionsV2/good/quad2d_v0/quad2d_v0_DEFand3.sp.bin";
+  // options_dbastar.motionsFile =
+  // "../cloud/motionsV2/good/quad2d_v0/quad2d_v0_all.bin.sp1.bin";
+  options_dbastar.motionsFile =
+      "../cloud/motionsV2/good/quad2d_v0/quad2d_v0_DEFand3.sp.bin";
   options_dbastar.motionsFile = "quad2d_v0_all.bin";
-
 
   Out_info_db out_info_db;
   Trajectory traj_out;
@@ -74,10 +75,6 @@ BOOST_AUTO_TEST_CASE(quad2_fallthrough) {
   CSTR_(out_info_db.cost);
   BOOST_TEST(out_info_db.solved);
 }
-
-
-
-
 
 BOOST_AUTO_TEST_CASE(quad3_one_obs) {
 
@@ -375,7 +372,7 @@ BOOST_AUTO_TEST_CASE(test_quad2d_column) {
   options_dbastar.max_motions = 10000; // I need to start with this!!
   options_dbastar.delta = .6;
   options_dbastar.use_nigh_nn = 1; // with 0 it works
-  options_dbastar.search_timelimit = 10 * 1000;
+  options_dbastar.search_timelimit = 30 * 1000;
   // OMPL
   // time_nearestMotion: 723.968
   // time_nearestNode: 1029.44
@@ -430,7 +427,8 @@ BOOST_AUTO_TEST_CASE(test_quad3d_recovery) {
   // options_dbastar.motionsFile =
   // "../cloud/motionsV2/good/quad3d_v0/quad3d_v0_all.bin.sp.bin"; // yes with
   // delta=.9
-  options_dbastar.motionsFile = "../build/quad3d_v0_sp1_merged.bin"; // also good :)
+  options_dbastar.motionsFile =
+      "../build/quad3d_v0_sp1_merged.bin"; // also good :)
   Out_info_db out_info_db;
   Trajectory traj_out;
   dbastar(problem, options_dbastar, traj_out, out_info_db);
@@ -467,14 +465,82 @@ BOOST_AUTO_TEST_CASE(test_quad2d_recovery) {
   BOOST_TEST(out_info_db.solved);
 }
 
+BOOST_AUTO_TEST_CASE(test_quad2d_col) {
+
+  Problem problem("../benchmark/quad2d/quad_obs_column.yaml");
+  Options_dbastar options_dbastar;
+  options_dbastar.max_motions = 300; // I need to start with this!!
+  options_dbastar.delta = .5;
+  options_dbastar.search_timelimit = 20 * 1000;
+  options_dbastar.use_nigh_nn = 1;
+  options_dbastar.limit_branching_factor = 100;
+
+  // check what is happening with the collisions!!
+  options_dbastar.check_cols = true;
+
+  // too many primitives now? looking interesting!! -- double check the new
+  // implementation!
+
+  // options_dbastar.motionsFile =
+  //     "../cloud/motionsV2/good/quad2d_v0/quad2_all_split_2_sorted.bin";
+  options_dbastar.motionsFile =
+      "../build/quad2d_v0_all.bin.sp.bin.ca.bin"; // velocity is always zero
+                                                  // here!!
+
+  options_dbastar.new_invariance = true;
+  options_dbastar.use_collision_shape = false;
+
+  Out_info_db out_info_db;
+  Trajectory traj_out;
+  dbastar(problem, options_dbastar, traj_out, out_info_db);
+  CSTR_(out_info_db.cost);
+  BOOST_TEST(out_info_db.solved);
+}
+
+BOOST_AUTO_TEST_CASE(test_quad2d_recovery_new) {
+
+  // it is solving, continue here!!
+  Problem problem("../benchmark/quad2d/quad2d_recovery_wo_obs.yaml");
+  Options_dbastar options_dbastar;
+  options_dbastar.max_motions = 50000; // I need to start with this!!
+  options_dbastar.delta = .6;
+  options_dbastar.use_nigh_nn = 1; // with 0 it works
+  options_dbastar.debug = true;
+
+  // OMPL
+  // time_nearestMotion: 723.968
+  // time_nearestNode: 1029.44
+
+  // NIGH
+  // time_nearestMotion: 256.891
+  // time_nearestNode: 156.13
+
+  // options_dbastar.motionsFile =
+  //     "../cloud/motionsV2/good/quad2d_v0/quad2_all_split_2_sorted.bin";
+
+  options_dbastar.motionsFile = "../build/quad2d_v0_all.bin.sp.bin.ca.bin";
+
+  Out_info_db out_info_db;
+  Trajectory traj_out;
+  dbastar(problem, options_dbastar, traj_out, out_info_db);
+  CSTR_(out_info_db.cost);
+  BOOST_TEST(out_info_db.solved);
+}
+
 BOOST_AUTO_TEST_CASE(test_quad2d) {
 
   Problem problem("../benchmark/quad2d/empty_0.yaml");
   Options_dbastar options_dbastar;
   options_dbastar.max_motions = 20000; // I need to start with this!!
   options_dbastar.delta = .5;
+  // options_dbastar.motionsFile =
+  //     "../cloud/motionsV2/good/quad2d_v0/quad2_all_split_2_sorted.bin";
   options_dbastar.motionsFile =
-      "../cloud/motionsV2/good/quad2d_v0/quad2_all_split_2_sorted.bin";
+      "../build/quad2d_v0_all.bin.sp.bin.ca.bin"; // velocity is always zero
+                                                  // here!!
+
+  options_dbastar.new_invariance = true;
+  options_dbastar.use_collision_shape = true;
 
   Out_info_db out_info_db;
   Trajectory traj_out;
@@ -533,8 +599,10 @@ BOOST_AUTO_TEST_CASE(test_bugtrap) {
                                 "unicycle1_v0__ispso__2023_04_03__14_56_57.bin";
   options_dbastar.max_size_heu_map = 500;
   options_dbastar.use_nigh_nn = 1;
-  options_dbastar.cost_delta_factor = 1; // equivalent number of expands, maybe more clean!!
-  options_dbastar.always_add = 0; // very, very slow!! 
+  options_dbastar.new_invariance = 0;
+  options_dbastar.cost_delta_factor =
+      1; // equivalent number of expands, maybe more clean!!
+  options_dbastar.always_add = 0; // very, very slow!!
   options_dbastar.use_collision_shape = true;
   Out_info_db out_info_db;
   Trajectory traj_out;
@@ -543,8 +611,6 @@ BOOST_AUTO_TEST_CASE(test_bugtrap) {
   CSTR_(out_info_db.cost);
   BOOST_TEST(out_info_db.cost < 30.);
 }
-
-
 
 BOOST_AUTO_TEST_CASE(parallel_park_1) {
 
@@ -834,11 +900,6 @@ BOOST_AUTO_TEST_CASE(t_bug2) {
     BOOST_TEST(out_db.cost_with_delta_time < 70);
   }
 }
-
-
-
-
-
 
 // CONTINUE HERE -- visualization and primitives for 3d case!!
 

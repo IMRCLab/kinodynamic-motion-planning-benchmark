@@ -831,6 +831,7 @@ struct Quad2dpole_params {
 
   Quad2dpole_params() { distance_weights << 1, .5, .5, .2, .2, .2; }
 
+  double yaw_max = 1.57;
   double max_f = 1.3;
   double dt = .01;
 
@@ -871,6 +872,7 @@ struct Quad2dpole_params {
     const std::string be = "";
     const std::string af = ": ";
 
+    out << be << STR(yaw_max, af) << std::endl;
     out << be << STR(max_f, af) << std::endl;
     out << be << STR(dt, af) << std::endl;
     out << be << STR(max_vel, af) << std::endl;

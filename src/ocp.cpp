@@ -365,7 +365,8 @@ generate_problem(const Generate_params &gen_args,
       feats_run.push_back(state_feature);
     }
 
-    if (startsWith(gen_args.name, "quad2d")) {
+    if (startsWith(gen_args.name, "quad2d") &&
+        !startsWith(gen_args.name, "quad2dpole")) {
       std::cout << "adding regularization on w and v" << std::endl;
 
       Vxd state_weights(nx);
@@ -383,6 +384,19 @@ generate_problem(const Generate_params &gen_args,
         feats_run.push_back(acc_cost);
       }
     }
+    if (startsWith(gen_args.name, "quad2dpole")) {
+      std::cout << "adding regularization on w and v, and vq" << std::endl;
+
+      Vxd state_weights(nx);
+      state_weights.setZero();
+      state_weights.segment<4>(4) = .2 * V4d::Ones();
+      Vxd state_ref = Vxd::Zero(nx);
+
+      ptr<Cost> state_feature =
+          mk<State_cost>(nx, nu, nx, state_weights, state_ref);
+      feats_run.push_back(state_feature);
+    }
+
     if (startsWith(gen_args.name, "quad3d")) {
       if (control_mode == Control_Mode::default_mode) {
         std::cout << "adding regularization on w and v, q" << std::endl;

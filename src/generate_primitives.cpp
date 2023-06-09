@@ -174,20 +174,18 @@ void improve_motion_primitives(const Options_trajopt &options_trajopt,
                                const Trajectories &__trajs_in,
                                const std::string &dynamics,
                                Trajectories &trajs_out,
-                               const Options_primitives  &options_primitives
-                               ) {
+                               const Options_primitives &options_primitives) {
 
   auto robot_model = robot_factory(robot_type_to_path(dynamics).c_str());
 
   Trajectories trajs_in = __trajs_in;
-  std::atomic_int num_improves = 0 ;
+  std::atomic_int num_improves = 0;
 
   trajs_out.data.resize(trajs_in.data.size());
 
   int NUM_THREADS = options_primitives.num_threads;
 
   std::vector<std::thread> threads;
-
 
   auto improve = [](auto &trajs_in, auto &i, auto &robot_model, auto &dynamics,
                     auto &options_trajopt, auto &trajs_out,
@@ -233,9 +231,7 @@ void improve_motion_primitives(const Options_trajopt &options_trajopt,
       CSTR_(traj.cost);
       trajs_out.data.at(i) = traj_out;
 
-
       num_improves++;
-
 
     } else {
       trajs_out.data.at(i) = traj;
@@ -257,6 +253,33 @@ void improve_motion_primitives(const Options_trajopt &options_trajopt,
 
   std::cout << "input trajectories: " << trajs_in.data.size() << std::endl;
   std::cout << "num improves: " << num_improves << std::endl;
+}
+
+void make_canonical(const Trajectories &trajectories,
+                    Trajectories &trajectories_out,
+                    const std::string &dynamics) {
+
+  auto robot_model = robot_factory(robot_type_to_path(dynamics).c_str());
+
+  //
+  Eigen::VectorXd offset(robot_model->get_offset_dim());
+  Eigen::VectorXd x0(robot_model->nx);
+
+  trajectories_out.data.resize(trajectories.data.size());
+
+  for (size_t i = 0; i < trajectories.data.size(); i++) {
+    auto &traj = trajectories.data.at(i);
+    // robot_model->offset(traj.states.at(i), offset);
+    robot_model->canonical_state(traj.states.front(), x0);
+    std::vector<Eigen::VectorXd> xx = traj.states;
+    robot_model->rollout(x0, traj.actions, xx);
+
+    Trajectory &traj_out = trajectories_out.data.at(i);
+    traj_out.actions = traj.actions;
+    traj_out.states = xx;
+    traj_out.goal = traj_out.states.back();
+    traj_out.start = traj_out.states.front();
+  }
 }
 
 void generate_primitives_random(const Options_primitives &options_primitives,

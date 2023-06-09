@@ -1400,10 +1400,10 @@ Model_quad2dpole::Model_quad2dpole(const Quad2dpole_params &params,
   u_lb.setZero();
   u_ub.setConstant(params.max_f);
 
-  x_lb << RM_low__, RM_low__, RM_low__, RM_low__, -params.max_vel,
+  x_lb << RM_low__, RM_low__, -params.yaw_max , RM_low__, -params.max_vel,
       -params.max_vel, -params.max_angular_vel, -params.max_angular_vel;
 
-  x_ub << RM_max__, RM_max__, RM_max__, RM_max__, params.max_vel,
+  x_ub << RM_max__, RM_max__, params.yaw_max, RM_max__, params.max_vel,
       params.max_vel, params.max_angular_vel, params.max_angular_vel;
 
   u_nominal = params.m * g / 2;
@@ -1493,7 +1493,7 @@ void Model_quad2dpole::sample_uniform(Eigen::Ref<Eigen::VectorXd> x) {
   x = x_lb + (x_ub - x_lb)
                  .cwiseProduct(.5 * (Eigen::VectorXd::Random(nx) +
                                      Eigen::VectorXd::Ones(nx)));
-  x(2) = (M_PI * Eigen::Matrix<double, 1, 1>::Random())(0);
+  x(2) = (params.yaw_max * Eigen::Matrix<double, 1, 1>::Random())(0); // yaw is restricted
   x(3) = (M_PI * Eigen::Matrix<double, 1, 1>::Random())(0);
 }
 
@@ -1960,6 +1960,7 @@ void Unicycle1_params::read_from_yaml(YAML::Node &node) {
 
 void Quad2dpole_params::read_from_yaml(YAML::Node &node) {
 
+  set_from_yaml(node, VAR_WITH_NAME(yaw_max));
   set_from_yaml(node, VAR_WITH_NAME(m_p));
   set_from_yaml(node, VAR_WITH_NAME(r));
 

@@ -549,6 +549,8 @@ void Trajectory::load_file_boost(const char *file) {
 void Trajectories::save_file_boost(const char *file) const {
 
   std::cout << "Trajs: save file boost to: " << file << std::endl;
+  const std::filesystem::path path = std::filesystem::path(file).parent_path();
+  std::filesystem::create_directories(path);
   std::ofstream out(file, std::ios::binary);
   CHECK(out.is_open(), AT);
   boost::archive::binary_oarchive oa(out);
