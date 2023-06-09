@@ -4,6 +4,8 @@ from typing import List
 import numpy as np
 import pathlib
 from typing import Tuple
+import shutil
+
 
 from multiprocessing import Pool
 import multiprocessing
@@ -438,7 +440,6 @@ def run_cmd(cmd: str):
 def compare_search(
         files: List[str],
         interactive: bool = False):
-    # continue HERE
 
     print("calling compare_search:")
     print(f"files {files}")
@@ -486,7 +487,7 @@ def compare_search(
     # id = str(uuid.uuid4())[:7]
     now = datetime.now()  # current date and time
     date_time = now.strftime("%Y-%m-%d--%H-%M-%S")
-    filename_csv = f"../results_new_timeopt/summary/summary_time_{date_time}.csv"
+    filename_csv = f"../results_new_search/summary/summary_search_{date_time}.csv"
     pathlib.Path(filename_csv).parent.mkdir(parents=True, exist_ok=True)
 
     # log file
@@ -510,8 +511,87 @@ def compare_search(
         for dictionary in reduced_data:
             writer.writerow(dictionary.values())
 
-    import shutil
     shutil.copy(filename_csv, '/tmp/tmp_reduced_data.csv')
+
+    # create a new table using pandas
+
+    # pandas frame look like:
+#                  alg  cost_mean  cost_std  expands_mean  expands_std                                 problem  success_rate  time_search_mean  time_search_std
+# 0    dbastar_v0_heu0    3.79995  0.000000         21.00     0.000000   unicycle_first_order_0/parallelpark_0           1.0          2.277654         0.045963
+# 1    dbastar_v0_heu1    3.79995  0.000000         20.00     0.000000
+# unicycle_first_order_0/parallelpark_0           1.0          4.560882
+# 0.062285
+
+    # all_problems = set([data["problem"] for data in reduced_data])
+    df = pandas.DataFrame.from_dict(reduced_data)
+    problems = df["problem"].unique().tolist()
+
+    algs = ["dbastar_v0_heu0", "dbastar_v0_heu1", "dbastar_v0_heuNO"]
+    keys = ["expands_mean", "time_search_mean"]
+
+    header = [
+        r"\begin{tabular}{lcccccc}",
+        r"\toprule",
+        r"&   \multicolumn{2}{c}{eucl} & \multicolumn{2}{c}{roadmap} & \multicolumn{2}{c}{blind} \\",
+        r"\cmidrule(lr){2-3}\cmidrule(lr){4-5}\cmidrule(lr){6-7}",
+        r"&   n & t & n & t & n & t  \\",
+        r"\midrule"]
+    lines = []
+
+    def is_best(val: float, key: str, problem: str, algs: List[str]):
+        delta = 1e-10
+        for alg in algs:
+            b = float(df.loc[(df["problem"] == problem)
+                             & (df["alg"] == alg)][key].iloc[0])
+            if val > b + delta:
+                return False
+        return True
+
+    for problem in problems:
+        line = []
+        line.append(problem)
+        for alg in algs:
+            for key in keys:
+                print(problem, alg, key)
+                val = float(df.loc[(df["problem"] == problem)
+                            & (df["alg"] == alg)][key].iloc[0])
+                is_bold = is_best(val, key, problem, algs)
+
+                if is_bold:
+                    tt = r"\textbf{" + f'{val:.1f}' + "}"
+                else:
+                    tt = f"{val:.1f}"
+                line.append(tt)
+        lines.append(line)
+
+    footer = [r"\bottomrule", r"\end{tabular}"]
+
+    filename_tex = f"../results_new_search/summary/summary_search_{date_time}.tex"
+
+    print(f"writing to {filename_tex}")
+
+    with open(filename_tex, "w") as f:
+        for h in header:
+            f.write(h)
+            f.write('\n')
+        for cl in lines:
+            print("cl ", cl)
+            _str = format_latex_str(' & '.join(cl))
+            f.write(_str)
+
+            f.write(r'\\')
+            f.write("\n")
+        for fo in footer:
+            f.write(fo)
+            f.write('\n')
+
+    shutil.copy(filename_tex, '/tmp/tmp_search.tex')
+
+    filename_log_tex = filename_tex + ".log"
+
+    with open(filename_log_tex, "w") as f:
+        dd = {"input": files, "output": filename_tex}
+        yaml.dump(dd, f)
 
     from matplotlib.backends.backend_pdf import PdfPages
 
@@ -535,8 +615,8 @@ def compare_search(
 
     for problem in all_problems:
         D[problem] = [
-            data for data in reduced_data if data["problem"] == problem ]
-         
+            data for data in reduced_data if data["problem"] == problem]
+
     for problem in all_problems:
 
         fig, ax = plt.subplots(4, 1, sharex=True)
@@ -544,11 +624,9 @@ def compare_search(
 
         for i, d in enumerate(D[problem]):
 
-
-
-            for ff,field in enumerate(["time_search" , "cost" , "expands"]):
-                y = d[field+"_mean"]
-                e = d[field+"_std"]
+            for ff, field in enumerate(["time_search", "cost", "expands"]):
+                y = d[field + "_mean"]
+                e = d[field + "_std"]
                 ax[ff].errorbar(
                     i,
                     y,
@@ -566,10 +644,6 @@ def compare_search(
                 #     linestyle='None',
                 #     marker='^',
                 #     label=d["alg"])
-
-
-
-
 
             y = d["success_rate"]
 
@@ -670,6 +744,93 @@ def compare_time(
 
     import shutil
     shutil.copy(filename_csv, '/tmp/tmp_reduced_data.csv')
+
+    print("reduced_data")
+    print(reduced_data)
+
+    # lets write some beautiful latex table
+    # TODO: what happens if success rate is not high?
+    # Lets use .8 as threshold?
+
+    algs = [
+        # "idbastar_v0_fixedtime",
+        "idbastar_v0_freetime",
+        "idbastar_v0_search",
+        "idbastar_v0_mpc",
+        "idbastar_v0_mpcc"
+    ]
+
+    df = pandas.DataFrame.from_dict(reduced_data)
+
+    print("df")
+    print(df)
+    guesses = df["guess"].unique().tolist()
+
+    keys = ["cost_mean", "time_mean"]
+
+    header = [
+        r"\begin{tabular}{lcccccccc}",
+        r"\toprule",
+        r"&   \multicolumn{2}{c}{dt} & \multicolumn{2}{c}{search} & \multicolumn{2}{c}{mpc}",
+        r"& \multicolumn{2}{c}{mpcc} \\",
+        r"\cmidrule(lr){2-3}\cmidrule(lr){4-5}\cmidrule(lr){6-7}\cmidrule(lr){8-9}",
+        r"&   c & t & c & t & c & t & c & t \\"]
+
+    footer = [r"\bottomrule", r"\end{tabular}"]
+
+    def is_best(val: float, key: str, problem: str, algs: List[str]):
+        delta = 1e-10
+        for alg in algs:
+            b = float(df.loc[(df["guess"] == problem)
+                             & (df["alg"] == alg)][key].iloc[0])
+            if val > b + delta:
+                return False
+        return True
+
+    lines = []
+    for guess in guesses:
+        line = []
+        line.append(guess)
+        for alg in algs:
+            for key in keys:
+                print(guess, alg, key)
+                val = float(df.loc[(df["guess"] == guess)
+                            & (df["alg"] == alg)][key].iloc[0])
+                is_bold = is_best(val, key, guess, algs)
+
+                if is_bold:
+                    tt = r"\textbf{" + f'{val:.1f}' + "}"
+                else:
+                    tt = f"{val:.1f}"
+                line.append(tt)
+        lines.append(line)
+
+    filename_tex = f"../results_new_timeopt/summary/summary_timeopt_{date_time}.tex"
+
+    print(f"writing to {filename_tex}")
+
+    with open(filename_tex, "w") as f:
+        for h in header:
+            f.write(h)
+            f.write('\n')
+        for cl in lines:
+            print("cl ", cl)
+            _str = format_latex_str(' & '.join(cl))
+            f.write(_str)
+
+            f.write(r'\\')
+            f.write("\n")
+        for fo in footer:
+            f.write(fo)
+            f.write('\n')
+
+    shutil.copy(filename_tex, '/tmp/tmp_search.tex')
+
+    filename_log_tex = filename_tex + ".log"
+
+    with open(filename_log_tex, "w") as f:
+        dd = {"input": files, "output": filename_tex}
+        yaml.dump(dd, f)
 
     from matplotlib.backends.backend_pdf import PdfPages
 
@@ -893,7 +1054,6 @@ def benchmark_search(bench_cfg: str):
         fileouts.append(fileout)
 
     compare_search(fileouts)
-    # TODO: what to compare?
 
 
 def benchmark_opti(bench_cfg: str):
@@ -1126,9 +1286,7 @@ def compare(
     with open(filename_csv, 'r') as myFile:
         print(myFile.read())
 
-
     all_problems = set([data["problem"] for data in reduced_data])
-
 
     for problem in all_problems:
         print(f"problem {problem}")
@@ -1161,7 +1319,6 @@ def compare(
         yaml.dump(dd, f)
 
     pp = PdfPages(filename_pdf)
-
 
     for problem in all_problems:
 
@@ -1569,6 +1726,7 @@ def analyze_runs(path_to_dir: str,
 
     figureout = path_to_dir + "/report.pdf"
     print(f"figureout {figureout}")
+    fig.tight_layout()
     plt.savefig(figureout)
     if (visualize):
         plt.show()
@@ -1702,6 +1860,7 @@ def visualize_primitives(motions: list, robot: str,
     print(f"saving drawing of primitives to {output_file}")
     plt.tight_layout()
     if len(output_file):
+        fig.tight_layout()
         plt.savefig(output_file)
     if interactive:
         plt.show()
@@ -1787,6 +1946,12 @@ def fancy_table(filenames: List[str]):
         print(new_df)
         all_df = pandas.concat([all_df, new_df], axis=0)
     print(all_df)
+
+    print("changing all -1 to 99...")
+
+    all_df = all_df.replace(-1, 99)
+    # all_df.replace(-1., 99.)
+
     all_df.to_csv("tmp.csv")
     # now i could just export as table!!
 
@@ -1804,6 +1969,91 @@ def fancy_table(filenames: List[str]):
     date_time = now.strftime("%Y-%m-%d--%H-%M-%S")
     fileout = f"../results_new/tex/merged_{date_time}.tex"
 
+    # create a new table
+
+    # for problem in problems:
+    #
+    line = []
+
+    # D = { problem : {  icf : xx , icf : xx , xx } }
+
+    dict_data = all_df.to_dict(orient='index')
+
+    #
+    line = []
+    _algs = ["i", "s", "g"]
+    _metrics = ["cf", "lc", "tf"]
+
+    def is_best(val: float, metric: str, problem: str, _algs: List[str]):
+        delta = 1e-10
+        for a in _algs:
+            key = a + metric
+            b = dict_data[problem][key]
+            if val > b + delta:
+                return False
+        return True
+
+    custom_lines = []
+    for problem in problems:
+        custom_line = []
+        custom_line.append(problem)
+        for ik, k in enumerate(_algs):
+            for token in _metrics:
+                full_key = k + token
+                val = dict_data[problem][full_key]
+                is_bold = is_best(val, token, problem, _algs)
+                if is_bold:
+                    tt = r"\textbf{" + f'{val:.1f}' + "}"
+                else:
+                    tt = f'{val:.1f}'
+                custom_line.append(str(tt))
+        print(f"custom_line {custom_line}")
+        custom_lines.append(custom_line)
+    print(custom_lines)
+
+    header = [
+        r"\begin{tabular}{lrrrrrrrrr}", r"\toprule",
+        r"&  \multicolumn{3}{c}{idba*} & \multicolumn{3}{c}{sst} & \multicolumn{3}{c}{geo}\\",
+        r"\cmidrule(lr){2-4}\cmidrule(lr){5-7}\cmidrule(lr){8-10}",
+        r"& icf & ilc & itf & scf & slc & stf & gcf & glc & gtf \\",
+        r"\midrule"]
+
+    footer = [r"\bottomrule", r"\end{tabular}"]
+
+    with open("tt_new.tex", "w") as f:
+        for h in header:
+            f.write(h)
+            f.write('\n')
+        for cl in custom_lines:
+            print("cl ", cl)
+            _str = format_latex_str(' & '.join(cl))
+            _str = _str.replace("99.0", "-")
+            _str = _str.replace("40.1", "-")
+            f.write(_str)
+
+            f.write(r'\\')
+            f.write("\n")
+        for fo in footer:
+            f.write(fo)
+            f.write('\n')
+
+
+# if     #
+            # for problem in problems:
+            #     line.append(problem)
+            #     for ik, k in enumerate(["i", "s", "g"]):
+            #         for token in ["cf", "lc", "tf"]:
+            #             full_key = k + token
+            #             print(f"problem {problem}")
+            #             print(f"full_key {full_key}")
+            #             tt = float(all_df.loc[problem ][full_key])
+            #             print(tt)
+            #         # continue_here
+            #         pass
+            #  # & icf & ilc & itf & scf & slc & stf & gcf & glc & gtf \\
+
+  # close new table
+
     print("saving", fileout)
 
     with open(fileout, "w") as f:
@@ -1813,7 +2063,10 @@ def fancy_table(filenames: List[str]):
     print("saving", fileout_log)
 
     with open(fileout_log, "w") as f:
-        D = {"input": filenames, "output": fileout, "problems": problems}
+        D = {
+            "input": filenames,
+            "output": fileout,
+            "problems": problems.tolist()}
         yaml.dump(D, f)
 
 
@@ -1839,9 +2092,209 @@ def format_latex_str(str_in: str) -> str:
     print(str_)
     return str_
 
+
+def parse_for_component_analysis(files: List[str]):
+
+    visualize = True
+
+    field_ddp = "ddp_time"
+    field_search = "time_search"
+    field_nn = "time_nearestNode"
+    field_col = "time_collisions"
+    field_mm = "time_nearestMotion"
+
+    Ds = []
+    for file in files:
+        with open(file) as f:
+            D = yaml.safe_load(f)
+
+        assert ('infos_opt' in D)
+        assert ('infos_raw' in D)
+
+        infos_opt = D['infos_opt']
+        infos_raw = D["infos_raw"]
+
+        max_it = 2
+
+        counter_ddp = 0
+        counter_search = 0
+        counter_col = 0
+        counter_nn = 0
+        counter_mm = 0
+
+        for it in range(max_it):
+            counter_ddp += infos_opt[it][field_ddp]
+
+        only_consider_solved = True
+        if only_consider_solved:
+            infos_raw = [
+                i for i in infos_raw if i["terminate_status"] == "SOLVED"]
+
+        assert (len(infos_raw) >= max_it)
+
+        for it in range(max_it):
+            counter_search += infos_raw[it][field_search]
+            counter_nn += infos_raw[it][field_nn]
+            counter_mm += infos_raw[it][field_mm]
+            counter_col += infos_raw[it][field_col]
+
+        print(f"counter_ddp {counter_ddp}")
+        print(f"counter_search {counter_search}")
+        print(f"counter_nn {counter_nn}")
+        print(f"counter_mm {counter_mm}")
+        print(f"counter_col {counter_col}")
+
+        D = {
+            "counter_ddp": counter_ddp,
+            "counter_search": counter_search,
+            "counter_nn": counter_nn,
+            "counter_mm": counter_mm,
+            "counter_col": counter_col}
+
+        file_out = "/tmp/componentes.yaml"
+        with open(file_out, "w") as f:
+            yaml.dump(D, f)
+
+        file_out_log = file_out + ".log"
+
+        with open(file_out_log, "w") as f:
+            yaml.dump({"input": file, "output": file_out}, f)
+
+        fig, ax = plt.subplots()
+
+        bottom = 0
+        width = 0.8
+        for k, v in D.items():
+            p = ax.bar(0, v, width, label=k, bottom=bottom)
+            bottom += v
+
+        ax.set_title("Number of penguins with above average body mass")
+        ax.legend(loc="upper right")
+
+        # per-iteration
+
+        if visualize:
+            plt.show()
+
+        max_it = 2
+
+        # fig, ax = plt.subplots()
+        for it in range(max_it):
+            D = {"counter_ddp": infos_opt[it][field_ddp],
+                 "counter_search_extra": infos_raw[it][field_search] -
+                 infos_raw[it][field_nn] -
+                 infos_raw[it][field_mm] -
+                 infos_raw[it][field_col],
+                 "counter_nn": infos_raw[it][field_nn],
+                 "counter_mm": infos_raw[it][field_mm],
+                 "counter_col": infos_raw[it][field_col]}
+            Ds.append(D)
+
+        # keys = Ds[0].keys()
+        # bottom = np.zeros(max_it)
+        # it = np.array([0,1])
+        # for key in keys:
+        #     vv = np.array([D[key] for D in Ds])
+        #     p = ax.bar(it, vv, width, label=key, bottom=bottom)
+        #     bottom += vv
+        #
+        # ax.set_title("time analysis")
+        # ax.legend(loc="upper right")
+        # plt.show()
+        #
+        # print("done")
+
+    print("parsing done, lets print DS")
+    # lets print the content of Ds!
+
+    fig, ax = plt.subplots()
+    width = .5
+    keys = Ds[0].keys()
+    bottom = np.zeros(len(Ds))
+    # it = np.arange(len(Ds))
+
+    print("WARNING: it is hardcoded by hand!!")
+
+    it = ("uni1_bug/d1",
+          "uni1_bug/d2",
+          "uni2_bug/d1",
+          "uni2_bug/d2")
+
+    for key in keys:
+        vv = np.array([D[key] for D in Ds])
+        p = ax.bar(it, vv, width, label=key, bottom=bottom)
+        bottom += vv
+
+    ax.set_title("Component analysis")
+    ax.legend(loc="upper right")
+
+    figureout = "/report.pdf"
+    path = "../results_new_components/"
+
+    now = datetime.now()  # current date and time
+    date_time = now.strftime("%Y-%m-%d--%H-%M-%S")
+
+    figureout = f"{path}{date_time}.pdf"
+    print(f"writing {figureout}")
+    fig.tight_layout()
+    plt.savefig(figureout)
+
+    shutil.copy(figureout, '/tmp/components.pdf')
+
+    with open(figureout + ".log", "w") as f:
+        yaml.dump({"input": files, "output": figureout}, f)
+
+    if visualize:
+        plt.show()
+
+    print("done")
+
     # group by problem
     # should I use the latex output of pandas?
 if __name__ == "__main__":
+
+    # TODO: how to I check the time spent in each component?
+
+    time_analysis = True
+
+    if time_analysis:
+        # file = "/home/quim/stg/wolfgang/kinodynamic-motion-planning-benchmark/results_new/unicycle_first_order_0/kink_0/idbastar_v0/2023-06-06--18-04-39/run_1_out.yaml"
+        # parse_for_component_analysis([file])
+
+        files = [
+            "/home/quim/stg/wolfgang/kinodynamic-motion-planning-benchmark/results_new/unicycle_first_order_0/kink_0/idbastar_v0/2023-06-06--18-04-39/run_1_out.yaml",
+            "../results_new/unicycle_second_order_0/bugtrap_0/idbastar_v0/2023-06-06--19-11-12/run_0_out.yaml"]
+
+        parse_for_component_analysis(files)
+
+        sys.exit(0)
+
+    do_table_search = False
+    do_table_opti = False
+
+    if do_table_search:
+        file = "../results_new_search/plots/plot_search_2023-06-06--12-49-13.pdf.log"
+        with open(file) as f:
+            D = yaml.safe_load(f)
+
+        assert ("input" in D)
+        files = D["input"]
+
+        compare_search(files)
+
+        print("bye")
+        sys.exit(0)
+
+    if do_table_opti:
+        file = "../results_new_timeopt/plots/plot_time_2023-06-06--15-36-24.pdf.log"
+        with open(file) as f:
+            D = yaml.safe_load(f)
+        assert ("input" in D)
+        files = D["input"]
+        compare_time(files)
+
+        print("bye")
+        sys.exit(0)
 
     if do_fancy_table:
 
