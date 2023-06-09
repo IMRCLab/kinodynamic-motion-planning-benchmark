@@ -1,0 +1,26 @@
+# distance_weights:  [ 1., .5 , .2 , .1 ] # p , R, v , w
+max_f: 3
+max_vel: 3
+max_angular_vel: 5
+yaw_max: 1.570796 # pi / 2
+# max_acc: 25
+# max_angular_acc: 25
+dt: 0.01
+# # Big drone
+m: 2.5
+m_p: .25 # 10 times smaller than drone
+I: 1.2
+l: .25
+r: 1
+dynamics: quad2dpole
+# # Crazy fly - style
+# m: 0.034
+# I: 1e-4
+# l: 0.1
+# size: [.6, .25]
+# shape:  "box"
+# dynamics: "quad2d"
+# drag_against_vel: false
+# k_drag_linear: .0001
+# k_drag_angular: .0001
+
