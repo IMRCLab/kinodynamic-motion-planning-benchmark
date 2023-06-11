@@ -303,6 +303,9 @@ void Model_car_with_trailers::regularization_cost_diff(
     Eigen::Ref<Eigen::MatrixXd> Jx, Eigen::Ref<Eigen::MatrixXd> Ju,
     const Eigen::Ref<const Eigen::VectorXd> &x,
     const Eigen::Ref<const Eigen::VectorXd> &u) {
+  (void)u;
+  (void)x;
+  (void)Jx;
   Ju.diagonal().setOnes();
 }
 
@@ -1050,10 +1053,7 @@ void Model_quad3d::transform_primitive(
     Model_robot::transform_primitive(p, xs_in, us_in, xs_out, us_out);
   } else {
     xs_out = xs_in;
-    xs_out.at(0) = xs_in.at(0);
-    xs_out.at(0).head(3) += p.head(3);
-    xs_out.at(0).segment(7, 3) += p.tail(3);
-
+    transform_state(p, xs_in.at(0), xs_out.at(0));
     rollout(xs_out.at(0), us_in, xs_out);
   }
 }
@@ -1100,7 +1100,6 @@ void Model_quad3d::calcDiffV(Eigen::Ref<Eigen::MatrixXd> Jv_x,
   Eigen::Vector3d f_u;
   Eigen::Vector3d tau_u;
   Eigen::Vector4d eta = B0 * u;
-  std::cout << STR_V(u) << std::endl;
   f_u << 0, 0, eta(0);
   tau_u << eta(1), eta(2), eta(3);
 
@@ -1400,7 +1399,7 @@ Model_quad2dpole::Model_quad2dpole(const Quad2dpole_params &params,
   u_lb.setZero();
   u_ub.setConstant(params.max_f);
 
-  x_lb << RM_low__, RM_low__, -params.yaw_max , RM_low__, -params.max_vel,
+  x_lb << RM_low__, RM_low__, -params.yaw_max, RM_low__, -params.max_vel,
       -params.max_vel, -params.max_angular_vel, -params.max_angular_vel;
 
   x_ub << RM_max__, RM_max__, params.yaw_max, RM_max__, params.max_vel,
@@ -1493,7 +1492,8 @@ void Model_quad2dpole::sample_uniform(Eigen::Ref<Eigen::VectorXd> x) {
   x = x_lb + (x_ub - x_lb)
                  .cwiseProduct(.5 * (Eigen::VectorXd::Random(nx) +
                                      Eigen::VectorXd::Ones(nx)));
-  x(2) = (params.yaw_max * Eigen::Matrix<double, 1, 1>::Random())(0); // yaw is restricted
+  x(2) = (params.yaw_max *
+          Eigen::Matrix<double, 1, 1>::Random())(0); // yaw is restricted
   x(3) = (M_PI * Eigen::Matrix<double, 1, 1>::Random())(0);
 }
 
@@ -1752,7 +1752,17 @@ double
 Model_quad2dpole::lower_bound_time(const Eigen::Ref<const Eigen::VectorXd> &x,
                                    const Eigen::Ref<const Eigen::VectorXd> &y) {
 
-  NOT_IMPLEMENTED;
+  std::array<double, 7> maxs = {
+      (x.head<2>() - y.head<2>()).norm() / params.max_vel,
+      so2_distance(x(2), y(2)) / params.max_angular_vel,
+      so2_distance(x(3), y(3)) / params.max_angular_vel,
+      std::abs(x(4) - y(4)) / params.max_acc,
+      std::abs(x(5) - y(5)) / params.max_acc,
+      std::abs(x(6) - y(6)) / params.max_angular_acc,
+      std::abs(x(7) - y(7)) / params.max_angular_acc};
+
+  auto it = std::max_element(maxs.cbegin(), maxs.cend());
+  return *it;
 }
 
 double

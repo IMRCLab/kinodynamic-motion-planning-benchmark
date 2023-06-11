@@ -22,11 +22,11 @@
 #include <ompl/datastructures/NearestNeighborsSqrtApprox.h>
 
 #include "motions.hpp"
-#include "nigh/impl/kdtree_median/strategy.hpp"
 #include "ompl/base/Path.h"
 #include "ompl/base/ScopedState.h"
 #include "robot_models.hpp"
 #include "robots.h"
+#include <nigh/impl/kdtree_median/strategy.hpp>
 
 // boost stuff for the graph
 #include <boost/graph/adjacency_list.hpp>
@@ -37,6 +37,7 @@
 
 #include "general_utils.hpp"
 
+#include "nigh_custom_spaces.hpp"
 #include <nigh/kdtree_batch.hpp>
 #include <nigh/kdtree_median.hpp>
 #include <nigh/se3_space.hpp>
@@ -1078,6 +1079,16 @@ void load_motion_primitives_new(const std::string &motionsFile,
           noise * Eigen::VectorXd::Random(t.states.back().size());
     }
   }
+  // ensure
+
+  if (startsWith(robot.diff_model->name, "quad3d")) {
+    // ensure quaternion
+    for (auto &t : trajs.data) {
+      for (auto &s : t.states) {
+        s.segment<4>(3).normalize();
+      }
+    }
+  }
 
   CSTR_(trajs.data.size());
   std::cout << "from boost to motion " << std::endl;
@@ -1491,42 +1502,10 @@ namespace nigh = unc::robotics::nigh;
 
 // TODO: Nigh with weight at run time from config file
 // Debug why nigh has problem with same state when using quaternions.
-// Maybe: clean primitives so that the start state is not repeated!! (just erase
-// one states and control!)
+// Maybe: clean primitives so that the start state is not repeated!! (just
+// erase one states and control!)
 
 // TODO: all this should be dynamic!!
-using Space = nigh::CartesianSpace<
-    nigh::L2Space<double, 2>,
-    nigh::ScaledSpace<nigh::SO2Space<double>, std::ratio<1, 2>>>;
-
-using SpaceUni2 = nigh::CartesianSpace<
-    nigh::L2Space<double, 2>,
-    nigh::ScaledSpace<nigh::SO2Space<double>, std::ratio<1, 2>>,
-    nigh::ScaledSpace<nigh::L2Space<double, 1>, std::ratio<1, 4>>,
-    nigh::ScaledSpace<nigh::L2Space<double, 1>, std::ratio<1, 4>>>;
-
-// x y theta  vx  vw
-using SpaceQuad2d = nigh::CartesianSpace<
-    nigh::L2Space<double, 2>,
-    nigh::ScaledSpace<nigh::SO2Space<double>, std::ratio<1, 2>>,
-    nigh::ScaledSpace<nigh::L2Space<double, 2>, std::ratio<1, 5>>,
-    nigh::ScaledSpace<nigh::L2Space<double, 1>, std::ratio<1, 10>>>;
-
-using SpaceAcrobot = nigh::CartesianSpace<
-    nigh::ScaledSpace<nigh::SO2Space<double>, std::ratio<1, 2>>,
-    nigh::ScaledSpace<nigh::SO2Space<double>, std::ratio<1, 2>>,
-    nigh::ScaledSpace<nigh::L2Space<double, 2>, std::ratio<1, 5>>>;
-
-using SpaceQuad3d = nigh::CartesianSpace<
-    nigh::L2Space<double, 3>,
-    nigh::ScaledSpace<nigh::SO3Space<double>, std::ratio<1, 2>>,
-    nigh::ScaledSpace<nigh::L2Space<double, 3>, std::ratio<1, 10>>,
-    nigh::ScaledSpace<nigh::L2Space<double, 3>, std::ratio<1, 20>>>;
-
-using SpaceCar1 = nigh::CartesianSpace<
-    nigh::L2Space<double, 2>,
-    nigh::ScaledSpace<nigh::SO2Space<double>, std::ratio<1, 2>>,
-    nigh::ScaledSpace<nigh::SO2Space<double>, std::ratio<1, 2>>>;
 
 template <typename _T, typename Space>
 struct NearestNeighborsNigh : public ompl::NearestNeighbors<_T> {
@@ -1551,12 +1530,19 @@ struct NearestNeighborsNigh : public ompl::NearestNeighbors<_T> {
   Functor functor;
   Tree tree;
 
-  NearestNeighborsNigh()
-      : functor(&this->__keys), tree(Tree(Space{}, functor)) {}
+  NearestNeighborsNigh() : functor(&this->__keys), tree(Space{}, functor) {}
 
   NearestNeighborsNigh(std::function<Key(_T const &)> data_to_key)
       : data_to_key(data_to_key), functor(&this->__keys),
-        tree(Tree(Space{}, functor)) {}
+        tree(Space{}, functor) {}
+
+  NearestNeighborsNigh(const Space &space)
+      : functor(&this->__keys), tree(space, functor) {}
+
+  NearestNeighborsNigh(const Space &space,
+                       std::function<Key(_T const &)> data_to_key)
+      : data_to_key(data_to_key), functor(&this->__keys), tree(space, functor) {
+  }
 
   virtual void add(const _T &data) override {
     __data.push_back(data);
@@ -1625,6 +1611,10 @@ template <typename _T>
 ompl::NearestNeighbors<_T> *
 nigh_factory(const std::string &name, const std::shared_ptr<RobotOmpl> &robot) {
   ompl::NearestNeighbors<_T> *out = nullptr;
+
+  auto &w = robot->diff_model->distance_weights;
+  CSTR_V(w);
+
   if (startsWith(name, "unicycle1")) {
 
     auto data_to_key = [robot](_T const &m) {
@@ -1634,7 +1624,10 @@ nigh_factory(const std::string &name, const std::shared_ptr<RobotOmpl> &robot) {
       return std::tuple(Eigen::Vector2d(__x.head(2)), __x(2));
     };
 
-    out = new NearestNeighborsNigh<_T, Space>(data_to_key);
+    CHECK_EQ(w.size(), 2, AT);
+    __Space space(double(w(0)), double(w(1)));
+
+    out = new NearestNeighborsNigh<_T, __Space>(space, data_to_key);
 
   } else if (startsWith(name, "unicycle2")) {
 
@@ -1648,8 +1641,35 @@ nigh_factory(const std::string &name, const std::shared_ptr<RobotOmpl> &robot) {
                         Vector1d(__x(4)));
     };
 
-    out = new NearestNeighborsNigh<_T, SpaceUni2>(data_to_key);
-  } else if (startsWith(name, "quad2d")) {
+    // out = new NearestNeighborsNigh<_T, SpaceUni2>(data_to_key);
+
+    CHECK_EQ(w.size(), 4, AT);
+    __SpaceUni2 space(w(0), w(1), w(2), w(3));
+    out = new NearestNeighborsNigh<_T, __SpaceUni2>(space, data_to_key);
+  }
+
+  else if (startsWith(name, "quad2dpole")) {
+
+    auto data_to_key = [robot](_T const &m) {
+      using Vector8d = Eigen::Matrix<double, 8, 1>;
+      using Vector1d = Eigen::Matrix<double, 1, 1>;
+      const ob::State *s = m->get_first_state();
+      Vector8d __x;
+      robot->toEigen(s, __x);
+      return std::tuple(Eigen::Vector2d(__x.head(2)), __x(2), __x(3),
+                        Eigen::Vector2d(__x(4), __x(5)), V1d(__x(6)),
+                        V1d(__x(7)));
+    };
+
+    using Space = __SpaceQuad2dPole;
+    CHECK_EQ(w.size(), 6, AT);
+    Space space(w(0), w(1), w(2), w(3), w(4), w(5));
+
+    out = new NearestNeighborsNigh<_T, Space>(space, data_to_key);
+
+  }
+
+  else if (startsWith(name, "quad2d")) {
 
     auto data_to_key = [robot](_T const &m) {
       using Vector6d = Eigen::Matrix<double, 6, 1>;
@@ -1660,7 +1680,10 @@ nigh_factory(const std::string &name, const std::shared_ptr<RobotOmpl> &robot) {
                         Eigen::Vector2d(__x(3), __x(4)), V1d(__x(5)));
     };
 
-    out = new NearestNeighborsNigh<_T, SpaceQuad2d>(data_to_key);
+    CHECK_EQ(w.size(), 4, AT);
+    __SpaceQuad2d space(w(0), w(1), w(2), w(3));
+
+    out = new NearestNeighborsNigh<_T, __SpaceQuad2d>(space, data_to_key);
 
     // continue here!!
   } else if (startsWith(name, "acrobot")) {
@@ -1672,7 +1695,12 @@ nigh_factory(const std::string &name, const std::shared_ptr<RobotOmpl> &robot) {
       return std::tuple(__x(0), __x(1), Eigen::Vector2d(__x(2), __x(3)));
     };
 
-    out = new NearestNeighborsNigh<_T, SpaceAcrobot>(data_to_key);
+    // out = new NearestNeighborsNigh<_T, SpaceAcrobot>(data_to_key);
+
+    CHECK_EQ(w.size(), 3, AT);
+    __SpaceAcrobot space(w(0), w(1), w(2));
+
+    out = new NearestNeighborsNigh<_T, __SpaceAcrobot>(space, data_to_key);
 
   } else if (startsWith(name, "quad3d")) {
 
@@ -1687,7 +1715,11 @@ nigh_factory(const std::string &name, const std::shared_ptr<RobotOmpl> &robot) {
                         Eigen::Vector3d(__x(10), __x(11), __x(12)));
     };
 
-    out = new NearestNeighborsNigh<_T, SpaceQuad3d>(data_to_key);
+    CHECK_EQ(w.size(), 4, AT);
+    __SpaceQuad3d space(w(0), w(1), w(2), w(3));
+    // out = new NearestNeighborsNigh<_T, SpaceQuad3d>(data_to_key);
+    out = new NearestNeighborsNigh<_T, __SpaceQuad3d>(space, data_to_key);
+
   } else if (startsWith(name, "car1")) {
 
     auto data_to_key = [robot](_T const &m) {
@@ -1697,7 +1729,12 @@ nigh_factory(const std::string &name, const std::shared_ptr<RobotOmpl> &robot) {
       robot->toEigen(s, __x);
       return std::tuple(Eigen::Vector2d(__x(0), __x(1)), __x(2), __x(3));
     };
-    out = new NearestNeighborsNigh<_T, SpaceCar1>(data_to_key);
+    // out = new NearestNeighborsNigh<_T, SpaceCar1>(data_to_key);
+
+    CHECK_EQ(w.size(), 3, AT);
+    __SpaceCar1 space(w(0), w(1), w(2));
+    // out = new NearestNeighborsNigh<_T, SpaceQuad3d>(data_to_key);
+    out = new NearestNeighborsNigh<_T, __SpaceCar1>(space, data_to_key);
   }
 
   CHECK(out, AT);
@@ -1807,15 +1844,26 @@ void dbastar(const Problem &problem, const Options_dbastar &options_dbastar,
   }
 
   CSTR_(motions.size());
-  double erase_factor = 1.;
-  motions.erase(std::remove_if(motions.begin(), motions.end(),
-                               [&](auto &motion) {
-                                 return si->distance(motion.states.front(),
-                                                     motion.states.back()) <
-                                        erase_factor *
-                                            options_dbastar_local.delta;
-                               }),
-                motions.end());
+  const double erase_factor = .5;
+  motions.erase(
+      std::remove_if(motions.begin(), motions.end(),
+                     [&](auto &motion) {
+                       assert(motion.states.size());
+                       double d = si->distance(motion.states.front(),
+                                               motion.states.back());
+
+                       if (d < erase_factor * options_dbastar_local.delta) {
+                         std::cout << "Warning: short primitive" << std::endl;
+                         si->printState(motion.states.front(), std::cout);
+                         si->printState(motion.states.back(), std::cout);
+
+                         std::cout << "distance is " << d << std::endl;
+                         return true;
+                       } else {
+                         return false;
+                       }
+                     }),
+      motions.end());
 
   std::cout << "after erase short primtivies " << std::endl;
   CSTR_(motions.size());
@@ -1823,8 +1871,8 @@ void dbastar(const Problem &problem, const Options_dbastar &options_dbastar,
   std::cout << "Using Tentative " << motions.size() << " motions!" << std::endl;
 
   std::cout << "Printing example motions:" << std::endl;
-  size_t num_print_motions = 2;
-  for (size_t i = 0; i < num_print_motions; i++) {
+  size_t num_print_motions = 5;
+  for (size_t i = 0; i < std::min(num_print_motions, motions.size()); i++) {
     motions.at(i).print(std::cout, si);
   }
 
@@ -2203,8 +2251,8 @@ void dbastar(const Problem &problem, const Options_dbastar &options_dbastar,
   auto is_motion_valid_timed = [&](auto &motion, auto &offset,
                                    bool &motionValid, Trajectory &traj) {
     if (options_dbastar_local.check_cols) {
-      if (options_dbastar_local.use_collision_shape &&
-          robot->diff_model->invariance_reuse_col_shape) {
+      if (options_dbastar_local.use_collision_shape) {
+        // robot->diff_model->invariance_reuse_col_shape) {
 
         auto out = timed_fun([&] {
           motion->collision_manager->shift(offset);
@@ -2222,6 +2270,8 @@ void dbastar(const Problem &problem, const Options_dbastar &options_dbastar,
         time_bench.num_col_motions++;
       } else {
         // check all the configuration, starting by the middle
+
+        CHECK(traj.states.size(), AT);
 
         Stopwatch watch;
 
@@ -3308,6 +3358,8 @@ void dbastar(const Problem &problem, const Options_dbastar &options_dbastar,
     }
     // dts
 
+#if 0
+    // TODO: update this to use the new invariance!
     out << "result2:" << std::endl;
     out << "  - states:" << std::endl;
 
@@ -3348,6 +3400,12 @@ void dbastar(const Problem &problem, const Options_dbastar &options_dbastar,
         out << space6 + "# delta time " << delta_time << std::endl;
         double delta_i = si->distance(node_state, tmpState);
         out << space6 + "# delta " << delta_i << std::endl;
+        si->printState(node_state, std::cout);
+        std::cout << std::endl;
+        si->printState(tmpState, std::cout);
+        std::cout << std::endl;
+        std::cout << delta_i << " <= " << options_dbastar_local.delta
+                  << std::endl;
         assert(delta_i <= options_dbastar_local.delta);
       }
 
@@ -3474,6 +3532,7 @@ void dbastar(const Problem &problem, const Options_dbastar &options_dbastar,
     std::cout << "states size " << states2.size() << std::endl;
 
     std::cout << "action counter " << action_counter << std::endl;
+#endif
     // statistics for the motions used
     std::map<size_t, size_t> motionsCount; // motionId -> usage count
     for (size_t i = 0; i < result.size() - 1; ++i) {

@@ -78,7 +78,7 @@ struct Options_sst {
 
   void read_from_yaml(YAML::Node &node) {
 
-    if ( YAML::Node parameter  = node["options_sst"]) {
+    if (YAML::Node parameter = node["options_sst"]) {
       __read_from_node(parameter);
     } else {
       __read_from_node(node);

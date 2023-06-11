@@ -14,11 +14,6 @@
 
 struct Model_robot;
 
-
-
-
-
-
 ompl::base::State *
 _allocAndFillState(std::shared_ptr<ompl::control::SpaceInformation> si,
                    const std::vector<double> &reals);
@@ -129,10 +124,7 @@ struct RobotOmpl {
     return si_;
   }
 
-  virtual void enforceBounds(ompl::base::State *) const {
-
-    NOT_IMPLEMENTED;
-  }
+  virtual void enforceBounds(ompl::base::State *) const { NOT_IMPLEMENTED; }
 
   double dt() const;
 
@@ -203,10 +195,6 @@ std::ostream &printState(std::ostream &stream,
 // void ompl::base::StateSpace::copyFromReals(
 //     State *destination, const std::vector<double> &reals) const;
 
-
-
 std::ostream &printAction(std::ostream &stream,
                           std::shared_ptr<ompl::control::SpaceInformation> si,
                           ompl::control::Control *action);
-
-

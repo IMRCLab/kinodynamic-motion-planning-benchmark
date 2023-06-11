@@ -51,7 +51,6 @@ int main(int argc, const char *argv[]) {
 
   trajectory_optimization(problem, traj_db, options_trajopt, traj_out, result);
 
-
   CSTR_(results_file);
   std::ofstream results(results_file);
 

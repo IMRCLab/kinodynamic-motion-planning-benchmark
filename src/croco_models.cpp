@@ -11,6 +11,20 @@ using V4d = Eigen::Vector4d;
 using Vxd = Eigen::VectorXd;
 using V1d = Eigen::Matrix<double, 1, 1>;
 
+Eigen::VectorXd derivate_wrt_time(Model_robot &robot_model,
+                                  const Eigen::VectorXd &x,
+                                  const Eigen::VectorXd &u, double dt) {
+  double epsilon = 1e-5;
+  Eigen::VectorXd xnexte(robot_model.nx);
+  Eigen::VectorXd xnext(robot_model.nx);
+  robot_model.step(xnext, x.head(robot_model.nx), u.head(robot_model.nu),
+                   dt * u(robot_model.nu));
+  robot_model.step(xnexte, x.head(robot_model.nx), u.head(robot_model.nu),
+                   dt * u(robot_model.nu) + epsilon);
+  Eigen::VectorXd dd = (xnexte - xnext) / epsilon;
+  return dd;
+};
+
 ptr<Dynamics> create_dynamics(std::shared_ptr<Model_robot> model_robot,
                               const Control_Mode &control_mode) {
   return mk<Dynamics>(model_robot, control_mode);
@@ -1445,17 +1459,32 @@ void Dynamics::calcDiff(Eigen::Ref<Eigen::MatrixXd> Fx,
   } else if (control_mode == Control_Mode::free_time_linear) {
     CHECK_GE(u(robot_model->nu), 0, AT);
     CHECK_EQ(static_cast<size_t>(__v.size()), _nx, AT);
-    robot_model->stepDiff_with_v(Fx.block(0, 0, _nx, _nx),
-                                 Fu.block(0, 0, _nx, _nu), __v, x.head(_nx),
-                                 u.head(_nu), dt * u(_nu));
-    Fu.block(0, _nu, _nx, 1) = __v * dt;
-    Fu(_nx, _nu) = 1.;
-    CHECK_EQ(static_cast<size_t>(__v.size()), _nx, AT);
+    if (!startsWith(robot_model->name, "quad3d")) {
+      robot_model->stepDiff_with_v(Fx.block(0, 0, _nx, _nx),
+                                   Fu.block(0, 0, _nx, _nu), __v, x.head(_nx),
+                                   u.head(_nu), dt * u(_nu));
+      Fu.block(0, _nu, _nx, 1) = __v * dt;
+      Fu(_nx, _nu) = 1.;
+      CHECK_EQ(static_cast<size_t>(__v.size()), _nx, AT);
+    } else {
+      robot_model->stepDiff(Fx.block(0, 0, _nx, _nx), Fu.block(0, 0, _nx, _nu),
+                            x.head(_nx), u.head(_nu), dt * u(_nu));
+      Eigen::VectorXd dd = derivate_wrt_time(*robot_model, x, u, dt);
+      Fu.block(0, _nu, _nx, 1) = robot_model->ref_dt * dd;
+      Fu(_nx, _nu) = 1.;
+    }
   } else if (control_mode == Control_Mode::free_time) {
-    robot_model->stepDiff_with_v(Fx, Fu.block(0, 0, _nx, _nu), __v, x,
-                                 u.head(_nu), dt * u(_nu));
-    CHECK_EQ(static_cast<size_t>(__v.size()), _nx, AT);
-    Fu.col(_nu) = __v * dt;
+    if (!startsWith(robot_model->name, "quad3d")) {
+      robot_model->stepDiff_with_v(Fx, Fu.block(0, 0, _nx, _nu), __v, x,
+                                   u.head(_nu), dt * u(_nu));
+      CHECK_EQ(static_cast<size_t>(__v.size()), _nx, AT);
+      Fu.col(_nu) = __v * dt;
+    } else {
+      robot_model->stepDiff(Fx.block(0, 0, _nx, _nx), Fu.block(0, 0, _nx, _nu),
+                            x.head(_nx), u.head(_nu), dt * u(_nu));
+      Eigen::VectorXd dd = derivate_wrt_time(*robot_model, x, u, dt);
+      Fu.col(_nu) = robot_model->ref_dt * dd;
+    }
   } else if (control_mode == Control_Mode::contour) {
     robot_model->stepDiff(Fx.block(0, 0, _nx, _nx), Fu.block(0, 0, _nx, _nu),
                           x.head(_nx), u.head(_nu), dt);

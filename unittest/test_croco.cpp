@@ -3568,4 +3568,94 @@ BOOST_AUTO_TEST_CASE(quadpole2d_problem_hard) {
     std::ofstream out("out_opt.yaml");
     traj_out.to_yaml_format(out);
   }
+
+  // test generate some primitives
+
+  bool save_primitives = true;
+
+  if (save_primitives) {
+    std::shared_ptr<Model_robot> robot =
+        robot_factory(robot_type_to_path(problem.robotType).c_str());
+
+    Trajectories new_trajectories = cut_trajectory(traj_out, 5, robot);
+
+    std::string fileout = "quad2dpole_tmp.bin";
+    new_trajectories.save_file_boost(fileout.c_str());
+    new_trajectories.save_file_yaml((fileout + ".yaml").c_str());
+  }
+}
+
+BOOST_AUTO_TEST_CASE(t_quad3d_dt) {
+  {
+    ptr<Dynamics> dyn = mk<Dynamics>(mks<Model_quad3d>());
+    check_dyn(dyn, 1e-6, Eigen::VectorXd(), Eigen::VectorXd(), 200);
+  }
+  {
+    ptr<Dynamics> dyn =
+        mk<Dynamics>(mks<Model_quad3d>(), Control_Mode::free_time_linear);
+    check_dyn(dyn, 1e-6, Eigen::VectorXd(), Eigen::VectorXd(), 200);
+  }
+
+  {
+    ptr<Dynamics> dyn =
+        mk<Dynamics>(mks<Model_quad3d>(), Control_Mode::free_time);
+    check_dyn(dyn, 1e-6, Eigen::VectorXd(), Eigen::VectorXd(), 200);
+  }
+}
+
+BOOST_AUTO_TEST_CASE(t_acrobot_dt) {
+  {
+    ptr<Dynamics> dyn = mk<Dynamics>(mks<Model_acrobot>());
+    check_dyn(dyn, 1e-6, Eigen::VectorXd(), Eigen::VectorXd(), 200);
+  }
+  {
+    ptr<Dynamics> dyn =
+        mk<Dynamics>(mks<Model_acrobot>(), Control_Mode::free_time_linear);
+    check_dyn(dyn, 1e-6, Eigen::VectorXd(), Eigen::VectorXd(), 200);
+  }
+
+  {
+    ptr<Dynamics> dyn =
+        mk<Dynamics>(mks<Model_acrobot>(), Control_Mode::free_time);
+    check_dyn(dyn, 1e-6, Eigen::VectorXd(), Eigen::VectorXd(), 200);
+  }
+}
+
+
+BOOST_AUTO_TEST_CASE(t_quad3d_free_time) {
+
+  Problem problem1("../benchmark/quadrotor_0/empty_0_easy.yaml");
+  Problem problem2("../benchmark/quadrotor_0/empty_1_easy.yaml");
+
+  std::vector<Problem *> problems;
+  problems.push_back(&problem1);
+  problems.push_back(&problem2);
+
+  size_t problem_id = 0;
+  for (auto &ptr : problems) {
+
+    auto &problem = *ptr;
+
+    Trajectory traj_in, traj_out;
+    traj_in.num_time_steps = 100;
+
+    Options_trajopt options_trajopt;
+    options_trajopt.solver_id = 1; // 14 is much slower
+    options_trajopt.smooth_traj = false;
+    options_trajopt.weight_goal = 200;
+    options_trajopt.max_iter = 200;
+    options_trajopt.noise_level = 1e-5;
+    // options_trajopt.use_finite_diff = true;
+
+    Result_opti opti_out;
+
+    trajectory_optimization(problem, traj_in, options_trajopt, traj_out,
+                            opti_out);
+
+    {
+      std::ofstream out("out_opt_" + std::to_string(problem_id) + ".yaml");
+      problem_id++;
+      traj_out.to_yaml_format(out);
+    }
+  }
 }

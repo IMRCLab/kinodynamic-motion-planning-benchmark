@@ -394,7 +394,7 @@ struct Options_dbastar {
   bool use_collision_shape = true;
   bool always_add = false;
   bool new_invariance = false;
-  double col_resolution = .01 ;  // in meters
+  double col_resolution = .01; // in meters
 
   std::vector<Heuristic_node> *heu_map_ptr = nullptr;
   std::string heu_map_file;
@@ -591,3 +591,8 @@ void generate_heuristic_map(const Problem &problem,
                             std::shared_ptr<RobotOmpl> robot_ompl,
                             const Options_dbastar &options_dbastar,
                             std::vector<Heuristic_node> &heu_map);
+
+void traj_to_motion(const Trajectory &traj, RobotOmpl &robot,
+                    Motion &motion_out, bool compute_col) ;
+
+

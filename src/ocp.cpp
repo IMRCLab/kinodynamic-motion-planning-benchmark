@@ -1125,6 +1125,18 @@ void write_states_controls(const std::vector<Eigen::VectorXd> &xs,
   __traj.actions = us;
   __traj.states = xs;
 
+  {
+    std::ofstream out(filename + std::string(".raw.yaml"));
+    out << "states:" << std::endl;
+    for (auto &x : xs) {
+      out << "- " << x.format(FMT) << std::endl;
+    }
+    out << "actions:" << std::endl;
+    for (auto &u : us) {
+      out << "- " << u.format(FMT) << std::endl;
+    }
+  }
+
   if (__traj.actions.front().size() > model_robot->nu) {
     for (size_t i = 0; i < __traj.actions.size(); i++) {
       __traj.actions.at(i) =
@@ -2489,6 +2501,13 @@ void __trajectory_optimization(const Problem &problem,
       Eigen::VectorXd times;
       resample_trajectory(xs_out, us_out, times, xs, us, ts,
                           model_robot->ref_dt, model_robot->state);
+
+      if (startsWith(model_robot->name, "quad3d")) {
+        for (auto &s : xs_out) {
+          s.segment<4>(3).normalize();
+        }
+      }
+
       std::cout << "after resample " << std::endl;
       std::cout << xs_out.back().format(FMT) << std::endl;
 

@@ -84,8 +84,11 @@ double clamp(double val, double min, double max) {
 }
 
 // This works:
-// (opti) ⋊> ~/s/w/k/build on dev ⨯ make && ./main_ompl --env_file ../benchmark/quadrotor_0/empty_0_easy.yaml --results_file ../results_new/quadrotor_
-// 0/empty_0_easy/sst_v0/04-17-2023--18-58-03/run_0_out.yaml --timelimit 10  --cfg ../results_new/quadrotor_0/empty_0_easy/sst_v0/04-17-2023--18-58-03
+// (opti) ⋊> ~/s/w/k/build on dev ⨯ make && ./main_ompl --env_file
+// ../benchmark/quadrotor_0/empty_0_easy.yaml --results_file
+// ../results_new/quadrotor_
+// 0/empty_0_easy/sst_v0/04-17-2023--18-58-03/run_0_out.yaml --timelimit 10
+// --cfg ../results_new/quadrotor_0/empty_0_easy/sst_v0/04-17-2023--18-58-03
 // /run_0_out.yaml.cfg.yaml
 
 struct ControlSamplerMixer : public oc::ControlSampler {
@@ -102,7 +105,7 @@ struct ControlSamplerMixer : public oc::ControlSampler {
     auto *rcontrol =
         static_cast<oc::RealVectorControlSpace::ControlType *>(control);
 
-    double max_T =  model->g * model->m * model->u_ub(0);
+    double max_T = model->g * model->m * model->u_ub(0);
     double min_T = .5 * max_T;
     double max_M = 1e-5;
 
@@ -1199,6 +1202,285 @@ protected:
 //     }
 //   };
 // };
+
+class Quad2dPole : public RobotOmpl {
+
+public:
+  virtual ~Quad2dPole() {}
+
+  Quad2dPole(std::shared_ptr<Model_quad2dpole> t_diff_model)
+      : RobotOmpl(t_diff_model) {
+
+    CSTR_V(t_diff_model->distance_weights);
+    auto space(std::make_shared<StateSpace>(t_diff_model->distance_weights));
+    auto cspace(std::make_shared<oc::RealVectorControlSpace>(space, 2));
+    ob::RealVectorBounds cbounds(2);
+    for (size_t i = 0; i < 2; i++) {
+      cbounds.setLow(i, diff_model->u_lb(i));
+      cbounds.setHigh(i, diff_model->u_ub(i));
+    }
+    cspace->setBounds(cbounds);
+
+    ob::RealVectorBounds position_bounds(2);
+    for (size_t i = 0; i < 2; i++) {
+      position_bounds.setLow(i, diff_model->x_lb(i));
+      position_bounds.setHigh(i, diff_model->x_ub(i));
+    }
+    space->setPositionBounds(position_bounds);
+
+    ob::RealVectorBounds vel_bounds(2);
+    vel_bounds.setLow(-t_diff_model->params.max_vel);
+    vel_bounds.setHigh(t_diff_model->params.max_vel);
+    space->setVelocityBounds(vel_bounds);
+
+    ob::RealVectorBounds w_bounds(1);
+    w_bounds.setLow(-t_diff_model->params.max_angular_vel);
+    w_bounds.setHigh(t_diff_model->params.max_angular_vel);
+    space->setAngularVelocityBounds(w_bounds);
+    space->setAngularVelocityBoundsQ(w_bounds);
+
+    si_ = std::make_shared<oc::SpaceInformation>(space, cspace);
+
+    cspace->setControlSamplerAllocator([](const oc::ControlSpace *space) {
+      return std::make_shared<ControlSampler>(
+          space, 1.0, 0.05); // why not uniform in bounds?
+    });
+  }
+
+  virtual void toEigen(const ompl::base::State *x_ompl,
+                       Eigen::Ref<Eigen::VectorXd> x_eigen) override {
+
+    assert(x_eigen.size() == 8);
+    auto startTyped = x_ompl->as<StateSpace::StateType>();
+    x_eigen(0) = startTyped->getX();
+    x_eigen(1) = startTyped->getY();
+    x_eigen(2) = startTyped->getYaw();
+    x_eigen(3) = startTyped->getQ();
+    x_eigen(4) = startTyped->getVx();
+    x_eigen(5) = startTyped->getVy();
+    x_eigen(6) = startTyped->getAngularVelocity();
+    x_eigen(7) = startTyped->getvQ();
+  }
+
+  virtual void toEigenU(const ompl::control::Control *control,
+                        Eigen::Ref<Eigen::VectorXd> u_eigen) override {
+
+    assert(u_eigen.size() == 2);
+    const double *ctrl =
+        control->as<ompl::control::RealVectorControlSpace::ControlType>()
+            ->values;
+    u_eigen(0) = ctrl[0];
+    u_eigen(1) = ctrl[1];
+  }
+
+  virtual void
+  fromEigen(ompl::base::State *x_ompl,
+            const Eigen::Ref<const Eigen::VectorXd> &x_eigen) override {
+
+    assert(x_eigen.size() == 8);
+    auto x_typed = x_ompl->as<StateSpace::StateType>();
+
+    x_typed->setX(x_eigen(0));
+    x_typed->setY(x_eigen(1));
+    x_typed->setYaw(x_eigen(2));
+    x_typed->setQ(x_eigen(3));
+    x_typed->setVx(x_eigen(4));
+    x_typed->setVy(x_eigen(5));
+    x_typed->setAngularVelocity(x_eigen(6));
+    x_typed->setvQ(x_eigen(7));
+  }
+
+  virtual void enforceBounds(ompl::base::State *x) const override {
+    auto x_typed = x->as<StateSpace::StateType>();
+    ob::SO2StateSpace SO2;
+    SO2.enforceBounds(x_typed->as<ob::SO2StateSpace::StateType>(1));
+    SO2.enforceBounds(x_typed->as<ob::SO2StateSpace::StateType>(2));
+  }
+
+  virtual fcl::Transform3d getTransform(const ompl::base::State *state,
+                                        size_t /*part*/) override {
+    auto stateTyped = state->as<StateSpace::StateType>();
+
+    fcl::Transform3d result;
+    result = Eigen::Translation<double, 3>(
+        fcl::Vector3d(stateTyped->getX(), stateTyped->getY(), 0));
+    double yaw = stateTyped->getYaw();
+    result.rotate(Eigen::AngleAxisd(yaw, Eigen::Vector3d::UnitZ()));
+    return result;
+  }
+
+  virtual void setPosition(ompl::base::State *state,
+                           const fcl::Vector3d position) override {
+    auto stateTyped = state->as<ob::SE2StateSpace::StateType>();
+    stateTyped->setX(position(0));
+    stateTyped->setY(position(1));
+  }
+
+protected:
+  class StateSpace : public ob::CompoundStateSpace {
+  public:
+    class StateType : public ob::CompoundStateSpace::StateType {
+    public:
+      StateType() = default;
+
+      double getX() const {
+        return as<ob::RealVectorStateSpace::StateType>(0)->values[0];
+      }
+
+      double getY() const {
+        return as<ob::RealVectorStateSpace::StateType>(0)->values[1];
+      }
+
+      double getYaw() const {
+        return as<ob::SO2StateSpace::StateType>(1)->value;
+      }
+      double getQ() const { return as<ob::SO2StateSpace::StateType>(2)->value; }
+
+      double getVx() const {
+        return as<ob::RealVectorStateSpace::StateType>(3)->values[0];
+      }
+
+      double getVy() const {
+        return as<ob::RealVectorStateSpace::StateType>(3)->values[1];
+      }
+
+      double getAngularVelocity() const {
+        return as<ob::RealVectorStateSpace::StateType>(4)->values[0];
+      }
+
+      double getvQ() const {
+        return as<ob::RealVectorStateSpace::StateType>(5)->values[0];
+      }
+
+      void setX(double x) {
+        as<ob::RealVectorStateSpace::StateType>(0)->values[0] = x;
+      }
+
+      void setY(double y) {
+        as<ob::RealVectorStateSpace::StateType>(0)->values[1] = y;
+      }
+
+      void setYaw(double yaw) {
+        as<ob::SO2StateSpace::StateType>(1)->value = yaw;
+      }
+
+      void setQ(double q) { as<ob::SO2StateSpace::StateType>(2)->value = q; }
+
+      void setVx(double vx) {
+        as<ob::RealVectorStateSpace::StateType>(3)->values[0] = vx;
+      }
+
+      void setVy(double vy) {
+        as<ob::RealVectorStateSpace::StateType>(3)->values[1] = vy;
+      }
+
+      void setAngularVelocity(double angularVelocity) {
+        as<ob::RealVectorStateSpace::StateType>(4)->values[0] = angularVelocity;
+      }
+
+      void setvQ(double vq) {
+        as<ob::RealVectorStateSpace::StateType>(5)->values[0] = vq;
+      }
+    };
+
+    StateSpace(const Eigen::VectorXd &distance_weights) {
+      CHECK_EQ(distance_weights.size(), 6, AT);
+      setName("Quad2d" + getName());
+      type_ = ob::STATE_SPACE_TYPE_COUNT + 0;
+      addSubspace(std::make_shared<ob::RealVectorStateSpace>(2),
+                  distance_weights(0)); // position
+      addSubspace(std::make_shared<ob::SO2StateSpace>(),
+                  distance_weights(1)); // orientation
+      addSubspace(std::make_shared<ob::SO2StateSpace>(),
+                  distance_weights(2)); // orientation
+      addSubspace(std::make_shared<ob::RealVectorStateSpace>(2),
+                  distance_weights(3)); // velocity
+      addSubspace(std::make_shared<ob::RealVectorStateSpace>(1),
+                  distance_weights(4)); // angular velocity
+      addSubspace(std::make_shared<ob::RealVectorStateSpace>(1),
+                  distance_weights(5)); // angular velocity
+
+      lock();
+    }
+
+    ~StateSpace() override = default;
+
+    void setPositionBounds(const ob::RealVectorBounds &bounds) {
+      as<ob::RealVectorStateSpace>(0)->setBounds(bounds);
+    }
+
+    const ob::RealVectorBounds &getPositionBounds() const {
+      return as<ob::RealVectorStateSpace>(0)->getBounds();
+    }
+
+    void setVelocityBounds(const ob::RealVectorBounds &bounds) {
+      as<ob::RealVectorStateSpace>(3)->setBounds(bounds);
+    }
+
+    const ob::RealVectorBounds &getVelocityBounds() const {
+      return as<ob::RealVectorStateSpace>(3)->getBounds();
+    }
+
+    void setAngularVelocityBounds(const ob::RealVectorBounds &bounds) {
+      as<ob::RealVectorStateSpace>(4)->setBounds(bounds);
+    }
+
+    const ob::RealVectorBounds &getAngularVelocityBounds() const {
+      return as<ob::RealVectorStateSpace>(4)->getBounds();
+    }
+
+
+    void setAngularVelocityBoundsQ(const ob::RealVectorBounds &bounds) {
+      as<ob::RealVectorStateSpace>(5)->setBounds(bounds);
+    }
+
+    const ob::RealVectorBounds &getAngularVelocityBoundsQ() const {
+      return as<ob::RealVectorStateSpace>(5)->getBounds();
+    }
+
+
+
+    ob::State *allocState() const override {
+      auto *state = new StateType();
+      allocStateComponents(state);
+      return state;
+    }
+
+    void freeState(ob::State *state) const override {
+      CompoundStateSpace::freeState(state);
+    }
+
+    void registerProjections() override {
+      class DefaultProjection : public ob::ProjectionEvaluator {
+      public:
+        DefaultProjection(const ob::StateSpace *space)
+            : ob::ProjectionEvaluator(space) {}
+
+        unsigned int getDimension() const override { return 2; }
+
+        void defaultCellSizes() override {
+          cellSizes_.resize(2);
+          bounds_ = space_->as<ob::SE2StateSpace>()->getBounds();
+          cellSizes_[0] = (bounds_.high[0] - bounds_.low[0]) /
+                          ompl::magic::PROJECTION_DIMENSION_SPLITS;
+          cellSizes_[1] = (bounds_.high[1] - bounds_.low[1]) /
+                          ompl::magic::PROJECTION_DIMENSION_SPLITS;
+        }
+
+        void project(const ob::State *state,
+                     Eigen::Ref<Eigen::VectorXd> projection) const override {
+          projection = Eigen::Map<const Eigen::VectorXd>(
+              state->as<ob::SE2StateSpace::StateType>()
+                  ->as<ob::RealVectorStateSpace::StateType>(0)
+                  ->values,
+              2);
+        }
+      };
+
+      registerDefaultProjection(std::make_shared<DefaultProjection>(this));
+    }
+  };
+};
 
 class Quad2d : public RobotOmpl {
 
@@ -2630,6 +2912,9 @@ std::shared_ptr<RobotOmpl> robot_factory_ompl(const Problem &problem) {
   } else if (dynamics == "unicycle2") {
     out = std::make_shared<RobotUnicycleSecondOrder>(
         std::make_shared<Model_unicycle2>(__robot_model_file, p_lb, p_ub));
+  } else if (dynamics == "quad2dpole") {
+    out = std::make_shared<Quad2dPole>(
+        std::make_shared<Model_quad2dpole>(__robot_model_file, p_lb, p_ub));
   } else if (dynamics == "quad2d") {
     out = std::make_shared<Quad2d>(
         std::make_shared<Model_quad2d>(__robot_model_file, p_lb, p_ub));

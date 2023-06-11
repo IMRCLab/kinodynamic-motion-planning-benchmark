@@ -24,16 +24,17 @@ void idbA(const Problem &problem, const Options_idbAStar &options_idbas,
 
   std::vector<Motion> motions;
 
+  auto robot = robot_factory_ompl(problem);
   std::cout << "Loading motion primitives " << std::endl;
   if (!options_dbastar_local.primitives_new_format) {
-    load_motion_primitives(options_dbastar_local.motionsFile,
-                           *robot_factory_ompl(problem), motions,
+    CHECK(robot, AT);
+    load_motion_primitives(options_dbastar_local.motionsFile, *robot, motions,
                            options_idbas.max_motions_primitives,
                            options_dbastar_local.cut_actions, true);
   } else {
-    load_motion_primitives_new(options_dbastar_local.motionsFile,
-                               *robot_factory_ompl(problem), motions,
-                               options_idbas.max_motions_primitives,
+    CHECK(robot, AT);
+    load_motion_primitives_new(options_dbastar_local.motionsFile, *robot,
+                               motions, options_idbas.max_motions_primitives,
                                options_dbastar_local.cut_actions, true,
                                options_dbastar_local.check_cols);
   }
@@ -50,8 +51,7 @@ void idbA(const Problem &problem, const Options_idbAStar &options_idbas,
     } else {
       std::cout << "not heu map provided. Computing one .... " << std::endl;
       // there is not
-      generate_heuristic_map(problem, robot_factory_ompl(problem),
-                             options_dbastar_local, heu_map);
+      generate_heuristic_map(problem, robot, options_dbastar_local, heu_map);
       std::cout << "writing heu map " << std::endl;
       write_heu_map(heu_map, "tmp_heu_map.yaml");
     }
@@ -88,10 +88,13 @@ void idbA(const Problem &problem, const Options_idbAStar &options_idbas,
         options_dbastar_local.max_motions *= options_idbas.num_primitives_rate;
       }
     } else {
-      ERROR_WITH_INFO("not implemented");
+      NOT_IMPLEMENTED;
     }
 
-    options_dbastar_local.maxCost = info_out_idbastar.cost;
+    // options_dbastar_local.maxCost = info_out_idbastar.cost;
+    double delta_cost = 1.2;
+    CSTR_(delta_cost);
+    options_dbastar_local.maxCost = info_out_idbastar.cost * delta_cost;
 
     std::cout << "*** Running DB-astar ***" << std::endl;
 
@@ -138,7 +141,71 @@ void idbA(const Problem &problem, const Options_idbAStar &options_idbas,
 
         // add primitives
         if (options_idbas.add_primitives_opt) {
-          NOT_IMPLEMENTED;
+
+          // lets generate primitives
+          size_t number_of_cuts = 5;
+
+
+          Trajectories new_trajectories =
+              cut_trajectory(traj, number_of_cuts, robot->diff_model);
+
+          auto& rr = robot->diff_model;
+
+          Trajectories trajs_canonical;
+          for (const auto &traj : new_trajectories.data) {
+
+            Eigen::VectorXd x0(traj.states.front().size());
+            rr->canonical_state(traj.states.front(), x0);
+            std::vector<Eigen::VectorXd> xx = traj.states;
+            rr->rollout(x0, traj.actions, xx);
+
+            Trajectory traj_out;
+            traj_out.actions = traj.actions;
+            traj_out.states = xx;
+            traj_out.goal = traj_out.states.back();
+            traj_out.start = traj_out.states.front();
+            traj_out.cost = traj.cost;
+
+            {
+              traj_out.check(rr, true);
+              traj_out.update_feasibility();
+              // CHECK(traj_out.feasible, AT); // NOTE: some can go out of
+              // bounds in the canonical form.
+            }
+
+            trajs_canonical.data.push_back(traj_out);
+          }
+
+          {
+            std::string filename =
+                "trajs_cuts_canonical_" + gen_random(6) + ".yaml";
+            std::cout << "saving traj file: " << filename << std::endl;
+            trajs_canonical.save_file_yaml(filename.c_str());
+          }
+
+          std::vector<Motion> motions_out;
+          for (const auto &traj : trajs_canonical.data) {
+            Motion motion_out;
+            CHECK(robot, AT)
+            traj_to_motion(traj, *robot, motion_out, true);
+            motions_out.push_back(motion_out);
+          }
+
+          const bool debug_primitves_extraction = false;
+          CSTR_(debug_primitves_extraction);
+
+          if (debug_primitves_extraction) {
+            CSTR_(motions_out.size());
+            motions.insert(motions.begin(), motions_out.begin(),
+                           motions_out.end());
+
+            std::cout << "Afer insert " << motions.size() << std::endl;
+            std::cout << "Warning: "
+                      << "I am inserting at the beginning" << std::endl;
+
+          } else {
+            motions = motions_out;
+          }
         }
       }
     }
@@ -167,4 +234,27 @@ void idbA(const Problem &problem, const Options_idbAStar &options_idbas,
 
   std::cout << "exit criteria"
             << static_cast<int>(info_out_idbastar.exit_criteria) << std::endl;
+}
+
+void write_results_idbastar(const char *results_file,
+                            const Options_idbAStar &options_idbastar,
+                            const Options_dbastar &options_dbastar,
+                            const Options_trajopt &options_trajopt,
+                            const Info_out_idbastar &info_out_idbastar) {
+
+  std::ofstream results(results_file);
+
+  results << "alg: idbastar" << std::endl;
+  results << "time_stamp: " << get_time_stamp() << std::endl;
+
+  results << "options_idbastar:" << std::endl;
+  options_idbastar.print(results, "  ");
+
+  results << "options_dbastar:" << std::endl;
+  options_dbastar.print(results, "  ");
+
+  results << "options trajopt:" << std::endl;
+  options_trajopt.print(results, "  ");
+
+  info_out_idbastar.to_yaml(results);
 }

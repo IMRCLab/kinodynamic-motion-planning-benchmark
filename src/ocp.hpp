@@ -77,7 +77,6 @@ struct Options_trajopt {
   void read_from_yaml(const char *file);
 };
 
-
 enum class SOLVER {
   traj_opt = 0,
   traj_opt_free_time = 1,
@@ -106,7 +105,8 @@ to_am_base(boost::shared_ptr<Derived> am) {
   return boost::static_pointer_cast<crocoddyl::ActionModelAbstract>(am);
 };
 
-void print_data(boost::shared_ptr<crocoddyl::ActionDataAbstractTpl<double>> data);
+void print_data(
+    boost::shared_ptr<crocoddyl::ActionDataAbstractTpl<double>> data);
 
 struct Generate_params {
   bool free_time = false;
@@ -125,7 +125,7 @@ struct Generate_params {
   bool linear_contour = true;
   bool goal_cost = true;
   bool collisions = true;
-  double penalty  = 1; // penalty for the constraints
+  double penalty = 1; // penalty for the constraints
   void print(std::ostream &out) const;
 };
 
@@ -205,10 +205,8 @@ void trajectory_optimization(const Problem &problem,
                              const Options_trajopt &opti_parms,
                              Trajectory &traj, Result_opti &opti_out);
 
-
 std::vector<Eigen::VectorXd>
-smooth_traj2(const std::vector<Eigen::VectorXd> &xs_init, const StateQ &state) ;
-
+smooth_traj2(const std::vector<Eigen::VectorXd> &xs_init, const StateQ &state);
 
 bool check_problem(ptr<crocoddyl::ShootingProblem> problem,
                    ptr<crocoddyl::ShootingProblem> problem2,

@@ -54,7 +54,6 @@ struct Options_idbAStar {
   bool new_schedule = true;
   bool add_primitives_opt = false;
 
-
   void add_options(po::options_description &desc) {
 
     set_from_boostop(desc, VAR_WITH_NAME(delta_0));
@@ -68,7 +67,7 @@ struct Options_idbAStar {
     set_from_boostop(desc, VAR_WITH_NAME(add_primitives_opt));
   }
   void print(std::ostream &out, const std::string be = "",
-             const std::string af = ": ") {
+             const std::string af = ": ") const {
 
     out << be << STR(delta_0, af) << std::endl;
     out << be << STR(num_primitives_0, af) << std::endl;
@@ -114,5 +113,14 @@ struct Options_idbAStar {
 // cli to create and store a heuristic map for a robot in an environment.
 
 void idbA(const Problem &problem, const Options_idbAStar &options_idbas,
-          const Options_dbastar &options_dbastar, const Options_trajopt &options_trajopt,
-          Trajectory &traj_out, Info_out_idbastar &info_out_idbastar);
+          const Options_dbastar &options_dbastar,
+          const Options_trajopt &options_trajopt, Trajectory &traj_out,
+          Info_out_idbastar &info_out_idbastar);
+
+// are you here?
+
+void write_results_idbastar(const char *results_file,
+                            const Options_idbAStar &options_idbastar,
+                            const Options_dbastar &options_dbastar,
+                            const Options_trajopt &options_trajopt,
+                            const Info_out_idbastar &info_out_idbastar) ;

@@ -1,5 +1,3 @@
-
-
 enum class PRIMITIVE_MODE {
   generate = 0,
   improve = 1,
@@ -99,6 +97,7 @@ int main(int argc, const char *argv[]) {
     trajectories_out.save_file_yaml((out_file + ".yaml").c_str(), 1000);
 
     trajectories_out.compute_stats("tmp_stats.yaml");
+
   }
 
   if (mode == PRIMITIVE_MODE::generate_rand) {
@@ -152,6 +151,16 @@ int main(int argc, const char *argv[]) {
     Trajectories trajectories, trajectories_out;
 
     trajectories.load_file_boost(in_file.c_str());
+
+    if (startsWith(options_primitives.dynamics, "quad3d")) {
+
+      for (auto &t : trajectories.data) {
+
+        for (auto &s : t.states) {
+          s.segment<4>(3).normalize();
+        }
+      }
+    }
 
     if (options_primitives.max_num_primitives > 0 &&
         static_cast<size_t>(options_primitives.max_num_primitives) <
@@ -311,7 +320,19 @@ int main(int argc, const char *argv[]) {
     std::random_device rd;
     std::mt19937 g(rd());
     std::shuffle(trajectories.data.begin(), trajectories.data.end(), g);
-    trajectories.save_file_boost(in_file.c_str());
+    if (out_file == "auto") {
+      out_file = in_file + ".sh.bin";
+    }
+
+    trajectories.save_file_boost(out_file.c_str());
     trajectories.compute_stats("tmp_stats.yaml");
   }
+
+  std::ofstream log(out_file + ".log");
+  log << "argv: " << std::endl;
+  for (int i = 0; i < argc; i++) {
+    log << " " << argv[i] << std::endl;
+  }
+  log << "out: " << out_file << std::endl;
+  log << "time: " << get_time_stamp() << std::endl;
 }

@@ -83,7 +83,6 @@ void modify_x_bound_for_contour(const Eigen::VectorXd &__x_lb,
                                 Eigen::VectorXd &x_lb, Eigen::VectorXd &x_ub,
                                 Eigen::VectorXd &xb_weight, double max_alpha);
 
-
 struct ActionDataQ : public crocoddyl::ActionDataAbstractTpl<double> {
   EIGEN_MAKE_ALIGNED_OPERATOR_NEW
 
@@ -1002,7 +1001,8 @@ public:
   virtual void print(std::ostream &os) const;
 };
 
-void print_data(boost::shared_ptr<crocoddyl::ActionDataAbstractTpl<double>> data);
+void print_data(
+    boost::shared_ptr<crocoddyl::ActionDataAbstractTpl<double>> data);
 
 void check_dyn(boost::shared_ptr<Dynamics> dyn, double eps,
                Eigen::VectorXd x = Eigen::VectorXd(),

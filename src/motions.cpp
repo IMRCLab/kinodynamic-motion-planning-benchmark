@@ -468,22 +468,26 @@ void resample_trajectory(std::vector<Eigen::VectorXd> &xs_out,
 }
 
 void Info_out::print(std::ostream &out, const std::string &be,
-                     const std::string &af) {
+                     const std::string &af) const {
   STRY(solved, out, be, af);
   STRY(cost, out, be, af);
 }
 
 void Info_out::to_yaml(std::ostream &out, const std::string &be,
-                       const std::string &af) {
+                       const std::string &af) const {
 
   STRY(solved, out, be, af);
   STRY(cost, out, be, af);
+
+  out << be << "trajs_opt_size: " << trajs_opt.size() << std::endl;
   out << be << "trajs_opt" << af << std::endl;
   std::string prefix = "   ";
   for (size_t i = 0; i < trajs_opt.size(); i++) {
     out << be << "  -" << std::endl;
     trajs_opt.at(i).to_yaml_format(out, be + prefix);
   }
+
+  out << be << "trajs_raw_size: " << trajs_raw.size() << std::endl;
 
   out << "trajs_raw:" << std::endl;
   for (size_t i = 0; i < trajs_raw.size(); i++) {
@@ -550,7 +554,9 @@ void Trajectories::save_file_boost(const char *file) const {
 
   std::cout << "Trajs: save file boost to: " << file << std::endl;
   const std::filesystem::path path = std::filesystem::path(file).parent_path();
-  std::filesystem::create_directories(path);
+  if (!path.empty()) {
+    std::filesystem::create_directories(path);
+  }
   std::ofstream out(file, std::ios::binary);
   CHECK(out.is_open(), AT);
   boost::archive::binary_oarchive oa(out);
@@ -779,3 +785,47 @@ void Trajectories::compute_stats(const char *filename_out) const {
   out << "bins_actions:" << std::endl;
   bins_to_yaml(out, bins_actions);
 }
+
+Trajectories cut_trajectory(const Trajectory &traj, size_t number_of_cuts,
+                            std::shared_ptr<Model_robot> &robot) {
+  size_t num_states = traj.states.size();
+
+  size_t length_each = int(num_states / number_of_cuts) + 1;
+
+  size_t num_actions = traj.actions.size();
+
+  // 10
+
+  Trajectories new_trajectories;
+  for (size_t i = 0; i < number_of_cuts; i++) {
+    std::vector<Eigen::VectorXd> states = {
+        traj.states.begin() + i * length_each,
+        traj.states.begin() + std::min((i + 1) * length_each + 1, num_states)};
+    std::vector<Eigen::VectorXd> actions = {
+        traj.actions.begin() + i * length_each,
+        traj.actions.begin() + std::min((i + 1) * length_each, num_actions)};
+    Trajectory traj;
+    CHECK_EQ(states.size(), actions.size() + 1, AT);
+    traj.states = states;
+    traj.actions = actions;
+    traj.start = states.front();
+    traj.goal = states.back();
+    traj.cost = robot->ref_dt * traj.actions.size();
+    {
+      traj.check(robot, true);
+      traj.update_feasibility();
+    }
+    CHECK(traj.feasible, AT);
+    new_trajectories.data.push_back(traj);
+  }
+  {
+    // save trjectories for debugging
+    std::string filename = "trajs_cuts_" + gen_random(6) + ".yaml";
+    std::cout << "saving traj file: " << filename << std::endl;
+    new_trajectories.save_file_yaml(filename.c_str());
+  }
+
+  return new_trajectories;
+
+  // I have to convert to canonical motions
+};

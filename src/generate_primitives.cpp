@@ -191,6 +191,16 @@ void improve_motion_primitives(const Options_trajopt &options_trajopt,
                     auto &options_trajopt, auto &trajs_out,
                     auto &num_improves) {
     auto &traj = trajs_in.data.at(i);
+
+    auto __model =
+        std::shared_ptr<Model_robot>(robot_model.get(), [](Model_robot *) {});
+
+    traj.check(__model, true);
+    traj.update_feasibility();
+    if (!traj.feasible) {
+      std::cout << "warning, trajectory is not feasible! " << std::endl;
+    }
+
     // make sure that trajectories have a cost...
 
     if (traj.cost > 1e3) {
@@ -207,33 +217,34 @@ void improve_motion_primitives(const Options_trajopt &options_trajopt,
     problem.robotType = dynamics;
 
     Result_opti opti_out;
-    trajectory_optimization(problem, traj, options_trajopt, traj_out, opti_out);
 
-    CHECK_EQ(opti_out.feasible, traj_out.feasible, AT);
-    if (traj_out.feasible) {
-      CHECK_LEQ(
-          std::abs(traj_out.cost -
-                   robot_model->traj_cost(traj_out.states, traj_out.actions)),
-          1e-10, AT);
-    }
+    try {
+      trajectory_optimization(problem, traj, options_trajopt, traj_out,
+                              opti_out);
 
-    // traj.cost = robot_model->traj_cost(traj.states, traj.actions);
-    //
-    //
-    //        model->traj_cos traj_out.cost);
+      CHECK_EQ(opti_out.feasible, traj_out.feasible, AT);
+      if (traj_out.feasible) {
+        CHECK_LEQ(
+            std::abs(traj_out.cost -
+                     robot_model->traj_cost(traj_out.states, traj_out.actions)),
+            1e-10, AT);
+      }
+      CSTR_(traj_out.feasible);
+      std::cout << "Previous cost: " << traj.cost << std::endl;
+      std::cout << "New cost: " << traj_out.cost << std::endl;
+      if (traj_out.feasible && traj_out.cost + 1e-5 < traj.cost) {
+        std::cout << "we have a better trajectory!" << std::endl;
+        CSTR_(traj_out.cost);
+        CSTR_(traj.cost);
+        trajs_out.data.at(i) = traj_out;
 
-    CSTR_(traj_out.feasible);
-    std::cout << "Previous cost: " << traj.cost << std::endl;
-    std::cout << "New cost: " << traj_out.cost << std::endl;
-    if (traj_out.feasible && traj_out.cost + 1e-5 < traj.cost) {
-      std::cout << "we have a better trajectory!" << std::endl;
-      CSTR_(traj_out.cost);
-      CSTR_(traj.cost);
-      trajs_out.data.at(i) = traj_out;
+        num_improves++;
 
-      num_improves++;
+      } else {
+        trajs_out.data.at(i) = traj;
+      }
 
-    } else {
+    } catch (const std::exception &e) {
       trajs_out.data.at(i) = traj;
     }
   };

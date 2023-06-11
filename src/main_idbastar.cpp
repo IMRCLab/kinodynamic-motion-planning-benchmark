@@ -97,21 +97,8 @@ int main(int argc, char *argv[]) {
   info_out_idbastar.print(std::cout);
   std::cout << "***" << std::endl;
 
-  std::ofstream results(results_file);
-
-  results << "alg: idbastar" << std::endl;
-  results << "time_stamp: " << get_time_stamp() << std::endl;
-
-  results << "options_idbastar:" << std::endl;
-  options_idbastar.print(results, "  ");
-
-  results << "options_dbastar:" << std::endl;
-  options_dbastar.print(results, "  ");
-
-  results << "options trajopt:" << std::endl;
-  options_trajopt.print(results, "  ");
-
-  info_out_idbastar.to_yaml(results);
+  write_results_idbastar(results_file.c_str(), options_idbastar, options_dbastar,
+                         options_trajopt , info_out_idbastar );
 
   for (size_t i = 0; i < info_out_idbastar.trajs_opt.size(); i++) {
     std::string file = results_file + ".trajopt-" + std::to_string(i) + ".yaml";

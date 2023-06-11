@@ -182,6 +182,7 @@ struct Trajectories {
     // - TRAJ 1
     // - TRAJ 2
 
+    std::cout << "Trajs: save file yaml: " << file << std::endl;
     std::ofstream out(file);
     std::string prefix = "  ";
 
@@ -240,9 +241,9 @@ struct Info_out {
   ~Info_out() = default;
 
   void virtual print(std::ostream &out, const std::string &be = "",
-                     const std::string &af = ": ");
+                     const std::string &af = ": ") const;
   void virtual to_yaml(std::ostream &out, const std::string &be = "",
-                       const std::string &af = ": ");
+                       const std::string &af = ": ") const;
 };
 
 void load_env_quim(Model_robot &robot, const Problem &problem);
@@ -250,3 +251,6 @@ void load_env_quim(Model_robot &robot, const Problem &problem);
 Trajectory from_welf_to_quim(const Trajectory &traj_raw, double u_nominal);
 
 Trajectory from_quim_to_welf(const Trajectory &traj_raw, double u_nominal);
+
+Trajectories cut_trajectory(const Trajectory &traj, size_t number_of_cuts,
+                            std::shared_ptr<Model_robot> &robot);

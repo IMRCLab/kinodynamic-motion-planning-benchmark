@@ -84,7 +84,6 @@ int main(int argc, char *argv[]) {
   options_dbastar.print(results, "  ");
   out_db.write_yaml(results);
 
-
   if (out_db.solved) {
     return 0;
   } else {
