@@ -1156,7 +1156,7 @@ void __trajectory_optimization(const Problem &problem,
                                const Options_trajopt &options_trajopt,
                                Trajectory &traj, Result_opti &opti_out) {
 
-  bool store_iterations = true;
+  bool store_iterations = false;
   CSTR_(store_iterations);
 
   std::cout
