@@ -1,5 +1,5 @@
 # distance_weights: [1. , .5, .2, .2 ] 
-distance_weights: [1. , .5, .1, .05 ] 
+distance_weights: [1. , .2, .1, .05 ] 
 max_vel : 4
 max_angular_vel : 8 
 max_acc : 25 # used for bounds on time
