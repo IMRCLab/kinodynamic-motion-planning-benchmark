@@ -123,4 +123,4 @@ void write_results_idbastar(const char *results_file,
                             const Options_idbAStar &options_idbastar,
                             const Options_dbastar &options_dbastar,
                             const Options_trajopt &options_trajopt,
-                            const Info_out_idbastar &info_out_idbastar) ;
+                            const Info_out_idbastar &info_out_idbastar);

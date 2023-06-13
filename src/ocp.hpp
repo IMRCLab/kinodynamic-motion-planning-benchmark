@@ -20,12 +20,6 @@
 
 #include "crocoddyl/core/action-base.hpp"
 
-inline std::string robot_type_to_path(const std::string &robot_type) {
-  const std::string base_path = "../models/";
-  const std::string suffix = ".yaml";
-  return base_path + robot_type + suffix;
-}
-
 struct Options_trajopt {
 
   bool CALLBACKS = true;

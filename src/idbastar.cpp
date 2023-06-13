@@ -145,11 +145,10 @@ void idbA(const Problem &problem, const Options_idbAStar &options_idbas,
           // lets generate primitives
           size_t number_of_cuts = 5;
 
-
           Trajectories new_trajectories =
               cut_trajectory(traj, number_of_cuts, robot->diff_model);
 
-          auto& rr = robot->diff_model;
+          auto &rr = robot->diff_model;
 
           Trajectories trajs_canonical;
           for (const auto &traj : new_trajectories.data) {

@@ -97,7 +97,6 @@ int main(int argc, const char *argv[]) {
     trajectories_out.save_file_yaml((out_file + ".yaml").c_str(), 1000);
 
     trajectories_out.compute_stats("tmp_stats.yaml");
-
   }
 
   if (mode == PRIMITIVE_MODE::generate_rand) {
@@ -236,6 +235,12 @@ int main(int argc, const char *argv[]) {
     trajectories.load_file_boost(in_file.c_str());
     CSTR_(trajectories.data.size());
 
+    if (options_primitives.max_num_primitives > 0 &&
+        static_cast<size_t>(options_primitives.max_num_primitives) <
+            trajectories.data.size()) {
+      trajectories.data.resize(options_primitives.max_num_primitives);
+    }
+
     sort_motion_primitives(
         trajectories, trajectories_out,
         [&](const auto &x, const auto &y) {
@@ -243,12 +248,37 @@ int main(int argc, const char *argv[]) {
         },
         options_primitives.max_num_primitives);
 
+    const bool debug = false;
+    if (debug) {
+      Trajectories trajectories_out_debug;
+      sort_motion_primitives(
+          trajectories, trajectories_out_debug,
+          [&](const auto &x, const auto &y) {
+            return robot_model->distance(x, y);
+          },
+          options_primitives.max_num_primitives, true);
+
+      // check that the trajectories are the same
+      for (size_t t = 0; t < trajectories_out_debug.data.size(); t++) {
+
+        auto &traj = trajectories_out_debug.data.at(t);
+        auto &traj2 = trajectories_out.data.at(t);
+
+        CHECK_LEQ((traj.start - traj2.start).norm(), 1e-6, AT);
+        CHECK_LEQ((traj.goal - traj2.goal).norm(), 1e-6, AT);
+      }
+    }
+
     // check that they are valid...
 
     for (auto &traj : trajectories_out.data) {
-      traj.check(robot_model);
+      traj.check(robot_model, true);
       traj.update_feasibility();
-      CHECK(traj.feasible, AT);
+
+      if (!traj.feasible) {
+        WARN_WITH_INFO("Trajectory is not feasible -- could happen when I "
+                       "transform to cannonical form");
+      }
     }
 
     if (out_file == "auto") {
@@ -335,4 +365,6 @@ int main(int argc, const char *argv[]) {
   }
   log << "out: " << out_file << std::endl;
   log << "time: " << get_time_stamp() << std::endl;
+  log << "options_primitives:" << std::endl;
+  options_primitives.print(log, "  ");
 }

@@ -8,7 +8,7 @@ void sort_motion_primitives(
     const Trajectories &__trajs, Trajectories &trajs_out,
     std::function<double(const Eigen::VectorXd &, const Eigen::VectorXd &)>
         distance_fun,
-    int top_k) {
+    int top_k, bool naive) {
 
   Trajectories trajs = __trajs;
 
@@ -16,10 +16,14 @@ void sort_motion_primitives(
     if (!t.start.size()) {
       CHECK(t.states.size(), AT);
       t.start = t.states.front();
+    } else {
+      CHECK_LEQ((t.start - t.states.front()).norm(), 1e-7, AT);
     }
     if (!t.goal.size()) {
       CHECK(t.states.size(), AT);
       t.goal = t.states.back();
+    } else {
+      CHECK_LEQ((t.goal - t.states.back()).norm(), 1e-7, AT);
     }
   }
 
@@ -39,13 +43,6 @@ void sort_motion_primitives(
     return distance_fun(a.start, b.start);
   };
 
-  std::vector<std::pair<double, double>> distance_map(trajs.data.size());
-  std::vector<size_t> used_motions;
-  std::set<size_t> unused_motions;
-  for (size_t i = 0; i < trajs.data.size(); i++) {
-    unused_motions.insert(i);
-  }
-
   // use as first/seed motion the one that moves furthest
   size_t next_best_motion = 0;
   double largest_d = 0;
@@ -57,46 +54,96 @@ void sort_motion_primitives(
       next_best_motion = i;
     }
   }
+
+  std::vector<size_t> used_motions;
+  std::set<size_t> unused_motions;
+
+  for (size_t i = 0; i < trajs.data.size(); i++) {
+    unused_motions.insert(i);
+  }
+
   used_motions.push_back(next_best_motion);
   unused_motions.erase(next_best_motion);
 
-  for (auto &mi : unused_motions) {
-    auto &m = trajs.data.at(mi);
-    CHECK(used_motions.size(), AT);
-    distance_map.at(mi).first =
-        start_dist(m, trajs.data.at(used_motions.at(0)));
-    distance_map.at(mi).second =
-        goal_dist(m, trajs.data.at(used_motions.at(0)));
-  }
+  if (naive) {
 
-  // TODO: evaluate if I should use a joint space!
-  //
+    bool finished = false;
+    while (!finished) {
 
-  CSTR_(top_k);
-  for (size_t k = 1; k < top_k; ++k) {
-    if (k % 1000 == 0) {
-      CSTR_(k);
+      // chose the best (MAX) from not not_chosen
+      double best = std::numeric_limits<double>::lowest();
+      int next_best = -1;
+
+      for (auto &j : unused_motions) {
+
+        // compute score
+
+        double s1 = std::numeric_limits<double>::max();
+        double s2 = std::numeric_limits<double>::max();
+
+        for (auto &k : used_motions) {
+          double _s1 = start_dist(trajs.data.at(j), trajs.data.at(k));
+          double _s2 = goal_dist(trajs.data.at(j), trajs.data.at(k));
+          s1 = std::min(s1, _s1);
+          s2 = std::min(s2, _s2);
+        }
+        double __best = s1 + s2;
+
+        if (__best > best) {
+          best = __best;
+          next_best = j;
+        }
+      }
+
+      used_motions.push_back(next_best);
+      unused_motions.erase(next_best);
+
+      finished = used_motions.size() == top_k;
     }
-    auto it = std::max_element(
-        unused_motions.begin(), unused_motions.end(), [&](auto &a, auto &b) {
-          return distance_map.at(a).first + distance_map.at(a).second <
-                 distance_map.at(b).first + distance_map.at(b).second;
-        });
 
-    next_best_motion = *it;
-    used_motions.push_back(*it);
-    unused_motions.erase(*it);
+  } else {
 
-    // update
-    std::for_each(unused_motions.begin(), unused_motions.end(), [&](auto &mi) {
-      distance_map.at(mi).first = std::min(
-          distance_map.at(mi).first,
-          start_dist(trajs.data.at(mi), trajs.data.at(next_best_motion)));
+    std::vector<std::pair<double, double>> distance_map(trajs.data.size());
 
-      distance_map.at(mi).second = std::min(
-          distance_map.at(mi).second,
-          goal_dist(trajs.data.at(mi), trajs.data.at(next_best_motion)));
-    });
+    for (auto &mi : unused_motions) {
+      auto &m = trajs.data.at(mi);
+      CHECK(used_motions.size(), AT);
+      distance_map.at(mi).first =
+          start_dist(m, trajs.data.at(used_motions.at(0)));
+      distance_map.at(mi).second =
+          goal_dist(m, trajs.data.at(used_motions.at(0)));
+    }
+
+    // TODO: evaluate if I should use a joint space!
+    //
+
+    CSTR_(top_k);
+    for (size_t k = 1; k < top_k; ++k) {
+      if (k % 1000 == 0) {
+        CSTR_(k);
+      }
+      auto it = std::max_element(
+          unused_motions.begin(), unused_motions.end(), [&](auto &a, auto &b) {
+            return distance_map.at(a).first + distance_map.at(a).second <
+                   distance_map.at(b).first + distance_map.at(b).second;
+          });
+
+      next_best_motion = *it;
+      used_motions.push_back(*it);
+      unused_motions.erase(*it);
+
+      // update
+      std::for_each(
+          unused_motions.begin(), unused_motions.end(), [&](auto &mi) {
+            distance_map.at(mi).first = std::min(
+                distance_map.at(mi).first,
+                start_dist(trajs.data.at(mi), trajs.data.at(next_best_motion)));
+
+            distance_map.at(mi).second = std::min(
+                distance_map.at(mi).second,
+                goal_dist(trajs.data.at(mi), trajs.data.at(next_best_motion)));
+          });
+    }
   }
 
   for (auto &i : used_motions) {
@@ -406,8 +453,35 @@ void generate_primitives(const Options_trajopt &options_trajopt,
     Eigen::VectorXd goal(robot_model->nx);
 
     robot_model->sample_uniform(start);
-    robot_model->sample_uniform(goal);
 
+    if (!options_primitives.use_random_displacemenet) {
+      robot_model->sample_uniform(goal);
+    } else {
+      // sample a random displacemenet
+      Eigen::VectorXd d_ub(start.size());
+      Eigen::VectorXd d_lb(start.size());
+
+      d_ub.setOnes();
+      d_lb.setConstant(-1.);
+
+      Eigen::VectorXd d = d_lb + (d_ub - d_lb) * .5 *
+                                     (Eigen::VectorXd::Random(start.size()) +
+                                      Eigen::VectorXd::Ones(start.size()));
+
+      std::cout << "desisred displacement " << std::endl;
+      CSTR_V(d);
+
+      goal = start + d;
+      Eigen::VectorXd tmp_goal;
+      robot_model->ensure(goal, tmp_goal);
+      goal = tmp_goal;
+
+      // check that it is in the limits!
+      if (robot_model->is_state_valid(goal)) {
+        std::cout << "Warning: goal state is not valid!! " << std::endl;
+        continue;
+      }
+    }
     if (num_translation) {
       goal.head(num_translation) -= start.head(num_translation);
       start.head(num_translation).setZero();

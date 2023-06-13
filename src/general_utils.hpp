@@ -285,4 +285,3 @@ public:
     return duration_cast<double>(out) * 1000;
   }
 };
-

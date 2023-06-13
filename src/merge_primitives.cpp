@@ -63,4 +63,18 @@ int main(int argc, const char *argv[]) {
 
   trajectories_all.save_file_boost(out_file.c_str());
   trajectories_all.save_file_yaml((out_file + ".yaml").c_str());
+
+  // write a log
+  std::ofstream log_file(out_file + ".log");
+  log_file << "argv:" << std::endl;
+  for (int i = 0; i < argc; ++i) {
+    log_file << "  - " << argv[i] << std::endl;
+  }
+  log_file << "timestamp: " << get_time_stamp() << std::endl;
+  log_file << "in_folder: " << in_folder << std::endl;
+  log_file << "out_file: " << out_file << std::endl;
+  log_file << "in_files: " << std::endl;
+  for (auto &file : files) {
+    log_file << "  - " << file << std::endl;
+  }
 }

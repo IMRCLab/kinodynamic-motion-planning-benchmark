@@ -2213,7 +2213,7 @@ void dbastar(const Problem &problem, const Options_dbastar &options_dbastar,
         nn_of_best = neighbors_m;
       }
 
-      if (!neighbors_m.size() && verbose) {
+      if (!neighbors_m.size() && true) {
 
         std::cout << "no neighours for state " << std::endl;
         si->printState(fakeMotion.get_first_state(), std::cout);
@@ -2307,6 +2307,7 @@ void dbastar(const Problem &problem, const Options_dbastar &options_dbastar,
           size_t index_resolution = 1;
 
           if (robot->diff_model->ref_dt < .05) {
+            // TODO: which number to put here?
             index_resolution = 5;
           }
 
@@ -2672,16 +2673,14 @@ void dbastar(const Problem &problem, const Options_dbastar &options_dbastar,
     std::mt19937 g(rd());
     std::shuffle(neighbors_m.begin(), neighbors_m.end(), g);
 
-    if (neighbors_m.size() > options_dbastar.limit_branching_factor) {
-      // std::cout << "limiting the branch factor..." << std::endl;
-      neighbors_m.resize(options_dbastar_local.limit_branching_factor);
-    }
 
     if (!neighbors_m.size()) {
       std::cout << "state:" << std::endl;
       si->printState(current->state);
       std::cout << "has neighbors=0" << std::endl;
     }
+
+    int expanded_neighs = 0;
 
     for (const Motion *motion : neighbors_m) {
       // std::cout << "motion from ";
@@ -2691,6 +2690,10 @@ void dbastar(const Problem &problem, const Options_dbastar &options_dbastar,
       // std::cout << std::endl;
       if (motion->disabled) {
         continue;
+      }
+
+      if (expanded_neighs >= options_dbastar_local.limit_branching_factor) {
+        break;
       }
 
       fcl::Vector3d offset(0., 0., 0.);
@@ -2777,6 +2780,8 @@ void dbastar(const Problem &problem, const Options_dbastar &options_dbastar,
         continue;
       }
       has_children = true;
+
+      expanded_neighs++;
 
       query_n->state = tmpState;
 
@@ -3322,6 +3327,9 @@ void dbastar(const Problem &problem, const Options_dbastar &options_dbastar,
             // print the state
             out << space6 << "- ";
             traj_out.states.push_back(xs.at(k));
+          } else if (i == result.size() - 2) {
+            out << space6 << "- ";
+            traj_out.states.push_back(xs.at(k));
           } else {
             out << space6 << "# (last state) ";
           }
@@ -3332,9 +3340,8 @@ void dbastar(const Problem &problem, const Options_dbastar &options_dbastar,
         // Just get state + motion
         // skip last, then state... and so on!!!
       }
-      out << space6 << "# (using goal as last state) " << std::endl;
-      out << space6 << " - " << goalState_eig.format(FMT) << std::endl;
-      traj_out.states.push_back(goalState_eig);
+      out << space6 << "# goal state is " << goalState_eig.format(FMT)
+          << std::endl;
 #endif
     }
     out << "    actions:" << std::endl;

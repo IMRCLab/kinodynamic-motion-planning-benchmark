@@ -593,6 +593,4 @@ void generate_heuristic_map(const Problem &problem,
                             std::vector<Heuristic_node> &heu_map);
 
 void traj_to_motion(const Trajectory &traj, RobotOmpl &robot,
-                    Motion &motion_out, bool compute_col) ;
-
-
+                    Motion &motion_out, bool compute_col);

@@ -3344,6 +3344,91 @@ BOOST_AUTO_TEST_CASE(test_quad3d_mpcc_oneobs) {
   }
 }
 
+BOOST_AUTO_TEST_CASE(test_quad3d_window) {
+
+  Trajectory traj_in, traj_out;
+  traj_in.read_from_yaml("../build/quad3d_v0_window_guess_07.yaml");
+  Problem problem("../benchmark/quadrotor_0/window.yaml");
+
+  for (auto &s : traj_in.states) {
+    s.segment<4>(3).normalize();
+  }
+  CSTR_(traj_in.states.size());
+
+  std::shared_ptr<Model_robot> acrobot =
+      std::make_shared<Model_quad3d>("../models/quad3d_v0.yaml");
+  // what about not setting the goal as the last one?
+
+  traj_in.start = problem.start;
+  traj_in.goal = problem.goal;
+  traj_in.check(acrobot, true);
+
+  Options_trajopt options_trajopt;
+  options_trajopt.max_iter = 200;
+  options_trajopt.weight_goal = 300;
+  options_trajopt.smooth_traj = true;
+  options_trajopt.solver_id = 1;
+  // options_trajopt.k_contour = 50;
+
+  Result_opti opti_out;
+
+  trajectory_optimization(problem, traj_in, options_trajopt, traj_out,
+                          opti_out);
+
+  {
+    std::ofstream out("out_opt.yaml");
+    traj_out.to_yaml_format(out);
+  }
+}
+
+BOOST_AUTO_TEST_CASE(test_quad3d_recovery_db) {
+
+  // TODO: not working.
+  // TODO: issue with distance with quaternions!!
+  // maybe use smaller delta?
+  // or scaled distance function? -- decide if I should use everywhere
+
+  Trajectory traj_in, traj_out;
+  traj_in.read_from_yaml("../build/quad3d_v0_recovery_guess_07.yaml");
+  traj_in.states.back() = traj_in.states[traj_in.states.size() - 2];
+  Problem problem("../benchmark/quadrotor_0/recovery.yaml");
+
+  problem.start << 0.0, 0.0, 1.0, 0.9990482, 0., 0., 0.0436194, 0., 0., 0., 0.,
+      0., 0.;
+
+  // problem.goal << 0., 0.15, 1., 0., 0., 0., -1., 0., 0., 0., 0., 0., 0.;
+
+  for (auto &s : traj_in.states) {
+    s.segment<4>(3).normalize();
+  }
+  CSTR_(traj_in.states.size());
+
+  std::shared_ptr<Model_robot> acrobot =
+      std::make_shared<Model_quad3d>("../models/quad3d_v0.yaml");
+  // what about not setting the goal as the last one?
+
+  traj_in.start = problem.start;
+  traj_in.goal = problem.goal;
+  traj_in.check(acrobot, true);
+
+  Options_trajopt options_trajopt;
+  options_trajopt.max_iter = 200;
+  options_trajopt.weight_goal = 300;
+  options_trajopt.smooth_traj = false;
+  options_trajopt.solver_id = 0;
+  // options_trajopt.k_contour = 50;
+
+  Result_opti opti_out;
+
+  trajectory_optimization(problem, traj_in, options_trajopt, traj_out,
+                          opti_out);
+
+  {
+    std::ofstream out("out_opt.yaml");
+    traj_out.to_yaml_format(out);
+  }
+}
+
 BOOST_AUTO_TEST_CASE(test_quad3d_recovery_mpcc) {
 
   // TODO: not working.
@@ -3621,7 +3706,6 @@ BOOST_AUTO_TEST_CASE(t_acrobot_dt) {
   }
 }
 
-
 BOOST_AUTO_TEST_CASE(t_quad3d_free_time) {
 
   Problem problem1("../benchmark/quadrotor_0/empty_0_easy.yaml");
@@ -3657,5 +3741,146 @@ BOOST_AUTO_TEST_CASE(t_quad3d_free_time) {
       problem_id++;
       traj_out.to_yaml_format(out);
     }
+  }
+}
+
+BOOST_AUTO_TEST_CASE(quad2dpole_col) {
+
+  const char *env = "../benchmark/quad2dpole/window_easy.yaml";
+
+  Problem problem;
+  problem.read_from_yaml(env);
+
+  auto robot = Model_quad2dpole("../models/quad2dpole_v0.yaml");
+  load_env_quim(robot, problem);
+
+  {
+    Eigen::VectorXd x(robot.nx);
+    x << 0, 0, 0.0, .1, 0, 0, 0, 0;
+    CollisionOut col;
+
+    robot.collision_distance(x, col);
+
+    std::cout << "col" << std::endl;
+    col.write(std::cout);
+
+    BOOST_CHECK(std::fabs(col.distance - 1.55) < 1e-7);
+  }
+
+  {
+    Eigen::VectorXd x(robot.nx);
+    x << 0, 0, .1, M_PI / 4, 0, 0, 0, 0;
+    CollisionOut col;
+
+    robot.collision_distance(x, col);
+
+    std::cout << "col" << std::endl;
+    col.write(std::cout);
+
+    BOOST_CHECK(std::fabs(col.distance - 0.994184) < 1e-4);
+  }
+
+  {
+    Eigen::VectorXd x(robot.nx);
+    x << 2.13299, 2.36421, 0.251227, -0.385025, 1.88866, -0.414021, 0.416036,
+        3.22454;
+    CollisionOut col;
+
+    robot.collision_distance(x, col);
+
+    std::cout << "col" << std::endl;
+    col.write(std::cout);
+
+    BOOST_CHECK(std::fabs(col.distance - (-0.133522)) < 1e-4);
+  }
+}
+
+BOOST_AUTO_TEST_CASE(t_quad2dpole_db) {
+
+  Trajectory traj, traj_out;
+  const char *filename = "../build/quad2dpole_up_obs_delta8.yaml";
+  traj.read_from_yaml(filename);
+
+  Problem problem("../benchmark/quad2dpole/up_obs.yaml");
+
+  std::shared_ptr<Model_robot> quad2dpole =
+      std::make_shared<Model_quad2dpole>("../models/quad2dpole_v0.yaml");
+
+  traj.check(quad2dpole, true);
+
+  Options_trajopt options_trajopt;
+  options_trajopt.max_iter = 200;
+  options_trajopt.weight_goal = 300;
+  options_trajopt.smooth_traj = true;
+  options_trajopt.solver_id = 0;
+  // options_trajopt.k_contour = 50;
+
+  Result_opti opti_out;
+
+  trajectory_optimization(problem, traj, options_trajopt, traj_out, opti_out);
+
+  {
+    std::ofstream out("out_opt.yaml");
+    traj_out.to_yaml_format(out);
+  }
+}
+
+BOOST_AUTO_TEST_CASE(t_quad2dpole_window_db) {
+
+  Trajectory traj, traj_out;
+  const char *filename = "../build/quad2dpole_window_delta7.yaml";
+  traj.read_from_yaml(filename);
+
+  Problem problem("../benchmark/quad2dpole/window.yaml");
+
+  std::shared_ptr<Model_robot> quad2dpole =
+      std::make_shared<Model_quad2dpole>("../models/quad2dpole_v0.yaml");
+
+  traj.check(quad2dpole, true);
+
+  Options_trajopt options_trajopt;
+  options_trajopt.max_iter = 200;
+  options_trajopt.weight_goal = 300;
+  options_trajopt.smooth_traj = true;
+  options_trajopt.solver_id = 1;
+  // options_trajopt.k_contour = 50;
+
+  Result_opti opti_out;
+
+  trajectory_optimization(problem, traj, options_trajopt, traj_out, opti_out);
+
+  {
+    std::ofstream out("out_opt.yaml");
+    traj_out.to_yaml_format(out);
+  }
+}
+
+BOOST_AUTO_TEST_CASE(t_quad2dpole_windowhard_db) {
+
+  Trajectory traj, traj_out;
+  const char *filename = "../build/quad2dpole_windowhard_delta7.yaml";
+  traj.read_from_yaml(filename);
+
+  Problem problem("../benchmark/quad2dpole/window_hard.yaml");
+
+  std::shared_ptr<Model_robot> quad2dpole =
+      std::make_shared<Model_quad2dpole>("../models/quad2dpole_v0.yaml");
+
+  traj.check(quad2dpole, true);
+
+  Options_trajopt options_trajopt;
+  options_trajopt.max_iter = 200;
+  options_trajopt.weight_goal = 300;
+  options_trajopt.smooth_traj = true;
+  options_trajopt.solver_id = 1;
+  // options_trajopt.k_contour = 50;
+
+  Result_opti opti_out;
+
+  trajectory_optimization(problem, traj, options_trajopt, traj_out, opti_out);
+
+  {
+    std::ofstream out("out_opt.yaml");
+    traj_out.to_yaml_format(out);
   }
 }

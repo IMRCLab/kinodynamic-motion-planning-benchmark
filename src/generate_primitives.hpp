@@ -16,9 +16,11 @@ struct Options_primitives {
   size_t max_length_cut = 20;
   size_t max_splits = 10;
   size_t num_threads = 1;
+  bool use_random_displacemenet = false;
 
   void print(std::ostream &out, const std::string &be = "",
              const std::string &af = ": ") {
+    STRY(use_random_displacemenet, out, be, af);
     STRY(num_threads, out, be, af);
     STRY(time_limit, out, be, af);
     STRY(max_num_primitives, out, be, af);
@@ -32,6 +34,7 @@ struct Options_primitives {
   };
 
   void add_options(po::options_description &desc) {
+    set_from_boostop(desc, VAR_WITH_NAME(use_random_displacemenet));
     set_from_boostop(desc, VAR_WITH_NAME(num_threads));
     set_from_boostop(desc, VAR_WITH_NAME(time_limit));
     set_from_boostop(desc, VAR_WITH_NAME(max_num_primitives));
@@ -49,7 +52,7 @@ void sort_motion_primitives(
     const Trajectories &trajs, Trajectories &trajs_out,
     std::function<double(const Eigen::VectorXd &, const Eigen::VectorXd &)>
         distance_fun,
-    int top_k = -1);
+    int top_k = -1, bool naive = false);
 
 void split_motion_primitives(const Trajectories &in,
                              const std::string &dynamics, Trajectories &out,

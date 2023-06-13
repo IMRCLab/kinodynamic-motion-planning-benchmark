@@ -1012,6 +1012,12 @@ Model_quad3d::Model_quad3d(const Quad3d_params &params,
     set_position_lb(p_lb);
     set_position_ub(p_ub);
   }
+
+  __Jv_x.resize(12, 13);
+  __Jv_u.resize(12, 4);
+
+  __Jv_x.setZero();
+  __Jv_u.setZero();
 }
 
 Eigen::VectorXd Model_quad3d::get_x0(const Eigen::VectorXd &x) {
@@ -1053,6 +1059,7 @@ void Model_quad3d::transform_primitive(
     Model_robot::transform_primitive(p, xs_in, us_in, xs_out, us_out);
   } else {
     xs_out = xs_in;
+    us_out = us_in;
     transform_state(p, xs_in.at(0), xs_out.at(0));
     rollout(xs_out.at(0), us_in, xs_out);
   }
@@ -1161,16 +1168,16 @@ void Model_quad3d::stepDiff(Eigen::Ref<Eigen::MatrixXd> Fx,
                             const Eigen::Ref<const Eigen::VectorXd> &u,
                             double dt) {
 
-  calcDiffV(Jv_x, Jv_u, x, u);
-  Fx.block<3, 3>(0, 0).diagonal() = Eigen::Vector3d::Ones();        // dp / dp
-  Fx.block<3, 3>(0, 7) = dt * Jv_x.block<3, 3>(0, 7);               // dp / dv
-  Fx.block<3, 3>(7, 7).diagonal() = Eigen::Vector3d::Ones();        // dv / dv
-  Fx.block<3, 4>(7, 3).noalias() = dt * Jv_x.block<3, 4>(7 - 1, 3); // dv / dq
+  calcDiffV(__Jv_x, __Jv_u, x, u);
+  Fx.block<3, 3>(0, 0).diagonal() = Eigen::Vector3d::Ones();          // dp / dp
+  Fx.block<3, 3>(0, 7) = dt * __Jv_x.block<3, 3>(0, 7);               // dp / dv
+  Fx.block<3, 3>(7, 7).diagonal() = Eigen::Vector3d::Ones();          // dv / dv
+  Fx.block<3, 4>(7, 3).noalias() = dt * __Jv_x.block<3, 4>(7 - 1, 3); // dv / dq
   Fx.block<3, 3>(10, 10).diagonal().setOnes();
-  Fx.block<3, 3>(10, 10).noalias() += dt * Jv_x.block<3, 3>(10 - 1, 10);
+  Fx.block<3, 3>(10, 10).noalias() += dt * __Jv_x.block<3, 3>(10 - 1, 10);
 
-  Fu.block<3, 4>(7, 0).noalias() = dt * Jv_u.block<3, 4>(7 - 1, 0);
-  Fu.block<3, 4>(10, 0).noalias() = dt * Jv_u.block<3, 4>(10 - 1, 0);
+  Fu.block<3, 4>(7, 0).noalias() = dt * __Jv_u.block<3, 4>(7 - 1, 0);
+  Fu.block<3, 4>(10, 0).noalias() = dt * __Jv_u.block<3, 4>(10 - 1, 0);
 
   // Eigen::Vector3d y;
   // const Eigen::Vector4d &xq = x.segment<4>(3);
@@ -1389,9 +1396,8 @@ Model_quad2dpole::Model_quad2dpole(const Quad2dpole_params &params,
   this->params.write(std::cout);
   std::cout << "***" << std::endl;
 
-  // TODO: check
-  nx_col = 3;
-  nx_pr = 3;
+  nx_col = 4;
+  nx_pr = 4;
   x_desc = {"x [m]",      "y [m]",      "yaw[rad]", "q[rad]",
             "xdot [m/s]", "ydot [m/s]", "w[rad/s]", "vq [rad/s]"};
   u_desc = {"f1 []", "f2 []"};
@@ -1420,9 +1426,41 @@ Model_quad2dpole::Model_quad2dpole(const Quad2dpole_params &params,
     ERROR_WITH_INFO("not implemented");
   }
 
+  // add the pendulumn
+  const double width = .1;
+  collision_geometries.push_back(
+      std::make_shared<fcl::Boxd>(params.r, width, 1.0));
+
+  ts_data.resize(2);
+  col_outs.resize(2);
+
   if (p_lb.size() && p_ub.size()) {
     set_position_lb(p_lb);
     set_position_ub(p_ub);
+  }
+}
+
+void Model_quad2dpole::transformation_collision_geometries(
+    const Eigen::Ref<const Eigen::VectorXd> &x, std::vector<Transform3d> &ts) {
+
+  // this is the position of the quadrotor
+  {
+    fcl::Transform3d result;
+    result = Eigen::Translation<double, 3>(fcl::Vector3d(x(0), x(1), 0));
+    result.rotate(Eigen::AngleAxisd(x(2), Eigen::Vector3d::UnitZ()));
+    ts.at(0) = result;
+  }
+
+  // this is the pendulumn
+  {
+    fcl::Transform3d result_p;
+    result_p = Eigen::Translation<double, 3>(
+        fcl::Vector3d(x(0) + .5 * params.r * sin(x(2) + x(3)),
+                      x(1) - .5 * params.r * cos(x(2) + x(3)), 0.));
+
+    result_p.rotate(
+        Eigen::AngleAxisd(x(2) + x(3) - M_PI / 2, Eigen::Vector3d::UnitZ()));
+    ts.at(1) = result_p;
   }
 }
 
@@ -1670,7 +1708,7 @@ double Model_quad2dpole::distance(const Eigen::Ref<const Eigen::VectorXd> &x,
   Vector6d raw_d;
   raw_d << (x.head<2>() - y.head<2>()).norm(), so2_distance(x(2), y(2)),
       so2_distance(x(3), y(3)), (x.segment<2>(4) - y.segment<2>(4)).norm(),
-      std::fabs(x(5) - y(5)), std::fabs(x(6) - y(6));
+      std::fabs(x(6) - y(6)), std::fabs(x(7) - y(7));
 
   return raw_d.dot(params.distance_weights);
 }

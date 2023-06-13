@@ -1155,6 +1155,13 @@ void write_states_controls(const std::vector<Eigen::VectorXd> &xs,
   __traj.start = problem.start;
   __traj.goal = problem.goal;
 
+  // create directory if necessary
+  if (const std::filesystem::path path =
+          std::filesystem::path(filename).parent_path();
+      !path.empty()) {
+    std::filesystem::create_directories(path);
+  }
+
   std::ofstream init_guess(filename);
   CSTR_(filename);
 
@@ -1168,8 +1175,12 @@ void __trajectory_optimization(const Problem &problem,
                                const Options_trajopt &options_trajopt,
                                Trajectory &traj, Result_opti &opti_out) {
 
-  bool store_iterations = false;
+  const bool modify_to_match_goal_start = false;
+  const bool store_iterations = false;
+  const std::string folder_tmptraj = "/tmp/tmp_traj/";
+
   CSTR_(store_iterations);
+  CSTR_V(init_guess.states.back());
 
   std::cout
       << "WARNING: "
@@ -1281,16 +1292,18 @@ void __trajectory_optimization(const Problem &problem,
   //   }
   // }
 
-  std::cout << "WARNING: "
-            << "i modify last state to match goal" << std::endl;
-  xs_init.back() = goal;
-  xs_init.front() = start;
+  if (modify_to_match_goal_start) {
+    std::cout << "WARNING: "
+              << "i modify last state to match goal" << std::endl;
+    xs_init.back() = goal;
+    xs_init.front() = start;
+  }
 
   write_states_controls(xs_init, us_init, model_robot, problem,
-                        "init_guess.yaml");
+                        (folder_tmptraj + "init_guess.yaml").c_str());
 
   size_t num_smooth_iterations =
-      dt > .05 ? 3 : 10; // TODO: as option in command line
+      dt > .05 ? 3 : 5; // TODO: as option in command line
 
   // if (startsWith(problem.robotType, "quad3d")) {
   //   for (auto &s : xs_init) {
@@ -1301,6 +1314,22 @@ void __trajectory_optimization(const Problem &problem,
   // }
 
   std::vector<Eigen::VectorXd> xs_init__ = xs_init;
+
+  if (startsWith(problem.robotType, "quad3d")) {
+    std::cout
+        << "WARNING: "
+        << "i use quaternion interpolation, but distance is euclidean norm"
+        << std::endl;
+    for (size_t j = 0; j < xs_init.size() - 1; j++) {
+      Eigen::Quaterniond qa(xs_init.at(j).segment<4>(3)),
+          qb(xs_init.at(j + 1).segment<4>(3)), qres;
+      double t = 1;
+      qres = qa.slerp(t, qb);
+      std::cout << "qres " << qres.coeffs().format(FMT) << std::endl;
+      xs_init.at(j + 1).segment<4>(3) = qres.coeffs();
+    }
+  }
+
   if (options_trajopt_local.smooth_traj) {
     // TODO: not working well for the quadcopter -> smoothing
     // is not nice, (create high rotation between equivalent states!)
@@ -1311,13 +1340,6 @@ void __trajectory_optimization(const Problem &problem,
       //     s.segment<4>(3).normalize();
       //   }
       // }
-    }
-
-    if (startsWith(problem.robotType, "quad3d")) {
-      for (size_t j = 0; j < xs_init.size(); j++) {
-        xs_init.at(j).segment<4>(3) = xs_init__.at(j).segment<4>(3);
-        // xs_init.at(j).segment<4>(3) << 0., 0., 0., 1.;
-      }
     }
 
     for (size_t i = 0; i < num_smooth_iterations; i++) {
@@ -1336,7 +1358,7 @@ void __trajectory_optimization(const Problem &problem,
   }
 
   write_states_controls(xs_init, us_init, model_robot, problem,
-                        "init_guess_smooth.yaml");
+                        (folder_tmptraj + "init_guess_smooth.yaml").c_str());
 
   if (verbose) {
     std::cout << "states " << std::endl;
@@ -1939,7 +1961,8 @@ void __trajectory_optimization(const Problem &problem,
       std::string random_id = gen_random(6);
 
       {
-        std::string filename = "init_guess_" + random_id + ".yaml";
+        std::string filename =
+            folder_tmptraj + "init_guess_" + random_id + ".yaml";
         write_states_controls(xs, us, model_robot, problem, filename.c_str());
       }
 
@@ -1961,7 +1984,7 @@ void __trajectory_optimization(const Problem &problem,
           CSTR_V(u);
         }
 
-        std::string filename = "opt_" + random_id + ".yaml";
+        std::string filename = folder_tmptraj + "opt_" + random_id + ".yaml";
         write_states_controls(ddp.get_xs(), ddp.get_us(), model_robot, problem,
                               filename.c_str());
       }
@@ -2375,7 +2398,8 @@ void __trajectory_optimization(const Problem &problem,
 
       std::string random_id = gen_random(6);
       {
-        std::string filename = "init_guess_" + random_id + ".yaml";
+        std::string filename =
+            folder_tmptraj + "init_guess_" + random_id + ".yaml";
         write_states_controls(xs, us, model_robot, problem, filename.c_str());
       }
 
@@ -2389,7 +2413,7 @@ void __trajectory_optimization(const Problem &problem,
 
       std::cout << "CROCO optimize -- DONE" << std::endl;
       {
-        std::string filename = "opt_" + random_id + ".yaml";
+        std::string filename = folder_tmptraj + "opt_" + random_id + ".yaml";
         write_states_controls(ddp.get_xs(), ddp.get_us(), model_robot, problem,
                               filename.c_str());
       }
@@ -2712,8 +2736,8 @@ void trajectory_optimization(const Problem &problem,
   // check the init guess trajectory
 
   std::cout << "Report on the init guess " << std::endl;
+  WARN_WITH_INFO("should I copy the first state in the init guess? -- now yes");
   tmp_init_guess.start = problem.start;
-  tmp_init_guess.goal = problem.goal;
   tmp_init_guess.check(model_robot, true);
   std::cout << "Report on the init guess -- DONE " << std::endl;
 

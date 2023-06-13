@@ -1429,7 +1429,6 @@ protected:
       return as<ob::RealVectorStateSpace>(4)->getBounds();
     }
 
-
     void setAngularVelocityBoundsQ(const ob::RealVectorBounds &bounds) {
       as<ob::RealVectorStateSpace>(5)->setBounds(bounds);
     }
@@ -1437,8 +1436,6 @@ protected:
     const ob::RealVectorBounds &getAngularVelocityBoundsQ() const {
       return as<ob::RealVectorStateSpace>(5)->getBounds();
     }
-
-
 
     ob::State *allocState() const override {
       auto *state = new StateType();

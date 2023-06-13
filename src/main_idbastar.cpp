@@ -97,8 +97,8 @@ int main(int argc, char *argv[]) {
   info_out_idbastar.print(std::cout);
   std::cout << "***" << std::endl;
 
-  write_results_idbastar(results_file.c_str(), options_idbastar, options_dbastar,
-                         options_trajopt , info_out_idbastar );
+  write_results_idbastar(results_file.c_str(), options_idbastar,
+                         options_dbastar, options_trajopt, info_out_idbastar);
 
   for (size_t i = 0; i < info_out_idbastar.trajs_opt.size(); i++) {
     std::string file = results_file + ".trajopt-" + std::to_string(i) + ".yaml";

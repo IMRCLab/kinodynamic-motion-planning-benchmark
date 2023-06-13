@@ -247,6 +247,11 @@ struct Model_robot {
     NOT_IMPLEMENTED;
   }
 
+  virtual void ensure(const Eigen::Ref<const Eigen::VectorXd> &xin,
+                      Eigen::Ref<Eigen::VectorXd> xout) {
+    xout = xin;
+  }
+
   // State
   std::shared_ptr<StateQ> state;
 

@@ -214,6 +214,16 @@ struct Model_car_with_trailers : Model_robot {
 
   virtual void sample_uniform(Eigen::Ref<Eigen::VectorXd> x) override;
 
+  virtual void ensure(const Eigen::Ref<const Eigen::VectorXd> &xin,
+                      Eigen::Ref<Eigen::VectorXd> xout) override {
+
+    xout = xin;
+    xout(2) = wrap_angle(xin(2));
+    if (params.num_trailers) {
+      xout(3) = wrap_angle(xin(3));
+    }
+  }
+
   virtual void calcV(Eigen::Ref<Eigen::VectorXd> f,
                      const Eigen::Ref<const Eigen::VectorXd> &x,
                      const Eigen::Ref<const Eigen::VectorXd> &u) override;
@@ -355,6 +365,14 @@ struct Model_acrobot : Model_robot {
 
   virtual void sample_uniform(Eigen::Ref<Eigen::VectorXd> x) override;
 
+  virtual void ensure(const Eigen::Ref<const Eigen::VectorXd> &xin,
+                      Eigen::Ref<Eigen::VectorXd> xout) override {
+
+    xout = xin;
+    xout(0) = wrap_angle(xin(0));
+    xout(1) = wrap_angle(xin(1));
+  }
+
   double calcEnergy(const Eigen::Ref<const Eigen::VectorXd> &x);
 
   virtual void calcV(Eigen::Ref<Eigen::VectorXd> f,
@@ -482,6 +500,13 @@ struct Model_unicycle1 : Model_robot {
 
   virtual void sample_uniform(Eigen::Ref<Eigen::VectorXd> x) override;
 
+  virtual void ensure(const Eigen::Ref<const Eigen::VectorXd> &xin,
+                      Eigen::Ref<Eigen::VectorXd> xout) override {
+
+    xout = xin;
+    xout(2) = wrap_angle(xin(2));
+  }
+
   virtual void calcV(Eigen::Ref<Eigen::VectorXd> v,
                      const Eigen::Ref<const Eigen::VectorXd> &x,
                      const Eigen::Ref<const Eigen::VectorXd> &u) override;
@@ -591,7 +616,7 @@ struct Model_quad3d : Model_robot {
   struct Data {
     Eigen::Vector3d f_u;
     Eigen::Vector3d tau_u;
-    Eigen::VectorXd xnext{13};
+    Eigen::Matrix<double, 13, 1> xnext;
     Matrix34 Jx;
     Eigen::Matrix3d Ja;
   } data;
@@ -599,8 +624,8 @@ struct Model_quad3d : Model_robot {
   Vector12d ff;
   Quad3d_params params;
 
-  Eigen::Matrix<double, 12, 13> Jv_x;
-  Eigen::Matrix<double, 12, 4> Jv_u;
+  // Eigen::Matrix<double, 12, 13> Jv_x;
+  // Eigen::Matrix<double, 12, 4> Jv_u;
 
   virtual void set_0_velocity(Eigen::Ref<Eigen::VectorXd> x) override {
     x.segment<6>(7).setZero();
@@ -644,6 +669,12 @@ struct Model_quad3d : Model_robot {
                const Eigen::VectorXd &p_lb = Eigen::VectorXd(),
                const Eigen::VectorXd &p_ub = Eigen::VectorXd());
 
+  virtual void ensure(const Eigen::Ref<const Eigen::VectorXd> &xin,
+                      Eigen::Ref<Eigen::VectorXd> xout) override {
+    xout = xin;
+    xout.segment<4>(3).normalize();
+  }
+
   virtual void write_params(std::ostream &out) override { params.write(out); }
 
   virtual Eigen::VectorXd get_x0(const Eigen::VectorXd &x) override;
@@ -680,7 +711,6 @@ struct Model_quad3d : Model_robot {
 
   virtual void canonical_state(const Eigen::Ref<const Eigen::VectorXd> &xin,
                                Eigen::Ref<Eigen::VectorXd> xout) override {
-    const bool adapt_vel = true;
 
     if (adapt_vel) {
       xout = xin;
@@ -914,6 +944,17 @@ struct Model_quad2dpole : Model_robot {
 
   virtual void write_params(std::ostream &out) override { params.write(out); }
 
+  virtual void ensure(const Eigen::Ref<const Eigen::VectorXd> &xin,
+                      Eigen::Ref<Eigen::VectorXd> xout) override {
+    xout = xin;
+    xout(2) = wrap_angle(xout(2));
+    xout(3) = wrap_angle(xout(3));
+  }
+
+  virtual void transformation_collision_geometries(
+      const Eigen::Ref<const Eigen::VectorXd> &x,
+      std::vector<Transform3d> &ts) override;
+
   virtual void set_0_velocity(Eigen::Ref<Eigen::VectorXd> x) override {
     x.segment(4, 4).setZero();
   }
@@ -1022,6 +1063,13 @@ struct Model_quad2d : Model_robot {
                const Eigen::VectorXd &p_ub = Eigen::VectorXd());
 
   virtual void write_params(std::ostream &out) override { params.write(out); }
+
+  virtual void ensure(const Eigen::Ref<const Eigen::VectorXd> &xin,
+                      Eigen::Ref<Eigen::VectorXd> xout) override {
+
+    xout = xin;
+    xout(2) = wrap_angle(xin(2));
+  }
 
   virtual void set_0_velocity(Eigen::Ref<Eigen::VectorXd> x) override {
     x(3) = 0;
@@ -1163,6 +1211,13 @@ struct Model_unicycle2 : Model_robot {
     x(4) = 0;
   }
 
+  virtual void ensure(const Eigen::Ref<const Eigen::VectorXd> &xin,
+                      Eigen::Ref<Eigen::VectorXd> xout) override {
+
+    xout = xin;
+    xout(2) = wrap_angle(xin(2));
+  }
+
   virtual void write_params(std::ostream &out) override { params.write(out); }
 
   virtual void sample_uniform(Eigen::Ref<Eigen::VectorXd> x) override;
@@ -1199,4 +1254,8 @@ struct Model_unicycle2 : Model_robot {
 
 std::unique_ptr<Model_robot> robot_factory(const char *file);
 
-// namespace selection
+inline std::string robot_type_to_path(const std::string &robot_type) {
+  const std::string base_path = "../models/";
+  const std::string suffix = ".yaml";
+  return base_path + robot_type + suffix;
+}
