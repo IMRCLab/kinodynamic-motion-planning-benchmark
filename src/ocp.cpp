@@ -1014,6 +1014,9 @@ std::vector<ReportCost> report_problem(ptr<crocoddyl::ShootingProblem> problem,
   std::string one_space = " ";
   std::string two_space = "  ";
   std::string four_space = "    ";
+
+  create_dir_if_necessary(file_name);
+
   std::ofstream reports_file(file_name);
   for (auto &report : reports) {
     reports_file << "-" << one_space << "name: " << report.name << std::endl;
@@ -1177,7 +1180,7 @@ void __trajectory_optimization(const Problem &problem,
 
   const bool modify_to_match_goal_start = false;
   const bool store_iterations = false;
-  const std::string folder_tmptraj = "/tmp/tmp_traj/";
+  const std::string folder_tmptraj = "/tmp/dbastar/";
 
   CSTR_(store_iterations);
   CSTR_V(init_guess.states.back());
@@ -1370,6 +1373,7 @@ void __trajectory_optimization(const Problem &problem,
   std::vector<Vxd> xs_out;
   std::vector<Vxd> us_out;
 
+  create_dir_if_necessary(options_trajopt_local.debug_file_name.c_str());
   std::ofstream debug_file_yaml(options_trajopt_local.debug_file_name);
   debug_file_yaml << "robotType: " << problem.robotType << std::endl;
   debug_file_yaml << "N: " << N << std::endl;
@@ -1955,7 +1959,7 @@ void __trajectory_optimization(const Problem &problem,
       crocoddyl::Timer timer;
 
       if (!options_trajopt_local.use_finite_diff)
-        report_problem(problem_croco, xs, us, "report-0.yaml");
+        report_problem(problem_croco, xs, us, "/tmp/dbastar/report-0.yaml");
       std::cout << "solving with croco " << AT << std::endl;
 
       std::string random_id = gen_random(6);
@@ -1995,7 +1999,7 @@ void __trajectory_optimization(const Problem &problem,
       ddp_time += timer.get_duration();
       if (!options_trajopt_local.use_finite_diff)
         report_problem(problem_croco, ddp.get_xs(), ddp.get_us(),
-                       "report-1.yaml");
+                       "/tmp/dbastar/report-1.yaml");
 
       std::cout << "time: " << time_i << std::endl;
       std::cout << "iterations: " << iterations_i << std::endl;
@@ -2393,7 +2397,7 @@ void __trajectory_optimization(const Problem &problem,
       crocoddyl::Timer timer;
 
       if (!options_trajopt_local.use_finite_diff)
-        report_problem(problem_croco, xs, us, "report-0.yaml");
+        report_problem(problem_croco, xs, us, "/tmp/dbastar/report-0.yaml");
       std::cout << "solving with croco " << AT << std::endl;
 
       std::string random_id = gen_random(6);
@@ -2427,7 +2431,7 @@ void __trajectory_optimization(const Problem &problem,
       us_out = ddp.get_us();
 
       if (!options_trajopt_local.use_finite_diff)
-        report_problem(problem_croco, xs_out, us_out, "report-1.yaml");
+        report_problem(problem_croco, xs_out, us_out, "/tmp/dbastar/report-1.yaml");
     };
 
     std::vector<Eigen::VectorXd> _xs_out, _us_out, xs_init_p, us_init_p;
@@ -2552,7 +2556,9 @@ void __trajectory_optimization(const Problem &problem,
       debug_file_yaml << "  - " << u.format(FMT) << std::endl;
   }
 
-  std::ofstream results_txt("out.txt");
+  std::string filename = "/tmp/dbastar/out.txt";
+  create_dir_if_necessary(filename);
+  std::ofstream results_txt(filename);
 
   for (auto &x : xs_out)
     results_txt << x.transpose().format(FMT) << std::endl;
@@ -2757,7 +2763,7 @@ void trajectory_optimization(const Problem &problem,
       options_trajopt_local.solver_id = static_cast<int>(SOLVER::mpc);
       options_trajopt_local.control_bounds = 0;
       options_trajopt_local.debug_file_name =
-          "debug_file_mpc_" + std::to_string(i) + ".yaml";
+          "/tmp/dbastar/debug_file_mpc_" + std::to_string(i) + ".yaml";
 
       std::cout << "**\nopti params is " << std::endl;
 
@@ -2790,7 +2796,7 @@ void trajectory_optimization(const Problem &problem,
         options_trajopt_local.solver_id = static_cast<int>(SOLVER::mpcc);
         options_trajopt_local.control_bounds = 1;
         options_trajopt_local.debug_file_name =
-            "debug_file_mpcc_" + std::to_string(i) + ".yaml";
+            "/tmp/dbastar/debug_file_mpcc_" + std::to_string(i) + ".yaml";
 
         tmp_init_guess = tmp_solution;
 
@@ -2820,7 +2826,8 @@ void trajectory_optimization(const Problem &problem,
     options_trajopt_local.control_bounds = false;
     options_trajopt_local.solver_id = static_cast<int>(SOLVER::traj_opt);
     options_trajopt_local.control_bounds = 0;
-    options_trajopt_local.debug_file_name = "debug_file_trajopt.yaml";
+    options_trajopt_local.debug_file_name =
+        "/tmp/dbastar/debug_file_trajopt.yaml";
     std::cout << "**\nopti params is " << std::endl;
     options_trajopt_local.print(std::cout);
 
@@ -2846,7 +2853,7 @@ void trajectory_optimization(const Problem &problem,
           static_cast<int>(SOLVER::traj_opt_free_time);
       options_trajopt_local.control_bounds = 1;
       options_trajopt_local.debug_file_name =
-          "debug_file_trajopt_freetime.yaml";
+          "/tmp/dbastar/debug_file_trajopt_freetime.yaml";
 
       __trajectory_optimization(problem, model_robot, tmp_solution,
                                 options_trajopt_local, traj, opti_out);
@@ -2960,32 +2967,35 @@ void trajectory_optimization(const Problem &problem,
     double *it = nullptr;
 
     if (!options_trajopt_local.linear_search) {
-      it = std::lower_bound(
-          rates.data(), rates.data() + rates.size(), true,
-          [&](auto rate, auto val) {
-            (void)val;
-            std::cout << "checking rate " << rate << std::endl;
-            options_trajopt_local.debug_file_name =
-                "debug_file_trajopt_" + std::to_string(counter++) + ".yaml";
-            Trajectory traj_out;
-            check_with_rate(rate, opti_out_local, traj_out);
-            if (opti_out_local.feasible) {
-              std::cout << "if feasible -- COST" << opti_out_local.cost
-                        << std::endl;
-              CHECK_GEQ(best.cost, opti_out_local.cost, AT);
-              best_traj = traj_out;
-              best = opti_out_local;
-            }
-            std::cout << "feasibility of rate: " << rate << " is "
-                      << opti_out_local.feasible << std::endl;
-            return !opti_out_local.feasible;
-          });
+      it = std::lower_bound(rates.data(), rates.data() + rates.size(), true,
+                            [&](auto rate, auto val) {
+                              (void)val;
+                              std::cout << "checking rate " << rate
+                                        << std::endl;
+                              options_trajopt_local.debug_file_name =
+                                  "/tmp/dbastar/debug_file_trajopt_" +
+                                  std::to_string(counter++) + ".yaml";
+                              Trajectory traj_out;
+                              check_with_rate(rate, opti_out_local, traj_out);
+                              if (opti_out_local.feasible) {
+                                std::cout << "if feasible -- COST"
+                                          << opti_out_local.cost << std::endl;
+                                CHECK_GEQ(best.cost, opti_out_local.cost, AT);
+                                best_traj = traj_out;
+                                best = opti_out_local;
+                              }
+                              std::cout << "feasibility of rate: " << rate
+                                        << " is " << opti_out_local.feasible
+                                        << std::endl;
+                              return !opti_out_local.feasible;
+                            });
     } else {
       it = std::find_if(
           rates.data(), rates.data() + rates.size(), [&](const auto &rate) {
             std::cout << "checking rate " << rate << std::endl;
             options_trajopt_local.debug_file_name =
-                "debug_file_trajopt_" + std::to_string(counter++) + ".yaml";
+                "/tmp/dbastar/debug_file_trajopt_" + std::to_string(counter++) +
+                ".yaml";
             Trajectory traj_out;
             check_with_rate(rate, opti_out_local, traj_out);
             if (opti_out_local.feasible) {
@@ -3022,7 +3032,7 @@ void trajectory_optimization(const Problem &problem,
         static_cast<int>(SOLVER::traj_opt_free_time_proxi_linear);
     options_trajopt_local.control_bounds = 1;
     options_trajopt_local.debug_file_name =
-        "debug_file_trajopt_freetime_proxi.yaml";
+        "/tmp/dbastar/debug_file_trajopt_freetime_proxi.yaml";
     std::cout << "**\nopti params is " << std::endl;
     options_trajopt_local.print(std::cout);
 
@@ -3045,7 +3055,7 @@ void trajectory_optimization(const Problem &problem,
       options_trajopt_local.solver_id = static_cast<int>(SOLVER::traj_opt);
       options_trajopt_local.control_bounds = 1;
       options_trajopt_local.debug_file_name =
-          "debug_file_trajopt_after_freetime_proxi.yaml";
+          "/tmp/dbastar/debug_file_trajopt_after_freetime_proxi.yaml";
 
       __trajectory_optimization(problem, model_robot, tmp_solution,
                                 options_trajopt_local, traj, opti_out);
@@ -3064,7 +3074,7 @@ void trajectory_optimization(const Problem &problem,
         static_cast<int>(SOLVER::traj_opt_free_time_proxi);
     options_trajopt_local.control_bounds = 1;
     options_trajopt_local.debug_file_name =
-        "debug_file_trajopt_freetime_proxi.yaml";
+        "/tmp/dbastar/debug_file_trajopt_freetime_proxi.yaml";
     std::cout << "**\nopti params is " << std::endl;
     options_trajopt_local.print(std::cout);
 
@@ -3087,7 +3097,7 @@ void trajectory_optimization(const Problem &problem,
       options_trajopt_local.solver_id = static_cast<int>(SOLVER::traj_opt);
       options_trajopt_local.control_bounds = 1;
       options_trajopt_local.debug_file_name =
-          "debug_file_trajopt_after_freetime_proxi.yaml";
+          "/tmp/dbastar/debug_file_trajopt_after_freetime_proxi.yaml";
 
       __trajectory_optimization(problem, model_robot, tmp_solution,
                                 options_trajopt_local, traj, opti_out);
@@ -3104,7 +3114,7 @@ void trajectory_optimization(const Problem &problem,
     options_trajopt_local.u_bound_scale = 1.5;
     options_trajopt_local.solver_id = static_cast<int>(SOLVER::traj_opt);
     options_trajopt_local.debug_file_name =
-        "debug_file_trajopt_bound_scale.yaml";
+        "/tmp/dbastar/debug_file_trajopt_bound_scale.yaml";
     std::cout << "**\nopti params is " << std::endl;
     options_trajopt_local.print(std::cout);
 
@@ -3129,7 +3139,8 @@ void trajectory_optimization(const Problem &problem,
       options_trajopt_local.control_bounds = true;
       options_trajopt_local.u_bound_scale = 1.;
       options_trajopt_local.solver_id = static_cast<int>(SOLVER::traj_opt);
-      options_trajopt_local.debug_file_name = "debug_file_trajopt_bound.yaml";
+      options_trajopt_local.debug_file_name =
+          "/tmp/dbastar/debug_file_trajopt_bound.yaml";
       std::cout << "**\nopti params is " << std::endl;
       options_trajopt_local.print(std::cout);
 

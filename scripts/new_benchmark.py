@@ -6,7 +6,6 @@ import pathlib
 from typing import Tuple
 import shutil
 
-
 from multiprocessing import Pool
 import multiprocessing
 import uuid
@@ -414,10 +413,10 @@ def run_cmd(cmd: str):
 
     if redirect_output:
         id = str(uuid.uuid4())[:7]
-        stdout_name = f"tmp_stdout/stdout-{id}.log"
-        stderr_name = f"tmp_stderr/stderr-{id}.log"
+        stdout_name = f"/tmp/dbastar/stdout/stdout-{id}.log"
+        stderr_name = f"/tmp/dbastar/stderr/stderr-{id}.log"
 
-        directories = ["tmp_stdout/", "tmp_stderr/"]
+        directories = ["/tmp/dbastar/stdout/", "/tmp/dbastar/stderr/"]
 
         for d in directories:
             if not os.path.exists(d):
@@ -2249,13 +2248,14 @@ def parse_for_component_analysis(files: List[str]):
 
     print("done")
 
+
     # group by problem
     # should I use the latex output of pandas?
 if __name__ == "__main__":
 
     # TODO: how to I check the time spent in each component?
 
-    time_analysis = True
+    time_analysis = False
 
     if time_analysis:
         # file = "/home/quim/stg/wolfgang/kinodynamic-motion-planning-benchmark/results_new/unicycle_first_order_0/kink_0/idbastar_v0/2023-06-06--18-04-39/run_1_out.yaml"
@@ -2267,10 +2267,25 @@ if __name__ == "__main__":
 
         parse_for_component_analysis(files)
 
-        sys.exit(0)
+        files2 = ["file1", "file2", "file3"]
+
+        def add_two_numbers(a: int, b: int):
+            return
+
+        def print_variable(a: int):
+            print(a)
+
+        # def concatenate_two_fils():
+        #
+        #
+        #
+        #
+        # sys.exit(0)
 
     do_table_search = False
     do_table_opti = False
+
+    # function to concatenate two table
 
     if do_table_search:
         file = "../results_new_search/plots/plot_search_2023-06-06--12-49-13.pdf.log"

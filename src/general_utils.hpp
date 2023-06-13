@@ -285,3 +285,14 @@ public:
     return duration_cast<double>(out) * 1000;
   }
 };
+
+void inline create_dir_if_necessary(const char *file) {
+  const std::filesystem::path path = std::filesystem::path(file).parent_path();
+  if (!path.empty()) {
+    std::filesystem::create_directories(path);
+  }
+}
+
+void inline create_dir_if_necessary(const std::string file) {
+  create_dir_if_necessary(file.c_str());
+}

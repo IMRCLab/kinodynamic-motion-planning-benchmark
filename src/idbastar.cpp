@@ -101,6 +101,11 @@ void idbA(const Problem &problem, const Options_idbAStar &options_idbas,
     Trajectory traj_db, traj;
     Out_info_db out_info_db;
     double __pre_t = get_time_stamp_ms();
+
+    std::string id_db = gen_random(6);
+
+    options_dbastar_local.outFile =  "/tmp/dbastar/i_db_" + id_db + ".yaml";
+
     dbastar(problem, options_dbastar_local, traj_db, out_info_db);
     std::cout << "warning: using as time only the search!" << std::endl;
     double __after_t = get_time_stamp_ms();
@@ -111,17 +116,40 @@ void idbA(const Problem &problem, const Options_idbAStar &options_idbas,
     info_out_idbastar.infos_raw.push_back(out_info_db.data);
 
     if (out_info_db.solved) {
+      // write trajectory to file
       {
-        std::string filename = "trajdb_" + gen_random(6) + ".yaml";
-        std::cout << "saving traj db file: " << filename << std::endl;
-        std::ofstream traj_db_out(filename);
-        traj_db.to_yaml_format(traj_db_out);
+        std::string filename = "/tmp/dbastar/i_traj_db.yaml";
+        std::string filename_id =
+            "/tmp/dbastar/i_traj_db_" + id_db + ".yaml";
+        std::cout << "saving traj to: " << filename << std::endl;
+        std::cout << "saving traj to: " << filename_id << std::endl;
+        create_dir_if_necessary(filename.c_str());
+        create_dir_if_necessary(filename_id.c_str());
+        std::ofstream out(filename_id);
+        traj_db.to_yaml_format(out);
+        std::filesystem::copy(
+            filename_id, filename.c_str(),
+            std::filesystem::copy_options::overwrite_existing);
       }
 
       Result_opti result;
       std::cout << "***Trajectory Optimization -- START ***" << std::endl;
       trajectory_optimization(problem, traj_db, options_trajopt, traj, result);
       std::cout << "***Trajectory Optimization -- DONE ***" << std::endl;
+
+      // write trajectory to file
+      {
+        std::string filename = "/tmp/dbastar/i_traj_opt.yaml";
+        std::string filename_id =
+            "/tmp/dbastar/i_traj_opt_" + gen_random(6) + ".yaml";
+        std::cout << "saving traj to: " << filename << std::endl;
+        std::cout << "saving traj to: " << filename_id << std::endl;
+        create_dir_if_necessary(filename.c_str());
+        create_dir_if_necessary(filename_id.c_str());
+        std::ofstream out(filename_id);
+        traj.to_yaml_format(out);
+        std::filesystem::copy(filename_id, filename, std::filesystem::copy_options::overwrite_existing);
+      }
 
       traj.time_stamp = get_time_stamp_ms() - non_counter_time;
       info_out_idbastar.trajs_opt.push_back(traj);
@@ -229,6 +257,21 @@ void idbA(const Problem &problem, const Options_idbAStar &options_idbas,
       finished = true;
       info_out_idbastar.exit_criteria = EXIT_CRITERIA::time_limit;
     }
+  }
+
+  // write solution to file
+
+  {
+    std::string filename = "/tmp/dbastar/i_traj_out.yaml";
+    std::string filename_id =
+        "/tmp/dbastar/i_traj_out_" + gen_random(6) + ".yaml";
+    std::cout << "saving traj to: " << filename << std::endl;
+    std::cout << "saving traj to: " << filename_id << std::endl;
+    create_dir_if_necessary(filename.c_str());
+    create_dir_if_necessary(filename_id.c_str());
+    std::ofstream out(filename_id);
+    traj_out.to_yaml_format(out);
+    std::filesystem::copy(filename_id, filename, std::filesystem::copy_options::overwrite_existing);
   }
 
   std::cout << "exit criteria"

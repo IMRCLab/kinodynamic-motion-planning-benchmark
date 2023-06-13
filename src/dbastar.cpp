@@ -2197,8 +2197,10 @@ void dbastar(const Problem &problem, const Options_dbastar &options_dbastar,
 
     bool verbose = true;
 
-    si->getStateSpace()->copyToReals(real, fakeMotion.get_first_state());
-    data_out_query_Tm.push_back(real);
+    if (options_dbastar_local.debug) {
+      si->getStateSpace()->copyToReals(real, fakeMotion.get_first_state());
+      data_out_query_Tm.push_back(real);
+    }
 
     auto out = timed_fun([&] {
       T_m->nearestR(&fakeMotion,
@@ -2673,7 +2675,6 @@ void dbastar(const Problem &problem, const Options_dbastar &options_dbastar,
     std::mt19937 g(rd());
     std::shuffle(neighbors_m.begin(), neighbors_m.end(), g);
 
-
     if (!neighbors_m.size()) {
       std::cout << "state:" << std::endl;
       si->printState(current->state);
@@ -2993,47 +2994,56 @@ void dbastar(const Problem &problem, const Options_dbastar &options_dbastar,
   time_bench.time_search = watch.elapsed_ms();
   std::cout << "TIME in search:" << time_bench.time_search << std::endl;
 
-  {
-    std::ofstream out("data_out_query_Tm.txt");
-    print_matrix(out, data_out_query_Tm);
-
-    std::ofstream out2("data_out_Tm.txt");
-
-    std::vector<Motion *> m;
-    T_m->list(m);
-    std::vector<std::vector<double>> data_out_Tm(m.size());
-
-    std::transform(m.begin(), m.end(), data_out_Tm.begin(), [&](auto &s) {
-      std::vector<double> reals;
-      si->getStateSpace()->copyToReals(reals, s->get_first_state());
-      return reals;
-    });
-
-    print_matrix(out2, data_out_Tm);
-  }
-
-  {
-    std::ofstream out("data_Tn.txt");
-
-    std::vector<AStarNode *> m;
-    T_n->list(m);
-    std::vector<std::vector<double>> data_Tn(m.size());
-
-    std::transform(m.begin(), m.end(), data_Tn.begin(), [&](auto &s) {
-      std::vector<double> reals;
-      si->getStateSpace()->copyToReals(reals, s->get_first_state());
-      return reals;
-    });
-
-    print_matrix(out, data_Tn);
-  }
-
   // clock end
   tac = std::chrono::high_resolution_clock::now();
   time_bench.total_time =
       std::chrono::duration<double, std::milli>(tac - tic).count();
 
   std::cout << "search has ended " << std::endl;
+
+  if (options_dbastar_local.debug) {
+    {
+      std::string filename1 = "/tmp/dbastar/data_out_query_Tm.txt";
+      create_dir_if_necessary(filename1);
+      std::ofstream out(filename1);
+      print_matrix(out, data_out_query_Tm);
+
+      std::string filename2 = "/tmp/dbastar/data_out_Tm.txt";
+      create_dir_if_necessary(filename2);
+      std::ofstream out2(filename2);
+      std::vector<Motion *> m;
+      T_m->list(m);
+      std::vector<std::vector<double>> data_out_Tm(m.size());
+
+      std::transform(m.begin(), m.end(), data_out_Tm.begin(), [&](auto &s) {
+        std::vector<double> reals;
+        si->getStateSpace()->copyToReals(reals, s->get_first_state());
+        return reals;
+      });
+
+      print_matrix(out2, data_out_Tm);
+    }
+
+    {
+
+      std::string filename1 = "/tmp/dbastar/data_Tn.txt";
+      create_dir_if_necessary(filename1);
+
+      std::ofstream out(filename1);
+
+      std::vector<AStarNode *> m;
+      T_n->list(m);
+      std::vector<std::vector<double>> data_Tn(m.size());
+
+      std::transform(m.begin(), m.end(), data_Tn.begin(), [&](auto &s) {
+        std::vector<double> reals;
+        si->getStateSpace()->copyToReals(reals, s->get_first_state());
+        return reals;
+      });
+
+      print_matrix(out, data_Tn);
+    }
+  }
 
   int nn_motions_sum =
       std::accumulate(num_nn_motions.begin(), num_nn_motions.end(), 0);
@@ -3065,6 +3075,8 @@ void dbastar(const Problem &problem, const Options_dbastar &options_dbastar,
 
   time_bench.motions_tree_size = T_m->size();
   time_bench.states_tree_size = T_n->size();
+
+  create_dir_if_necessary(options_dbastar_local.outFile.c_str());
 
   std::cout << "writing output to " << options_dbastar_local.outFile
             << std::endl;
@@ -3205,8 +3217,13 @@ void dbastar(const Problem &problem, const Options_dbastar &options_dbastar,
     std::reverse(result.begin(), result.end());
 
     std::cout << "result size " << result.size() << std::endl;
-    std::ofstream out_states("state_out.txt");
-    print_matrix(out_states, _states_debug);
+
+    if (options_dbastar_local.debug) {
+      std::string filename = "/tmp/dbastar/state_out.txt";
+      create_dir_if_necessary(filename);
+      std::ofstream out_states(filename);
+      print_matrix(out_states, _states_debug);
+    }
 
     out << "result:" << std::endl;
     out << "  - states:" << std::endl;
@@ -3599,11 +3616,16 @@ void dbastar(const Problem &problem, const Options_dbastar &options_dbastar,
 
   // gen
   {
-    std::ofstream out("traj_db.yaml");
+    std::string filename = "/tmp/dbastar/traj_db.yaml";
+    std::string filename_id = "/tmp/dbastar/traj_db_" + gen_random(6) + ".yaml";
+    std::cout << "saving traj to: " << filename << std::endl;
+    std::cout << "saving traj to: " << filename_id << std::endl;
+    create_dir_if_necessary(filename.c_str());
+    create_dir_if_necessary(filename_id.c_str());
+    std::ofstream out(filename_id);
     traj_out.to_yaml_format(out);
-
-    std::ofstream _out("traj_db_" + gen_random(6) + ".yaml");
-    traj_out.to_yaml_format(_out);
+    std::filesystem::copy(filename_id, filename,
+                          std::filesystem::copy_options::overwrite_existing);
   }
 
   if (out_info_db.solved) {
