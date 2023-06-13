@@ -1,8 +1,8 @@
 default:
-  solver_id: 9 
+  solver_id: 9
 
 quad3d_v0:
-  default: 
+  default:
     weight_goal: 400
     tsearch_max_rate: 10 # necessary because init guess is not reallistic!
 
@@ -16,5 +16,3 @@ acrobot_v0:
     weight_goal: 400
     tsearch_max_rate: 10 # necessary because init guess is not reallistic!
     max_iter: 300
-
-

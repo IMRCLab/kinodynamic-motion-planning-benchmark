@@ -1,7 +1,6 @@
-
 # general parameters, all systems and problems
 default:
-  solver_id: 8 
+  solver_id: 8
 
 # you can set parameters per dynamical system
 unicycle1_v0:

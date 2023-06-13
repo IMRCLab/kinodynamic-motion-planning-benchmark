@@ -3,12 +3,12 @@ default:
   dummy: 0
 
 car1_v0:
-  default: 
+  default:
     goal_epsilon: 0.2 # with 0.1 it is hard to find a solution...
     goal_bias: 0.1
 
 quad2d_v0:
-  default: 
+  default:
     goal_epsilon: 0.5 # with 0.1 it is hard to find a solution...
     goal_bias: 0.5
     propagation_step_size: 0.01
@@ -16,15 +16,15 @@ quad2d_v0:
     max_control_duration: 50
 
 quad3d_v0:
-  default: 
+  default:
     goal_epsilon: 0.3 # with 0.1 it is hard to find a solution...
     goal_bias: 0.5
     propagation_step_size: 0.01
-    min_control_duration: 5 
+    min_control_duration: 5
     max_control_duration: 20
 
 acrobot_v0:
-  default: 
+  default:
     goal_epsilon: 0.3 # with 0.1 it is hard to find a solution...
     goal_bias: 0.1
     propagation_step_size: 0.01
@@ -32,7 +32,3 @@ acrobot_v0:
     max_control_duration: 20
     selection_radius: 1.
     pruning_radius: .2
-
-
-
-

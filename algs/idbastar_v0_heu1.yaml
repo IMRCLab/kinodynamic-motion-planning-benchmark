@@ -5,14 +5,14 @@ default:
   search_timelimit: 30000 # in ms
   cost_delta_factor: 1
 unicycle1_v0:
-  default: 
+  default:
     limit_branching_factor: 200
     num_primitives_0: 500
     delta_0: .2
     max_size_heu_map: 2000
 
 unicycle2_v0:
-  default: 
+  default:
     limit_branching_factor: 1000
     num_primitives_0: 500
     delta_0: .4
@@ -32,6 +32,3 @@ quad3d_v0:
     max_size_heu_map: 3000
     num_sample_trials: 5000
     num_primitives_0: 100000
-
-
-

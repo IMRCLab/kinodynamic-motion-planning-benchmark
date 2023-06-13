@@ -5,13 +5,13 @@ default:
   search_timelimit: 30000 # in ms
   cost_delta_factor: 1
 unicycle1_v0:
-  default: 
+  default:
     limit_branching_factor: 200
     num_primitives_0: 500
     delta_0: .2
 
 unicycle2_v0:
-  default: 
+  default:
     limit_branching_factor: 1000
     num_primitives_0: 500
     delta_0: .4

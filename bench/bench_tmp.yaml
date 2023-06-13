@@ -14,7 +14,7 @@ problems:
   # - "quad2d/empty_0"
   # - "quad2d/quad_obs_column"
   # - "quad2d/quad2d_recovery_wo_obs"
-  
+
   # CONTINUE QUADROTOR_0
   # - "quadrotor_0/empty_0_easy"
   # - "quadrotor_0/recovery" # NOT WORKING -- Why I don't have primitives arounds this point?
@@ -31,4 +31,3 @@ algs:
   - "idbastar_v0"
   # - "geo_v0" -- issue with quadcopter 3d!
   # -  "idbastar_v1" # NOT USEFUL YET!!
-

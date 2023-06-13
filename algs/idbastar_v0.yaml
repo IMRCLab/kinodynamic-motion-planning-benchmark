@@ -2,15 +2,13 @@
 default:
   solver_id: 1
   search_timelimit: 15000 # in ms
-  use_nigh_nn: True # TODO: modify code so that distance function is set at runtime.
+  use_nigh_nn: True
 
 # you can set parameters per dynamial system
 unicycle1_v0:
   default:
-    motionsFile: 
-      "../cloud/motionsV2/good/unicycle1_v0/unicycle1_v0__ispso__2023_04_03__14_56_57.bin.im.bin.im.bin"
+    motionsFile: "../cloud/motionsV2/good/unicycle1_v0/unicycle1_v0__ispso__2023_04_03__14_56_57.bin.im.bin.im.bin"
     num_primitives_0: 100
-
 
 unicycle1_v1:
   default:
@@ -29,11 +27,12 @@ unicycle2_v0:
   default:
     delta_0: .5
     motionsFile: "../cloud/motionsV2/good/unicycle2_v0/unicycle2_v0__ispso__2023_04_03__15_36_01.bin.im.bin.im.bin"
-    num_primitives_0: 200
+    num_primitives_0:
+      200
       # unicycle1_v0__ispso__2023_04_03__14_56_57.bin"
 
 quad2d_v0:
-  # ALSO: distance is wrong!!! I should have big number for velocity, and small for rotation and for 
+  # ALSO: distance is wrong!!! I should have big number for velocity, and small for rotation and for
   # rotational velocity.
   default:
     motionsFile: "../cloud/motionsV2/good/quad2d_v0/quad2d_v0_all.bin.sp1.bin"
@@ -90,12 +89,8 @@ quad3d_v0:
     # num_primitives_0: 1000
     # max_motions_primitives: 10000
 
-
 car1_v0:
   default:
     motionsFile: "../cloud/motionsV2/good/car1_v0/car1_v0_all.bin.sp.bin"
     num_primitives_0: 2000
     max_motions_primitives: 20000
-
-
-
