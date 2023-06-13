@@ -5,7 +5,7 @@ min_angular_vel: -0.5
 max_acc_abs: 0.25
 max_angular_acc: 0.25
 size: [0.5, 0.25]
-distance_weights: [1, 0.5, 0.25 , 0.25]
-shape:  "box"
+distance_weights: [1, 0.5, 0.25, 0.25]
+shape: "box"
 dynamics: "unicycle2"
 dt: 0.1

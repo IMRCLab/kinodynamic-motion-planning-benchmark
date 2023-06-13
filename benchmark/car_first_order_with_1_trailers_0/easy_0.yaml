@@ -4,5 +4,5 @@ environment:
   obstacles: []
 robots:
   - type: car1_v0
-    start: [0.7,0.6,0,0] # x,y,theta0,theta1
-    goal: [1.9,0.6,0,0] # x,y,theta0,theta1
+    start: [0.7, 0.6, 0, 0] # x,y,theta0,theta1
+    goal: [1.9, 0.6, 0, 0] # x,y,theta0,theta1

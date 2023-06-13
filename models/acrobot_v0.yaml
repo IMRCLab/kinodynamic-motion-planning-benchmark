@@ -10,6 +10,5 @@ max_angular_vel: 8
 # max_angular_vel: 6
 max_angular_acc: 10 # only used for computing time bounds
 distance_weights: [0.5, 0.5, 0.2]
-max_torque: 10 
+max_torque: 10
 dynamics: acrobot
-

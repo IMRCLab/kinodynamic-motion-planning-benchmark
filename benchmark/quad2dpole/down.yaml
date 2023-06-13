@@ -1,9 +1,9 @@
 environment:
-  min: [-1, -1]
+  min: [-2, -2]
   max: [2, 2]
   obstacles: []
 robots:
   - type: quad2dpole_v0
-    start: [0, 0, 0, 0, 0, 0, 0, 0]
+    goal: [0, 0, 0.0, 0, 0, 0, 0, 0]
     # goal: [0,0,0,0,0,0,0,0]
-    goal: [1, 1, 0, 0, 0, 0, 0, 0]
+    start: [0, 0, 0, 3.14, 0, 0, 0, 0]

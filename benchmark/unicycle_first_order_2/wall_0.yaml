@@ -9,5 +9,5 @@ environment:
 
 robots:
   - type: unicycle1_v2
-    start: [1.5,2.5,0] # x,y,theta
-    goal: [3.5,2.5,0] # x,y,theta
+    start: [1.5, 2.5, 0] # x,y,theta
+    goal: [3.5, 2.5, 0] # x,y,theta

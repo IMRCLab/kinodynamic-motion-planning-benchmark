@@ -4,8 +4,8 @@ environment:
   obstacles:
     - type: box
       center: [3, 3]
-      size: [3,.4]
+      size: [3, .4]
 robots:
   - type: quad2d
-    start: [2.,1.,0.,0.,0.,0.] # x,y,theta,v,w
-    goal: [4.,1.,0.,0.,0., 0] # x,y,theta,v,w
+    start: [2., 1., 0., 0., 0., 0.] # x,y,theta,v,w
+    goal: [4., 1., 0., 0., 0., 0] # x,y,theta,v,w

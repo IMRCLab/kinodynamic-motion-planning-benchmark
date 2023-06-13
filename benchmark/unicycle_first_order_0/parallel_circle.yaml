@@ -13,5 +13,5 @@ environment:
       size: [0.25]
 robots:
   - type: unicycle1_v0
-    start: [0.7,0.8,0] # x,y,theta
-    goal: [1.9,0.3,0] # x,y,theta
+    start: [0.7, 0.8, 0] # x,y,theta
+    goal: [1.9, 0.3, 0] # x,y,theta

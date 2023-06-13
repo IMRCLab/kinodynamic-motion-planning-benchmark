@@ -1,11 +1,11 @@
 environment:
   min: [-2.5, -2.5] # what to use here?
-  max: [2.5 , 2.5]
-  obstacles: 
+  max: [2.5, 2.5]
+  obstacles:
     - type: box
-      center: [1.4,1.4]
-      size: [.5,.5]
+      center: [1.4, 1.4]
+      size: [.5, .5]
 robots:
   - type: acrobot_v0
-    start: [0,0,0,0]
-    goal: [3.141593,0,0,0]
+    start: [0, 0, 0, 0]
+    goal: [3.141593, 0, 0, 0]

@@ -1,4 +1,4 @@
-distance_weights: [1, 0.5 , 0.5]
+distance_weights: [1, 0.5, 0.5]
 num_trailers: 1
 dt: 0.1
 l: 0.25
@@ -12,4 +12,3 @@ size_trailer: [.3, .25]
 hitch_lengths: [.5]
 max_angular_vel: 10
 dynamics: car_with_trailers
-

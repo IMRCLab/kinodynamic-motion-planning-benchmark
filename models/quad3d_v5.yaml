@@ -1,19 +1,17 @@
 # for welf obstacle flight
-distance_weights: [1. , 1., .1, .1 ] 
-max_vel : 3
-max_angular_vel : 10
-motor_control : true # True = controls are forces in the motors
-m:  0.034
-max_f:  1.4
-arm_length:  0.046
-t2t:  0.006 # thrust-to-torque ratio
+distance_weights: [1., 1., .1, .1]
+max_vel: 3
+max_angular_vel: 10
+motor_control: true # True = controls are forces in the motors
+m: 0.034
+max_f: 1.4
+arm_length: 0.046
+t2t: 0.006 # thrust-to-torque ratio
 # math "0.034/4*0.45*0.7071*0.7071*0.046*0.046"
 # math "0.034/4*0.45*0.046*0.046"
 # J_v: [ 0.000004, 0.000004, 0.000008 ]
-J_v: [ 1.6187399999999997e-05 , 1.6187400000000004e-05, 3.23748e-05 ]
-dt:  0.027 # 
+J_v: [1.6187399999999997e-05, 1.6187400000000004e-05, 3.23748e-05]
+dt: 0.027 #
 dynamics: quad3d
 size: [0.046]
 shape: sphere
-
-

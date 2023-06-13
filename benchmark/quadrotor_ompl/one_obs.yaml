@@ -6,7 +6,7 @@ environment:
       center: [3, 3, 2]
       size: [3, 3, 2]
 robots:
-  - type: quad3d_v0
+  - type: quad3d_omplapp
     start: [
         1.,
         1.,

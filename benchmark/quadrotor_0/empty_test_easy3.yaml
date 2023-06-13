@@ -6,14 +6,14 @@ robots:
   - type: quadrotor_0
     # start: [  0.0, 0.0 ,  0.0 ,  0.302389 ,  0.193354 ,  0.818623 ,  -0.448365 ,  -0.0719943 ,  0.472821 ,  -1.32337 ,  1.79085 ,  -0.592466 ,  -3.63019 ]
     # goal: [ 0.263435887483 , 0.09907250647176 , -0.4066259182861 , -0.046833 , -0.246321 , 0.828089 , -0.501402 , 1.85079 , -0.179982 , -1.21426 , 3.97661 , -4.00007 , 0.432835 ]
-    start: [  0.0, 0.0 ,  0.0, 0, 0.3826834, 0, 0.9238795 , 0 , 0, 0, 0, 0 ,0 ] 
+    start: [0.0, 0.0, 0.0, 0, 0.3826834, 0, 0.9238795, 0, 0, 0, 0, 0, 0]
     # goal: [  0.8, 0.05 ,  0.1 , 0, 0, 0, 1, 0 , .1, 0, 0, 0 ,0 ]  OK
     # goal: [  0.08, 0.05 ,  0.1 , 0, 0, 0, 1, 0 , 0, 0, 0.1, 0 ,0 ]  OK
     # goal: [  0.08, 0.08 ,  0.08 , 0, 0, 0, 1, 0 , 0, 0, 0, 0 ,0 ]  # in the limit of touching
     # goal: [  0.09, 0.09 ,  0.09 , 0, 0, 0, 1, 0 , 0, 0, 0, 0 ,0 ]  # in the limit of touching
     # goal: [  0.1, 0.1 ,  0.1 , 0, 0, 0, 1, 0 , 0, 0, 0, 0 ,0 ]  # in the limit of touching
-    goal: [  0, 0 ,  0 , 0, 0, 0, 1, 0 , 0, 0, 0, 0 ,0 ]  # in the limit of touching
+    goal: [0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0] # in the limit of touching
     # goal: [  0.06, 0.06 ,  0.06 , 0, 0, 0, 1, 0 , 0, 0, 0, 0 ,0 ]  #  NOT saturating the limits.
     #
-# make -j4 && time  
-# ./croco_main   --env ../benchmark/quadrotor_0/empty_test_easy2.yaml        --init_guess ../benchmark/quadrotor_0/empty_easy_guess_new.yaml    --out out.yaml --solver_id 0 --control_bounds 1 --use_warmstart 1  --weight_goal 300. --max_iter 400  --noise_level 1e-6 --use_finite_diff 1 
+# make -j4 && time
+# ./croco_main   --env ../benchmark/quadrotor_0/empty_test_easy2.yaml        --init_guess ../benchmark/quadrotor_0/empty_easy_guess_new.yaml    --out out.yaml --solver_id 0 --control_bounds 1 --use_warmstart 1  --weight_goal 300. --max_iter 400  --noise_level 1e-6 --use_finite_diff 1

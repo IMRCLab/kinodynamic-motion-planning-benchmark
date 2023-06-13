@@ -17,5 +17,5 @@ environment:
 
 robots:
   - type: car1_v0
-    start: [0.5,4.0,1.55,1.55] # x,y,theta0,theta1
-    goal: [5.5,4.0,1.55,1.55] # x,y,theta0,theta1
+    start: [0.5, 4.0, 1.55, 1.55] # x,y,theta0,theta1
+    goal: [5.5, 4.0, 1.55, 1.55] # x,y,theta0,theta1
