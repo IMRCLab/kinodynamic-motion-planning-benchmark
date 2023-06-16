@@ -46,13 +46,13 @@ struct Options_idbAStar {
   double delta_0 = .3;
   size_t num_primitives_0 = 1000;
   double delta_rate = .9;
-  double num_primitives_rate = 2;
+  double num_primitives_rate = 1.5;
   double timelimit = 10; // in seconds
   size_t max_it = 10;
   size_t max_num_sol = 5;
   size_t max_motions_primitives = 1e4;
   bool new_schedule = true;
-  bool add_primitives_opt = false;
+  bool add_primitives_opt = true;
 
   void add_options(po::options_description &desc) {
 

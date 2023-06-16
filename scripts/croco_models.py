@@ -7,7 +7,7 @@ from robots import Quadrotor, RobotUnicycleFirstOrder, RobotCarFirstOrderWithTra
     RobotUnicycleSecondOrder, RobotSingleIntegratorN, RobotDoubleIntegratorN
 from jax.config import config
 config.update("jax_enable_x64", True)
-from jax import  jacfwd,  jit ,core , lax
+from jax import jacfwd, jit, core, lax
 import jax.numpy as jnp
 import sys
 from jax.interpreters import ad
@@ -28,7 +28,6 @@ class Feat_Quat():
             quat_norm_sq = jnp.sum(jnp.square(xx[3:7]))
             out = self.weight * jnp.array([1. - quat_norm_sq])
         return out
-
 
 
 def dist_modpi(x, y):
@@ -1090,8 +1089,6 @@ class OCP_trailer(OCP_abstract):
         normalize_trailer(X, U)
 
 
-
-
 def add_noise_quadcopter(xs, us, k):
     """
     """
@@ -1142,7 +1139,7 @@ class OCP_quadrotor(OCP_abstract):
 
         def create_features():
             feats = [CostTerm(Feat_control(weight_control, ureg), len(self.min_u)),
-                    CostTerm(Feat_Quat(),1),
+                     CostTerm(Feat_Quat(), 1),
                      # CostTerm(Feat_regx(weight_regx), 13, 1.),
                      AuglagTerm(FeatBoundsX(jnp.array(self.min_x), jnp.array(self.max_x),
                                             self.weight_bounds), 2 * len(self.min_x))]

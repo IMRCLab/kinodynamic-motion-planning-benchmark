@@ -23,9 +23,11 @@
 namespace po = boost::program_options;
 
 struct Options_sst {
+  // use -1 to say: default in OMPL
 
   std::string planner = "sst";
-  double timelimit = 60; // TODO: which unit?
+  int max_solutions = 10;
+  double timelimit = 60; // seconds
   double goal_epsilon = .1;
   double goal_bias = .05;
   double selection_radius = .2;

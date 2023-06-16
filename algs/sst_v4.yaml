@@ -1,0 +1,47 @@
+default:
+  dummy: 0
+
+unicycle1_v0:
+  default:
+    dummy: 0
+    goal_epsilon: .2
+    goal_bias: .3
+    pruning_radius: .2
+    min_control_duration: 2
+    max_control_duration: 20
+
+unicycle1_v1:
+  default:
+    dummy: 0
+    goal_epsilon: .2
+    goal_bias: .3
+    pruning_radius: .2
+    min_control_duration: 2
+    max_control_duration: 20
+
+unicycle1_v2:
+  default:
+    dummy: 0
+    goal_epsilon: .2
+    goal_bias: .3
+    pruning_radius: .2
+    min_control_duration: 2
+    max_control_duration: 20
+
+unicycle2_v0:
+  default:
+    dummy: 0
+    goal_epsilon: .2
+    goal_bias: .3
+    pruning_radius: .2
+    min_control_duration: 2
+    max_control_duration: 20
+
+car1_v0:
+  default:
+    dummy: 0
+    goal_epsilon: .2
+    goal_bias: .3
+    pruning_radius: .3
+    min_control_duration: 2
+    max_control_duration: 20

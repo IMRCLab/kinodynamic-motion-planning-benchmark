@@ -423,7 +423,6 @@ target_link_libraries(test_ompl_geo
   croco_ocp
   ${Boost_LIBRARIES}
   ${LZ4_LIBRARIES}
-${CROCODDYL_INCLUDE_DIRS}
   ompl
   fcl
   yaml-cpp

@@ -1062,6 +1062,10 @@ void load_motion_primitives_new(const std::string &motionsFile,
   if (max_motions < trajs.data.size())
     trajs.data.resize(max_motions);
 
+  std::cout << "trajs " << std::endl;
+  std::cout << "first state is " << std::endl;
+  CSTR_V(trajs.data.front().states.front());
+
   motions.resize(trajs.data.size());
 
   bool add_noise_first_state = true;
@@ -1069,8 +1073,8 @@ void load_motion_primitives_new(const std::string &motionsFile,
 
   if (add_noise_first_state) {
     std::cout << "WARNING:"
-              << "addding noise to first and last state" << std::endl;
-    double noise = 1e-7;
+              << "adding noise to first and last state" << std::endl;
+    const double noise = 1e-7;
     for (auto &t : trajs.data) {
       t.states.front() +=
           noise * Eigen::VectorXd::Random(t.states.front().size());
@@ -1124,6 +1128,9 @@ void load_motion_primitives_new(const std::string &motionsFile,
   for (size_t idx = 0; idx < motions.size(); ++idx) {
     motions[idx].idx = idx;
   }
+
+  std::cout << "Second time: first state is " << std::endl;
+  CSTR_V(trajs.data.front().states.front());
 }
 
 void load_motion_primitives(const std::string &motionsFile, RobotOmpl &robot,
@@ -1831,19 +1838,24 @@ void dbastar(const Problem &problem, const Options_dbastar &options_dbastar,
   if (options_dbastar_local.motions_ptr) {
     std::cout << "motions have alredy loaded " << std::endl;
     motions = *options_dbastar_local.motions_ptr;
+    CSTR_V(motions.at(0).traj.states.at(0));
 
-    if (2 * options_dbastar_local.max_motions < motions.size())
+    if (2 * options_dbastar_local.max_motions < motions.size()) {
       motions.resize(2 * options_dbastar_local.max_motions);
+      CSTR_V(motions.at(0).traj.states.at(0));
+    }
 
   } else {
     std::cout << "loading motions ... " << std::endl;
     load_motion_primitives_new(options_dbastar_local.motionsFile,
                                *robot_factory_ompl(problem), motions,
                                options_dbastar.max_motions * 2,
-                               options_dbastar_local.cut_actions, true);
+                               options_dbastar_local.cut_actions, false,
+                               options_dbastar_local.check_cols);
   }
 
-  CSTR_(motions.size());
+  CSTR_V(motions.at(0).traj.states.at(0));
+
   const double erase_factor = .5;
   motions.erase(
       std::remove_if(motions.begin(), motions.end(),
@@ -2784,6 +2796,80 @@ void dbastar(const Problem &problem, const Options_dbastar &options_dbastar,
 
       expanded_neighs++;
 
+      // check if final states is close to the goal:
+
+      const bool check_intermediate_goal = true;
+      if (check_intermediate_goal && options_dbastar_local.new_invariance) {
+
+        size_t num_check_goal = 4; // the last state is not considered
+
+        // n = 4
+        // 0 1 2 3
+        // 1/4 2/4 3/4 4/4
+        //
+        // I check:
+        // 1/5 , 2/5 , 3/5 , 4/5
+        //
+
+        Eigen::VectorXd intermediate_sol(robot->diff_model->nx);
+        for (size_t nn = 0; nn < num_check_goal; nn++) {
+
+          size_t index_to_check =
+              float(nn + 1) / (num_check_goal + 1) * tmp_traj.states.size();
+
+          double d = robot->diff_model->distance(
+              tmp_traj.states.at(index_to_check), goalState_eig);
+
+          if (d <= options_dbastar_local.delta_factor_goal *
+                       options_dbastar_local.delta) {
+            std::cout << "Found a solution -- intermetidate checks"
+                      << std::endl;
+            CSTR_(nn);
+            CSTR_(index_to_check);
+            std::cout << "Final state is " << std::endl;
+            CSTR_V(tmp_traj.states.at(index_to_check));
+
+            intermediate_sol = tmp_traj.states.at(index_to_check);
+
+            CSTR_(motion->idx);
+            std::cout << "Full trajectory is " << std::endl;
+
+            tmp_traj.to_yaml_format(std::cout);
+
+            // what to do now?
+
+            // include this node  in the queue
+
+            // create a new ompl mode
+            ob::State *middle_state = si->allocState();
+            robot->fromEigen(middle_state, intermediate_sol);
+            auto node = new AStarNode();
+            node->state = si->cloneState(middle_state);
+
+            // TODO: cost only works for time optimization -- CHANGE!
+            node->gScore =
+                current->gScore +
+                options_dbastar_local.cost_delta_factor *
+                    robot->cost_lower_bound(tmpState2, current->state) +
+                robot->diff_model->ref_dt * index_to_check;
+
+            node->fScore = node->hScore + node->gScore;
+
+            node->intermediate_state = index_to_check;
+            node->came_from = current;
+            node->used_motion = motion->idx;
+            node->used_offset = computed_offset;
+            node->is_in_open = true;
+            auto handle = open.push(node);
+            node->handle = handle;
+
+            add_state_timed(node);
+
+            si->freeState(middle_state);
+          }
+        }
+      }
+
       query_n->state = tmpState;
 
       if (options_dbastar_local.debug) {
@@ -3306,6 +3392,11 @@ void dbastar(const Problem &problem, const Options_dbastar &options_dbastar,
       for (size_t i = 0; i < result.size() - 1; ++i) {
         const auto node_state = result[i]->state;
         const auto &motion = motions.at(result[i + 1]->used_motion);
+        int take_until = result[i + 1]->intermediate_state;
+        if (take_until != -1) {
+          out << space6 + "# (note: we have stopped at intermediate state) "
+              << std::endl;
+        }
         out << space6 + "# (node_state) ";
         printState(out, si, node_state); // debug
         out << std::endl;
@@ -3339,8 +3430,12 @@ void dbastar(const Problem &problem, const Options_dbastar &options_dbastar,
             << traj.states.front().format(FMT) << std::endl;
         out << space6 + "# (xs.front) " << xs.front().format(FMT) << std::endl;
 
-        for (size_t k = 0; k < xs.size(); ++k) {
-          if (k < motion.states.size() - 1) {
+        size_t take_num_states = xs.size();
+        if (take_until != -1)
+          take_num_states = take_until + 1;
+
+        for (size_t k = 0; k < take_num_states; ++k) {
+          if (k < take_num_states - 1) {
             // print the state
             out << space6 << "- ";
             traj_out.states.push_back(xs.at(k));
@@ -3365,10 +3460,29 @@ void dbastar(const Problem &problem, const Options_dbastar &options_dbastar,
 
     int action_counter = 0;
     for (size_t i = 0; i < result.size() - 1; ++i) {
-      const auto &motion = motions[result[i + 1]->used_motion];
+      const auto &motion = motions.at(result.at(i + 1)->used_motion);
+      int take_until = result.at(i + 1)->intermediate_state;
+      if (take_until != -1) {
+        out << space6 + "# (note: we have stop at intermediate state) "
+            << std::endl;
+      }
+
       out << space6 + "# motion " << motion.idx << " with cost " << motion.cost
           << std::endl; // debug
-      for (size_t k = 0; k < motion.actions.size(); ++k) {
+      //
+      //
+      //
+
+      size_t take_num_actions = motion.actions.size();
+
+      if (take_until != -1) {
+        take_num_actions = take_until;
+      }
+      CHECK_LEQ(take_num_actions, motion.actions.size(), AT);
+      out << space6 + "# "
+          << "take_num_actions " << take_num_actions << std::endl;
+
+      for (size_t k = 0; k < take_num_actions; ++k) {
         const auto &action = motion.actions[k];
         out << space6 + "- ";
         action_counter += 1;
@@ -3597,6 +3711,9 @@ void dbastar(const Problem &problem, const Options_dbastar &options_dbastar,
   out_info_db.data = time_bench.to_data();
   out_info_db.data.insert(std::make_pair(
       "terminate_status", terminate_status_str[static_cast<int>(status)]));
+
+  out_info_db.data.insert(
+      std::make_pair("solved", std::to_string(bool(solution))));
 
   out_info_db.data.insert(
       std::make_pair("delta", std::to_string(options_dbastar_local.delta)));

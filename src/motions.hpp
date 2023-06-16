@@ -133,6 +133,8 @@ struct Trajectory {
 
   void to_yaml_format(std::ostream &out, const std::string &prefix = "") const;
 
+  void to_yaml_format(const char *filename) const;
+
   void read_from_yaml(const YAML::Node &node);
 
   void read_from_yaml(const char *file);
@@ -183,6 +185,10 @@ struct Trajectories {
     // - TRAJ 2
 
     std::cout << "Trajs: save file yaml: " << file << std::endl;
+
+    std::cout << "save trajectory to: " << file << std::endl;
+    create_dir_if_necessary(file);
+
     std::ofstream out(file);
     std::string prefix = "  ";
 

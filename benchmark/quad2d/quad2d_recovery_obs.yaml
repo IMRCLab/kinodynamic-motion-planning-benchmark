@@ -8,5 +8,6 @@ environment:
 
 robots:
   - type: quad2d_v0
-    start: [0., 1., 3.14, 0., 0., 0.] # x,y,theta,v,w
+    # start: [0., 1., 3.14, 0., 0., 0.] # x,y,theta,v,w
+    start: [0., 1., -3.14, 0., 0., 0.] # x,y,theta,v,w
     goal: [0., 2, 0., 0., 0., 0] # x,y,theta,v,w

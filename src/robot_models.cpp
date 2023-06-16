@@ -767,6 +767,9 @@ Model_unicycle1::Model_unicycle1(const Unicycle1_params &params,
   translation_invariance = 2;
 
   u_ref << 0, 0;
+
+  u_0 << 0, 0;
+
   distance_weights = params.distance_weights;
   name = "unicycle1";
 
@@ -782,6 +785,10 @@ Model_unicycle1::Model_unicycle1(const Unicycle1_params &params,
   u_desc = {"v[m/s]", "w[rad/s]"};
   u_lb << params.min_vel, params.min_angular_vel;
   u_ub << params.max_vel, params.max_angular_vel;
+
+  u_0(0) = inside_bounds(u_0(0), u_lb(0), u_ub(0));
+  u_0(1) = inside_bounds(u_0(1), u_lb(1), u_ub(1));
+
   x_ub.setConstant(RM_max__);
   x_lb.setConstant(RM_low__);
 

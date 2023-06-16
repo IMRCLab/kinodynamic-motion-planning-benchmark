@@ -41,20 +41,21 @@ plt.show()
 
 
 # Pg = R * Plocal + Center
-# D(Pg) / drotation = R' * local 
+# D(Pg) / drotation = R' * local
 # D(Pg) / dCenter = 1
 
 
-
-# Convex Approximation of the distance function is 
+# Convex Approximation of the distance function is
 
 # for distance Pose
 # d is positive
 # d(pRobot(q), pObs ) = || pRobot - PObs ||
 
 # if d > 0 (not collision)
-# d (pRobot(q), pObs ) = || pRobot - PObs || +  1 / d    ( pRobot - PObs ) * dpRobot  / dq
+# d (pRobot(q), pObs ) = || pRobot - PObs || +  1 / d    ( pRobot - PObs )
+# * dpRobot  / dq
 
 # if d is negative
 # d(pRobot(q), pObs ) =  - || pRobot - PObs ||
-# d (pRobot(q), pObs ) =  - || pRobot - PObs ||  +  -1 / d    ( pRobot - PObs ) * dpRobot  / dq
+# d (pRobot(q), pObs ) =  - || pRobot - PObs ||  +  -1 / d    ( pRobot -
+# PObs ) * dpRobot  / dq

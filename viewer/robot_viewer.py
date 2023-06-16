@@ -1,11 +1,10 @@
 
 import viewer_utils
 
-    
 
 class RobotViewer():
 
-    def __init__(self,RobotDrawerClass=None):
+    def __init__(self, RobotDrawerClass=None):
         self.RobotDrawerClass = RobotDrawerClass
         self.labels_x = []
         self.labels_u = []
@@ -14,11 +13,12 @@ class RobotViewer():
         viewer_utils.draw_problem_2d(ax, env, self.RobotDrawerClass)
 
     def view_trajectory(self, ax, result, **kwargs):
-        viewer_utils.draw_traj_default(ax, result, self.RobotDrawerClass, draw_basic_every=10)
+        viewer_utils.draw_traj_default(
+            ax, result, self.RobotDrawerClass, draw_basic_every=10)
 
-    def view_static(self, ax, env , result, **kwargs):
-        self.view_problem( ax, env, **kwargs)
-        self.view_trajectory( ax, result,  **kwargs)
+    def view_static(self, ax, env, result, **kwargs):
+        self.view_problem(ax, env, **kwargs)
+        self.view_trajectory(ax, result, **kwargs)
 
     def view_state(self, ax, X, **kwargs):
         self.RobotDrawerClass().draw(ax, X, **kwargs)
@@ -31,5 +31,5 @@ class RobotViewer():
         viewer_utils.make_video_default(env, result, lambda ax, env: self.view_problem(ax, env),
                                         self.RobotDrawerClass, filename_video)
 
-    def is_3d(self) -> bool : 
+    def is_3d(self) -> bool:
         return False

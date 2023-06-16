@@ -1,5 +1,7 @@
 default:
   solver_id: 9
+  linear_search: true # Binary search doesn't work for quadcopter models!
+  smooth_traj: true
 
 quad3d_v0:
   default:

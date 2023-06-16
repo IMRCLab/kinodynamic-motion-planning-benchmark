@@ -84,12 +84,11 @@ class Robot():
         return [self.patch1, self.patch2]
 
 
-class CarWithTrailerViewer(RobotViewer ): 
+class CarWithTrailerViewer(RobotViewer):
     def __init__(self):
-        super().__init__(Robot) 
+        super().__init__(Robot)
         self.labels_x = ["x", "y", "o", "o2"]
         self.labels_u = ["u", "p"]
-
 
 
 if __name__ == "__main__":

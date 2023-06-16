@@ -164,7 +164,6 @@ def check_viewer(viewer, argv=None, show_single_state=False):
         else:
             result = __result["result"][0]
 
-
         if is_3d:
             fig = plt.figure()
             ax = plt.axes(projection='3d')

@@ -174,6 +174,8 @@ struct AStarNode {
   const AStarNode *came_from;
   fcl::Vector3d used_offset;
   size_t used_motion;
+  int intermediate_state =
+      -1; // checking intermediate states for reaching the goal.
 
   open_t::handle_type handle;
   bool is_in_open = false;
@@ -370,7 +372,7 @@ struct Options_dbastar {
   float connect_radius_h = .5;
   std::string motionsFile = "";
   std::vector<Motion> *motions_ptr = nullptr; // pointer to loaded motions
-  std::string outFile = "out.yaml";
+  std::string outFile = "/tmp/dbastar/out_db.yaml";
   bool filterDuplicates = false;     // very expensive in high dim systems!
   bool primitives_new_format = true; // (false=Format of IROS 22)
   float maxCost = std::numeric_limits<float>::infinity();

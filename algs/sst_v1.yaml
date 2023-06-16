@@ -1,0 +1,40 @@
+# params for SST
+default:
+  dummy: 0
+
+unicycle1_v0:
+  default:
+    dummy: 0
+    goal_epsilon: .2
+    min_control_duration: 1
+    max_control_duration: 5
+
+unicycle1_v1:
+  default:
+    dummy: 0
+    goal_epsilon: .2
+    min_control_duration: 1
+    max_control_duration: 5
+
+unicycle1_v2:
+  default:
+    dummy: 0
+    goal_epsilon: .2
+    min_control_duration: 1
+    max_control_duration: 5
+
+unicycle2_v0:
+  default:
+    dummy: 0
+    goal_epsilon: .2
+    pruning_radius: .05
+    min_control_duration: 1
+    max_control_duration: 10
+
+car1_v0:
+  default:
+    dummy: 0
+    goal_epsilon: .2
+    pruning_radius: .05
+    min_control_duration: 1
+    max_control_duration: 10

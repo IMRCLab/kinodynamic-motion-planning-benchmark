@@ -22,14 +22,17 @@
 struct Options_geo {
   std::string planner = "rrt*";
   double timelimit = 10; // TODO: which unit?
-  double goalregion = .1;
+  // double goalregion = .1;
+  double goalBias = -1;
+  double range = -1;
   std::string outFile = "out.yaml";
 
   void add_options(po::options_description &desc) {
 
+    set_from_boostop(desc, VAR_WITH_NAME(range));
+    set_from_boostop(desc, VAR_WITH_NAME(goalBias));
     set_from_boostop(desc, VAR_WITH_NAME(planner));
     set_from_boostop(desc, VAR_WITH_NAME(timelimit));
-    set_from_boostop(desc, VAR_WITH_NAME(goalregion));
     set_from_boostop(desc, VAR_WITH_NAME(outFile));
   }
 
@@ -49,18 +52,20 @@ struct Options_geo {
   }
   void __read_from_node(const YAML::Node &node) {
 
+    set_from_yaml(node, VAR_WITH_NAME(range));
+    set_from_yaml(node, VAR_WITH_NAME(goalBias));
     set_from_yaml(node, VAR_WITH_NAME(planner));
     set_from_yaml(node, VAR_WITH_NAME(timelimit));
-    set_from_yaml(node, VAR_WITH_NAME(goalregion));
     set_from_yaml(node, VAR_WITH_NAME(outFile));
   }
 
   void print(std::ostream &out, const std::string &be = "",
              const std::string &af = ": ") {
 
+    out << be << STR(goalBias, af) << std::endl;
+    out << be << STR(range, af) << std::endl;
     out << be << STR(planner, af) << std::endl;
     out << be << STR(timelimit, af) << std::endl;
-    out << be << STR(goalregion, af) << std::endl;
     STRY(outFile, out, be, af);
   }
 };

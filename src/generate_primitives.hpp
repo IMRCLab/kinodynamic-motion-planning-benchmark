@@ -6,8 +6,8 @@
 
 struct Options_primitives {
 
-  double time_limit = 1000;      // in seconds
-  int max_num_primitives = 1000; // use -1 to say MAX
+  double time_limit = 1000;    // in seconds
+  int max_num_primitives = -1; // use -1 to say MAX
   size_t max_attempts = 1e8;
   std::string dynamics = "unicycle1_v0";
   bool adapt_infeas_primitives = false;

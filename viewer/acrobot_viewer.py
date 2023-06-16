@@ -19,7 +19,6 @@ import viewer_utils
 from robot_viewer import RobotViewer
 
 
-
 class Robot():
     def __init__(self):
         self.l1 = 1.
@@ -34,7 +33,8 @@ class Robot():
         p1 = self.l1 * \
             np.array([np.cos(3 * np.pi / 2 + q1), np.sin(3 * np.pi / 2 + q1)])
         p2 = p1 + self.l2 * \
-            np.array([np.cos(3 * np.pi / 2 + q1 + q2), np.sin(3 * np.pi / 2 + q1 + q2)])
+            np.array([np.cos(3 * np.pi / 2 + q1 + q2),
+                     np.sin(3 * np.pi / 2 + q1 + q2)])
         return p1, p2
 
     def get_centers(self, x):
@@ -45,7 +45,8 @@ class Robot():
         pivot2 = self.l1 * \
             np.array([np.cos(3 * np.pi / 2 + q1), np.sin(3 * np.pi / 2 + q1)])
         c2 = pivot2 + self.lc2 * \
-            np.array([np.cos(3 * np.pi / 2 + q1 + q2), np.sin(3 * np.pi / 2 + q1 + q2)])
+            np.array([np.cos(3 * np.pi / 2 + q1 + q2),
+                     np.sin(3 * np.pi / 2 + q1 + q2)])
         return c1, c2
 
     def draw(self, ax, x, **kwargs):
@@ -85,12 +86,12 @@ class Robot():
         e1 = self.l1 * \
             np.array([np.cos(3 * np.pi / 2 + q1), np.sin(3 * np.pi / 2 + q1)])
         e2 = e1 + self.l2 * \
-            np.array([np.cos(3 * np.pi / 2 + q1 + q2), np.sin(3 * np.pi / 2 + q1 + q2)])
+            np.array([np.cos(3 * np.pi / 2 + q1 + q2),
+                     np.sin(3 * np.pi / 2 + q1 + q2)])
         return e1, e2
 
-    def draw_basic(self,ax,x,**kwargs):
+    def draw_basic(self, ax, x, **kwargs):
         self.draw(ax, x, **kwargs)
-
 
     def draw_traj_minimal(self, ax, X):
         Es = [self.get_ends(x) for x in X]
@@ -126,19 +127,16 @@ class Robot():
 
         return [self.p1, self.p2, self.dot1, self.dot2, self.dot3]
 
+
 class AcrobotViewer(RobotViewer):
 
-
     def __init__(self):
-        super().__init__(Robot) 
-        self.labels_x = ["q1", "q2", "w1", "w2" ]
+        super().__init__(Robot)
+        self.labels_x = ["q1", "q2", "w1", "w2"]
         self.labels_u = ["f"]
-
 
 
 if __name__ == "__main__":
 
     viewer = AcrobotViewer()
     viewer_utils.check_viewer(viewer)
-
-

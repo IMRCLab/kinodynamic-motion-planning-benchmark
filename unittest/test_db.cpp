@@ -115,22 +115,24 @@ BOOST_AUTO_TEST_CASE(tt_quad2dpole) {
     BOOST_TEST(out_info_db.solved);
   }
 
-  if (false) {
+  if (true) {
     // Problem problem("../benchmark/quad2dpole/move_with_down.yaml");
     // Problem problem("../benchmark/quad2dpole/move_with_up.yaml");
-    // Problem problem("../benchmark/quad2dpole/up.yaml");
-    Problem problem("../benchmark/quad2dpole/up_obs.yaml");
+    Problem problem("../benchmark/quad2dpole/up.yaml");
+    // Problem problem("../benchmark/quad2dpole/up_obs.yaml");
     Options_dbastar options_dbastar;
-    options_dbastar.max_motions = 3000;
+    options_dbastar.max_motions = 4000;
+    // options_dbastar.max_motions = 2000;
     options_dbastar.search_timelimit = 60000;
     options_dbastar.delta = .8;
     options_dbastar.cost_delta_factor = 1;
     options_dbastar.delta_factor_goal = 1;
     options_dbastar.use_nigh_nn = 1;
     options_dbastar.motionsFile = "../build/quad2dpole_all.bin.sp1.bin.ca.bin";
+    // options_dbastar.motionsFile = "../build/quad2dpole_all.bin.im.bin.sp1.bin.ca.bin";
     options_dbastar.new_invariance = true;
     options_dbastar.use_collision_shape = false;
-    options_dbastar.limit_branching_factor = 30;
+    options_dbastar.limit_branching_factor = 15;
 
     Out_info_db out_info_db;
     Trajectory traj_out;
@@ -138,7 +140,7 @@ BOOST_AUTO_TEST_CASE(tt_quad2dpole) {
     CSTR_(out_info_db.cost);
     BOOST_TEST(out_info_db.solved);
   }
-  if (true) {
+  if (false) {
     // Problem problem("../benchmark/quad2dpole/window_easy.yaml");
     // Problem problem("../benchmark/quad2dpole/window.yaml");
     Problem problem("../benchmark/quad2dpole/window_hard.yaml");
@@ -200,8 +202,8 @@ BOOST_AUTO_TEST_CASE(tt_quad3_recovery_with_obs) {
   // options_dbastar.max_motions = 50000;
   // options_dbastar.max_motions = 5000;
   options_dbastar.search_timelimit = 60000;
-  options_dbastar.delta = .8;
-  // options_dbastar.delta = .7;
+  // options_dbastar.delta = .8;
+  options_dbastar.delta = .7;
   options_dbastar.cost_delta_factor = 1;
   options_dbastar.delta_factor_goal = 1;
   options_dbastar.use_nigh_nn = 1;
@@ -322,11 +324,11 @@ BOOST_AUTO_TEST_CASE(test_quad2d_invariance) {
 
   std::vector<Problem *> problems;
 
-  problems.push_back(&problem1);
-  problems.push_back(&problem2);
-  problems.push_back(&problem3);
+  // problems.push_back(&problem1);
+  // problems.push_back(&problem2);
+  // problems.push_back(&problem3);
   problems.push_back(&problem4);
-  problems.push_back(&problem5);
+  // problems.push_back(&problem5);
 
   for (auto &ptr : problems) {
     auto &problem = *ptr;
@@ -373,3 +375,6 @@ BOOST_AUTO_TEST_CASE(t_quad2dpole_toy) {
   CSTR_(out_info_db.cost);
   BOOST_TEST(out_info_db.solved);
 }
+
+
+

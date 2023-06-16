@@ -74,6 +74,13 @@ void Trajectory::read_from_yaml(const char *file) {
   read_from_yaml(load_yaml_safe(file));
 }
 
+void Trajectory::to_yaml_format(const char *filename) const {
+  std::cout << "save trajectory to: " << filename << std::endl;
+  create_dir_if_necessary(filename);
+  std::ofstream out(filename);
+  to_yaml_format(out);
+}
+
 void Trajectory::to_yaml_format(std::ostream &out,
                                 const std::string &prefix) const {
 
@@ -768,6 +775,7 @@ void Trajectories::compute_stats(const char *filename_out) const {
   std::vector<std::vector<Bin>> bins_actions =
       make_componentwise_histogram(actions);
 
+  std::cout << "writing to: " << filename_out << std::endl;
   std::ofstream out(filename_out);
 
   out << "bins_lengths:" << std::endl;
@@ -820,7 +828,7 @@ Trajectories cut_trajectory(const Trajectory &traj, size_t number_of_cuts,
   }
   {
     // save trjectories for debugging
-    std::string filename = "trajs_cuts_" + gen_random(6) + ".yaml";
+    std::string filename = "/tmp/dbastar/trajs_cuts_" + gen_random(6) + ".yaml";
     std::cout << "saving traj file: " << filename << std::endl;
     new_trajectories.save_file_yaml(filename.c_str());
   }

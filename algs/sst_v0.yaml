@@ -2,10 +2,40 @@
 default:
   dummy: 0
 
+unicycle1_v0:
+  default:
+    dummy: 0
+    goal_epsilon: .2
+    min_control_duration: 2
+    max_control_duration: 20
+
+unicycle1_v1:
+  default:
+    dummy: 0
+    goal_epsilon: .2
+    min_control_duration: 2
+    max_control_duration: 20
+
+unicycle1_v2:
+  default:
+    dummy: 0
+    goal_epsilon: .2
+    min_control_duration: 2
+    max_control_duration: 20
+
+unicycle2_v0:
+  default:
+    dummy: 0
+    goal_epsilon: .2
+    min_control_duration: 2
+    max_control_duration: 20
+
 car1_v0:
   default:
     goal_epsilon: 0.2 # with 0.1 it is hard to find a solution...
     goal_bias: 0.1
+    min_control_duration: 2
+    max_control_duration: 20
 
 quad2d_v0:
   default:

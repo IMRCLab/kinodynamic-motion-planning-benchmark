@@ -1323,6 +1323,18 @@ void __trajectory_optimization(const Problem &problem,
         << "WARNING: "
         << "i use quaternion interpolation, but distance is euclidean norm"
         << std::endl;
+
+    // flip the start state if necessary
+
+    double d1 = (xs_init.front().segment<4>(3) - start.segment<4>(3)).norm();
+    double d2 = (xs_init.front().segment<4>(3) + start.segment<4>(3)).norm();
+
+    if (d2 < d1) {
+      std::cout << "WARNING: "
+                << "i flip the start state" << std::endl;
+      xs_init.front().segment<4>(3) *= -1.;
+    }
+
     for (size_t j = 0; j < xs_init.size() - 1; j++) {
       Eigen::Quaterniond qa(xs_init.at(j).segment<4>(3)),
           qb(xs_init.at(j + 1).segment<4>(3)), qres;
@@ -1330,6 +1342,20 @@ void __trajectory_optimization(const Problem &problem,
       qres = qa.slerp(t, qb);
       std::cout << "qres " << qres.coeffs().format(FMT) << std::endl;
       xs_init.at(j + 1).segment<4>(3) = qres.coeffs();
+    }
+
+    // check the goal state...
+
+    double d1g = (xs_init.back().segment<4>(3) - goal.segment<4>(3)).norm();
+    double d2g = (xs_init.back().segment<4>(3) + goal.segment<4>(3)).norm();
+
+    if (d2g < d1g) {
+
+      write_states_controls(
+          xs_init, us_init, model_robot, problem,
+          (folder_tmptraj + "init_guess_issue_quat.yaml").c_str());
+
+      ERROR_WITH_INFO("quad3d I should flip the goal state");
     }
   }
 
@@ -1970,7 +1996,7 @@ void __trajectory_optimization(const Problem &problem,
         write_states_controls(xs, us, model_robot, problem, filename.c_str());
       }
 
-      std::cout << "CROCO optimize" << std::endl;
+      std::cout << "CROCO optimize" << AT << std::endl;
       ddp.solve(xs, us, options_trajopt_local.max_iter, false,
                 options_trajopt_local.init_reg);
       std::cout << "CROCO optimize -- DONE" << std::endl;
@@ -2407,7 +2433,7 @@ void __trajectory_optimization(const Problem &problem,
         write_states_controls(xs, us, model_robot, problem, filename.c_str());
       }
 
-      std::cout << "CROCO optimize" << std::endl;
+      std::cout << "CROCO optimize" << AT << std::endl;
       ddp.solve(xs, us, options_trajopt_local.max_iter, false,
                 options_trajopt_local.init_reg);
 
@@ -2431,7 +2457,8 @@ void __trajectory_optimization(const Problem &problem,
       us_out = ddp.get_us();
 
       if (!options_trajopt_local.use_finite_diff)
-        report_problem(problem_croco, xs_out, us_out, "/tmp/dbastar/report-1.yaml");
+        report_problem(problem_croco, xs_out, us_out,
+                       "/tmp/dbastar/report-1.yaml");
     };
 
     std::vector<Eigen::VectorXd> _xs_out, _us_out, xs_init_p, us_init_p;

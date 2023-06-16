@@ -1,41 +1,78 @@
-trials: 8
-timelimit: 40
-n_cores: 4 # -1=auto
+trials: 10
+timelimit: 100
+n_cores: 10 # -1=auto
+
+# TODO? Should I randomize the primitives that I take? Specially if I am not using 
+# the sorting algorithm.
 
 problems:
-  - unicycle_first_order_0/parallelpark_0
-  - unicycle_first_order_0/bugtrap_0
-  - unicycle_first_order_0/kink_0
-
-  - unicycle_first_order_1/kink_0
-  - unicycle_first_order_2/wall_0
-
-  - unicycle_second_order_0/kink_0
-  - unicycle_second_order_0/parallelpark_0
-  - unicycle_second_order_0/bugtrap_0
+  # - unicycle_first_order_0/parallelpark_0
+  # - unicycle_first_order_0/bugtrap_0
+  # - unicycle_first_order_0/kink_0
   
-  - car_first_order_with_1_trailers_0/kink_0
-  - car_first_order_with_1_trailers_0/bugtrap_0
-  - car_first_order_with_1_trailers_0/parallelpark_0
+  # - unicycle_first_order_1/kink_0
+  # - unicycle_first_order_2/wall_0
+  #
+  # - unicycle_second_order_0/kink_0
+  # - unicycle_second_order_0/parallelpark_0
+  # - unicycle_second_order_0/bugtrap_0
+  
+  # - car_first_order_with_1_trailers_0/kink_0
+  # - car_first_order_with_1_trailers_0/bugtrap_0 
+  # - car_first_order_with_1_trailers_0/parallelpark_0
 
+  # - quad2d/empty_1
   # - quad2d/empty_0
   # - quad2d/quad_obs_column
+  # - quad2d/quad_bugtrap
   # - quad2d/quad2d_recovery_wo_obs
+  # - quad2d/quad2d_recovery_obs
+  # - quad2d/fall_through
 
+  # - quad2dpole/move_with_down
+  # - quad2dpole/move_with_up
+  # - quad2dpole/up
+  # - quad2dpole/down
+  # - quad2dpole/up_obs
+  # - quad2dpole/window_easy
+  # - quad2dpole/window
+  # - quad2dpole/window_hard
+
+  # NOT able to solve all of them with 100% succes...
   # - acrobot/swing_up_empty
+  # - acrobot/swing_up_obs
+  # - acrobot/swing_up_obs_hard ## ISSUE: with memory when several threads at the same time
   # - acrobot/swing_down_easy
   # - acrobot/swing_down
-
+  
   #  CONTINUE QUADROTOR_0
   # - quadrotor_0/empty_0_easy
-  # - quadrotor_0/recovery  # not working for  mpcc
-  # - quadrotor_0/quad_one_obs # not working for mpcc
+  # - quadrotor_0/empty_1_easy
+  # - quadrotor_0/window
+  # - quadrotor_0/recovery
+  # - quadrotor_0/recovery_with_obs
+  - quadrotor_0/quad_one_obs
+
+
+# TODO
+# - [ ] fix terminal state of quaternion. maybe just change the goal? 
+#
+
 
 algs:
+
   - idbastar_v0
+  
+
+
   # - idbastar_tmp
   # - sst_v0
+  # - sst_v1
+  # - sst_v2
+  # - sst_v3
+  # - sst_v4
   # - geo_v1
+  # - geo_v0
   # - "idbastar_v0_mpcc"
   # - "idbastar_v0_search"
   # - "idbastar_v0_heu1"

@@ -30,12 +30,17 @@ void idbA(const Problem &problem, const Options_idbAStar &options_idbas,
     CHECK(robot, AT);
     load_motion_primitives(options_dbastar_local.motionsFile, *robot, motions,
                            options_idbas.max_motions_primitives,
-                           options_dbastar_local.cut_actions, true);
+                           options_dbastar_local.cut_actions, false);
+    // load_motion_primitives(options_dbastar_local.motionsFile, *robot,
+    // motions,
+    //                        options_idbas.max_motions_primitives,
+    //                        options_dbastar_local.cut_actions, false);
+
   } else {
     CHECK(robot, AT);
     load_motion_primitives_new(options_dbastar_local.motionsFile, *robot,
                                motions, options_idbas.max_motions_primitives,
-                               options_dbastar_local.cut_actions, true,
+                               options_dbastar_local.cut_actions, false,
                                options_dbastar_local.check_cols);
   }
   options_dbastar_local.motions_ptr = &motions;
@@ -104,7 +109,7 @@ void idbA(const Problem &problem, const Options_idbAStar &options_idbas,
 
     std::string id_db = gen_random(6);
 
-    options_dbastar_local.outFile =  "/tmp/dbastar/i_db_" + id_db + ".yaml";
+    options_dbastar_local.outFile = "/tmp/dbastar/i_db_" + id_db + ".yaml";
 
     dbastar(problem, options_dbastar_local, traj_db, out_info_db);
     std::cout << "warning: using as time only the search!" << std::endl;
@@ -119,8 +124,7 @@ void idbA(const Problem &problem, const Options_idbAStar &options_idbas,
       // write trajectory to file
       {
         std::string filename = "/tmp/dbastar/i_traj_db.yaml";
-        std::string filename_id =
-            "/tmp/dbastar/i_traj_db_" + id_db + ".yaml";
+        std::string filename_id = "/tmp/dbastar/i_traj_db_" + id_db + ".yaml";
         std::cout << "saving traj to: " << filename << std::endl;
         std::cout << "saving traj to: " << filename_id << std::endl;
         create_dir_if_necessary(filename.c_str());
@@ -148,7 +152,9 @@ void idbA(const Problem &problem, const Options_idbAStar &options_idbas,
         create_dir_if_necessary(filename_id.c_str());
         std::ofstream out(filename_id);
         traj.to_yaml_format(out);
-        std::filesystem::copy(filename_id, filename, std::filesystem::copy_options::overwrite_existing);
+        std::filesystem::copy(
+            filename_id, filename,
+            std::filesystem::copy_options::overwrite_existing);
       }
 
       traj.time_stamp = get_time_stamp_ms() - non_counter_time;
@@ -205,9 +211,22 @@ void idbA(const Problem &problem, const Options_idbAStar &options_idbas,
 
           {
             std::string filename =
-                "trajs_cuts_canonical_" + gen_random(6) + ".yaml";
-            std::cout << "saving traj file: " << filename << std::endl;
+                "/tmp/dbastar/trajs_cuts_canonical_" + gen_random(6) + ".yaml";
             trajs_canonical.save_file_yaml(filename.c_str());
+          }
+
+          const bool add_noise_first_state = true;
+          const double noise = 1e-7;
+          for (auto &t : trajs_canonical.data) {
+            t.states.front() +=
+                noise * Eigen::VectorXd::Random(t.states.front().size());
+            t.states.back() +=
+                noise * Eigen::VectorXd::Random(t.states.back().size());
+
+            if (startsWith(robot->diff_model->name, "quad3d")) {
+              t.states.front().segment<4>(3).normalize();
+              t.states.back().segment<4>(3).normalize();
+            }
           }
 
           std::vector<Motion> motions_out;
@@ -218,21 +237,12 @@ void idbA(const Problem &problem, const Options_idbAStar &options_idbas,
             motions_out.push_back(motion_out);
           }
 
-          const bool debug_primitves_extraction = false;
-          CSTR_(debug_primitves_extraction);
+          motions.insert(motions.begin(), motions_out.begin(),
+                         motions_out.end());
 
-          if (debug_primitves_extraction) {
-            CSTR_(motions_out.size());
-            motions.insert(motions.begin(), motions_out.begin(),
-                           motions_out.end());
-
-            std::cout << "Afer insert " << motions.size() << std::endl;
-            std::cout << "Warning: "
-                      << "I am inserting at the beginning" << std::endl;
-
-          } else {
-            motions = motions_out;
-          }
+          std::cout << "Afer insert " << motions.size() << std::endl;
+          std::cout << "Warning: "
+                    << "I am inserting at the beginning" << std::endl;
         }
       }
     }
@@ -271,7 +281,8 @@ void idbA(const Problem &problem, const Options_idbAStar &options_idbas,
     create_dir_if_necessary(filename_id.c_str());
     std::ofstream out(filename_id);
     traj_out.to_yaml_format(out);
-    std::filesystem::copy(filename_id, filename, std::filesystem::copy_options::overwrite_existing);
+    std::filesystem::copy(filename_id, filename,
+                          std::filesystem::copy_options::overwrite_existing);
   }
 
   std::cout << "exit criteria"

@@ -5,6 +5,7 @@ import numpy as np
 import pathlib
 from typing import Tuple
 import shutil
+import os
 
 from multiprocessing import Pool
 import multiprocessing
@@ -17,6 +18,7 @@ import argparse
 import os
 import shutil
 
+print_lock = multiprocessing.Lock()
 
 all_problems = [
     "unicycle_first_order_0/parallelpark_0",
@@ -92,7 +94,7 @@ elif mode == "fancy":
 import sys
 sys.path.append('..')
 
-import viewer.viewer_cli as viewer_cli
+# import viewer.viewer_cli as viewer_cli
 import matplotlib.pyplot as plt
 
 from datetime import datetime
@@ -221,6 +223,20 @@ color_map = {
 }
 
 
+import matplotlib.pyplot as plt
+
+
+def get_cmap(n, name='hsv'):
+    '''Returns a function that maps each index in 0, 1, ..., n-1 to a distinct
+    RGB color; the keyword argument name must be a standard mpl colormap name.'''
+    return plt.cm.get_cmap(name, n)
+
+# Usage in your pseudo-code snippet in the question:
+# cmap = get_cmap(len(data))
+# for i, (X, Y) in enumerate(data):
+#    scatter(X, Y, c=cmap(i))
+
+
 def get_config(alg: str, dynamics: str, problem: str):
 
     base_path_algs = "../algs/"
@@ -229,7 +245,7 @@ def get_config(alg: str, dynamics: str, problem: str):
     print(f"loading {file}")
     with open(file, "r") as f:
         data = yaml.safe_load(f)
-    print("data is:\n", data)
+    # print("data is:\n", data)
 
     cfg = {}
     if "reference" in data:
@@ -409,7 +425,9 @@ redirect_output = True
 
 
 def run_cmd(cmd: str):
+    print_lock.acquire()
     print("**\n**\nRUNNING cpp\n**\n", *cmd, "\n", sep=" ")
+    print_lock.release()
 
     if redirect_output:
         id = str(uuid.uuid4())[:7]
@@ -418,14 +436,15 @@ def run_cmd(cmd: str):
 
         directories = ["/tmp/dbastar/stdout/", "/tmp/dbastar/stderr/"]
 
-        for d in directories:
-            if not os.path.exists(d):
-                os.makedirs(d)
+        _ = [pathlib.Path(d).mkdir(parents=True, exist_ok=True)
+             for d in directories]
 
-        print(
-            *
-            cmd,
-            f"---- stderr_name {stderr_name}   stdout_name {stdout_name} ----")
+        print_lock.acquire()
+        print("***\n",
+              *
+              cmd, "\n",
+              f"stderr_name: {stderr_name}\nstdout_name: {stdout_name}\n****")
+        print_lock.release()
         f_stdout = open(stdout_name, 'w')
         f_stderr = open(stderr_name, 'w')
         subprocess.run(cmd, stdout=f_stdout, stderr=f_stderr)
@@ -433,7 +452,9 @@ def run_cmd(cmd: str):
         f_stderr.close()
     else:
         subprocess.run(cmd)
+    print_lock.acquire()
     print("**\n**\nDONE RUNNING cpp\n**\n")
+    print_lock.release()
 
 
 def compare_search(
@@ -494,7 +515,8 @@ def compare_search(
     filename_csv_log = filename_csv + ".log"
 
     with open(filename_csv_log, "w") as f:
-        dd = {"input": files, "output": filename_csv}
+        dd = {"input": files, "output": filename_csv,
+              "date": date_time, "hostname": os.uname()[1]}
         yaml.dump(dd, f)
 
         # input
@@ -589,7 +611,8 @@ def compare_search(
     filename_log_tex = filename_tex + ".log"
 
     with open(filename_log_tex, "w") as f:
-        dd = {"input": files, "output": filename_tex}
+        dd = {"input": files, "output": filename_tex,
+              "date": date_time, "hostname": os.uname()[1]}
         yaml.dump(dd, f)
 
     from matplotlib.backends.backend_pdf import PdfPages
@@ -603,7 +626,9 @@ def compare_search(
     filename_log_pdf = filename_pdf + ".log"
 
     with open(filename_log_pdf, "w") as f:
-        dd = {"input": files, "output": filename_pdf}
+        dd = {"input": files, "output": filename_pdf,
+              "date": date_time, "hostname": os.uname()[1]}
+
         yaml.dump(dd, f)
 
     # fig, ax = plt.subplots(2, 1, sharex=True)
@@ -725,7 +750,9 @@ def compare_time(
     filename_csv_log = filename_csv + ".log"
 
     with open(filename_csv_log, "w") as f:
-        dd = {"input": files, "output": filename_csv}
+        dd = {"input": files, "output": filename_csv,
+              "date": date_time, "hostname": os.uname()[1]}
+
         yaml.dump(dd, f)
 
         # input
@@ -828,7 +855,9 @@ def compare_time(
     filename_log_tex = filename_tex + ".log"
 
     with open(filename_log_tex, "w") as f:
-        dd = {"input": files, "output": filename_tex}
+        dd = {"input": files, "output": filename_tex,
+              "date": date_time, "hostname": os.uname()[1]}
+
         yaml.dump(dd, f)
 
     from matplotlib.backends.backend_pdf import PdfPages
@@ -842,7 +871,10 @@ def compare_time(
     filename_log_pdf = filename_pdf + ".log"
 
     with open(filename_log_pdf, "w") as f:
-        dd = {"input": files, "output": filename_pdf}
+        dd = {"input": files, "output": filename_pdf,
+
+              "date": date_time, "hostname": os.uname()[1]}
+
         yaml.dump(dd, f)
 
     # fig, ax = plt.subplots(2, 1, sharex=True)
@@ -1037,6 +1069,11 @@ def benchmark_search(bench_cfg: str):
     print("commands are: ")
     for i, cmd in enumerate(cmds):
         print(i, cmd)
+    print("***")
+    print("commands in cli format: ")
+    for i, cmd in enumerate(cmds):
+        print(*cmd, sep=" ")
+        print("\n")
 
     print(f"Start a pool with {n_cores}:")
     with Pool(n_cores) as p:
@@ -1118,6 +1155,16 @@ def benchmark_opti(bench_cfg: str):
     print("commands are: ")
     for i, cmd in enumerate(cmds):
         print(i, cmd)
+    print("***")
+    print("commands in cli format: ")
+    for i, cmd in enumerate(cmds):
+        print(*cmd, sep=" ")
+        print("\n")
+
+    print("commands in cli format: ")
+    for i, cmd in enumerate(cmds):
+        print(*cmd, sep=" ")
+        print("\n")
 
     print(f"Start a pool with {n_cores}:")
     with Pool(n_cores) as p:
@@ -1181,6 +1228,11 @@ def benchmark(bench_cfg: str):
     print("commands are: ")
     for i, cmd in enumerate(cmds):
         print(i, cmd)
+    print("***")
+    print("commands in cli format: ")
+    for i, cmd in enumerate(cmds):
+        print(*cmd, sep=" ")
+        print("\n")
 
     print(f"Start a pool with {n_cores}:")
     with Pool(n_cores) as p:
@@ -1190,6 +1242,7 @@ def benchmark(bench_cfg: str):
     fileouts = []
     for experiment in experiments:
         print("experiment")
+        print(experiment)
 
         fileout, _ = analyze_runs(
             experiment.path,
@@ -1259,7 +1312,10 @@ def compare(
     filename_csv_log = filename_csv + ".log"
 
     with open(filename_csv_log, "w") as f:
-        dd = {"input": files, "output": filename_csv}
+        dd = {"input": files, "output": filename_csv,
+
+              "date": date_time, "hostname": os.uname()[1]}
+
         yaml.dump(dd, f)
 
         # input
@@ -1314,7 +1370,10 @@ def compare(
     filename_log_pdf = filename_pdf + ".log"
 
     with open(filename_log_pdf, "w") as f:
-        dd = {"input": files, "output": filename_pdf}
+        dd = {"input": files, "output": filename_pdf,
+
+              "date": date_time, "hostname": os.uname()[1]}
+
         yaml.dump(dd, f)
 
     pp = PdfPages(filename_pdf)
@@ -1331,7 +1390,16 @@ def compare(
                 success = d["success"]
                 cost_mean = d["cost_mean"]
                 cost_std = d["cost_std"]
-                color = color_map[alg]
+                if alg in color_map:
+                    color = color_map[alg]
+                else:
+                    print("Warning: not in color map")
+                    print("ADDING")
+                    N = 30
+                    import random
+                    nn = random.randint(0, N - 1)
+                    color = get_cmap(N, name='gray')(nn)
+                    color_map[alg] = color
 
                 ax[0].plot(times, cost_mean, color=color, label=alg)
                 ax[0].fill_between(times,
@@ -2065,7 +2133,10 @@ def fancy_table(filenames: List[str]):
         D = {
             "input": filenames,
             "output": fileout,
-            "problems": problems.tolist()}
+            "problems": problems.tolist(),
+
+            "date": date_time, "hostname": os.uname()[1]}
+
         yaml.dump(D, f)
 
 
@@ -2156,8 +2227,11 @@ def parse_for_component_analysis(files: List[str]):
 
         file_out_log = file_out + ".log"
 
+        now = datetime.now()  # current date and time
+        date_time = now.strftime("%Y-%m-%d--%H-%M-%S")
         with open(file_out_log, "w") as f:
-            yaml.dump({"input": file, "output": file_out}, f)
+            yaml.dump({"input": file, "output": file_out,
+                       "date": date_time, "hostname": os.uname()[1]}, f)
 
         fig, ax = plt.subplots()
 
@@ -2241,17 +2315,32 @@ def parse_for_component_analysis(files: List[str]):
     shutil.copy(figureout, '/tmp/components.pdf')
 
     with open(figureout + ".log", "w") as f:
-        yaml.dump({"input": files, "output": figureout}, f)
+        yaml.dump({"input": files, "output": figureout,
+
+
+                   "date": date_time, "hostname": os.uname()[1]}, f)
 
     if visualize:
         plt.show()
 
     print("done")
 
-
     # group by problem
     # should I use the latex output of pandas?
 if __name__ == "__main__":
+
+    # path_to_dir="../results_new/unicycle_second_order_0/parallelpark_0/sst_v1/2023-06-14--14-17-18"
+    # problem="unicycle_second_order_0/parallelpark_0"
+    # alg="sst_v1"
+    # visualize=False
+    #
+    # analyze_runs(path_to_dir,
+    #              problem,
+    #              alg,
+    #              visualize)
+    #
+    #
+    # sys.exit(0)
 
     # TODO: how to I check the time spent in each component?
 

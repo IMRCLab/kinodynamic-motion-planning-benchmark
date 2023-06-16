@@ -20,17 +20,26 @@ void solve_ompl_geometric(const Problem &problem,
   auto pdef(std::make_shared<ob::ProblemDefinition>(si));
 
   pdef->addStartState(startState);
-  pdef->setGoalState(goalState, options_geo.goalregion);
+  pdef->setGoalState(goalState);
+  // ;options_geo.goalregion);
   // si->freeState(startState); @Wolfgang WHY??
   // si->freeState(goalState); @Wolfgang WHY??
 
   // create a planner for the defined space
   std::shared_ptr<ob::Planner> planner;
   if (options_geo.planner == "rrt*") {
-    planner.reset(new og::RRTstar(si));
-  } else if (options_geo.planner == "sst") {
-    planner.reset(new og::SST(si));
+    auto pp = new og::RRTstar(si);
+    if (options_geo.range > 0) {
+      pp->setRange(options_geo.range);
+    }
+    if (options_geo.goalBias > 0) {
+      pp->setGoalBias(options_geo.goalBias);
+    }
+    planner.reset(pp);
+  } else {
+    NOT_IMPLEMENTED;
   }
+
   // rrt->setGoalBias(params["goalBias"].as<float>());
   // auto planner(rrt);
 
@@ -40,7 +49,7 @@ void solve_ompl_geometric(const Problem &problem,
 
   // std::vector<Trajectory> trajectories;
 
-  bool traj_opti = true;
+  const bool traj_opti = true;
 
   auto get_time_stamp_ms = [&] {
     return static_cast<double>(
@@ -48,6 +57,9 @@ void solve_ompl_geometric(const Problem &problem,
             std::chrono::steady_clock::now() - start)
             .count());
   };
+
+  std::string id = gen_random(6);
+  size_t num_founds_geo_trajs = 0;
 
   pdef->setIntermediateSolutionCallback(
       [&](const ob::Planner *, const std::vector<const ob::State *> &states,
@@ -115,6 +127,11 @@ void solve_ompl_geometric(const Problem &problem,
         std::cout << "traj geo" << std::endl;
         traj_geo.to_yaml_format(std::cout);
 
+        std::string filename = "/tmp/dbastar/traj_geo_rrt_" +
+                               std::to_string(num_founds_geo_trajs) + "_" + id +
+                               ".yaml";
+        traj_geo.to_yaml_format(filename.c_str());
+
         if (traj_opti) {
 
           // Options_trajopt opti;
@@ -143,6 +160,12 @@ void solve_ompl_geometric(const Problem &problem,
           std::cout << "traj opt" << std::endl;
           traj.to_yaml_format(std::cout);
 
+          // save the trajectory
+          std::string filename = "/tmp/dbastar/traj_geo_opt_" +
+                                 std::to_string(num_founds_geo_trajs) + "_" +
+                                 id + ".yaml";
+          traj.to_yaml_format(filename.c_str());
+
           if (traj.feasible) {
             info_out_omplgeo.solved = true;
 
@@ -157,6 +180,7 @@ void solve_ompl_geometric(const Problem &problem,
         }
 
         previous_solution = std::chrono::steady_clock::now();
+        num_founds_geo_trajs++;
       });
 
   // set the problem we are trying to solve for the planner

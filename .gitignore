@@ -23,6 +23,9 @@ build_debug/
 *.txt
 compile_commands.json
 pyrightconfig.json
+results/
+results_new/
+results_new_timeopt/
 
 
 

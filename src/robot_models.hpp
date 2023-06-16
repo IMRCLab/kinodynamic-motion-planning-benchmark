@@ -1036,7 +1036,7 @@ struct Model_quad2dpole : Model_robot {
       Model_robot::transform_primitive(p, xs_in, us_in, xs_out, us_out);
     } else {
       xs_out = xs_in;
-      us_out = xs_out;
+      us_out = us_in;
 
       xs_out.front().head(2) += p.head(2);
       xs_out.front().segment(4, 2) += p.tail(2);

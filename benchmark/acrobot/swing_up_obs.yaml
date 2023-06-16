@@ -3,7 +3,7 @@ environment:
   max: [2.5, 2.5]
   obstacles:
     - type: box
-      center: [1.4, 1.4]
+      center: [-1.4, 1.4]
       size: [.5, .5]
 robots:
   - type: acrobot_v0

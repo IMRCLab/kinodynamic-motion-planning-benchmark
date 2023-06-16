@@ -3884,3 +3884,68 @@ BOOST_AUTO_TEST_CASE(t_quad2dpole_windowhard_db) {
     traj_out.to_yaml_format(out);
   }
 }
+
+BOOST_AUTO_TEST_CASE(test_quad2d_recovery_obs) {
+
+  Trajectory traj, traj_out;
+  const char *filename = "../build/traj_db_04_recovery_obs_fail.yaml";
+
+  traj.read_from_yaml(filename);
+
+  Problem problem("../benchmark/quad2d/quad2d_recovery_obs.yaml");
+
+  std::shared_ptr<Model_robot> quad2dpole =
+      std::make_shared<Model_quad2d>("../models/quad2d_v0.yaml");
+
+  traj.check(quad2dpole, true);
+
+  Options_trajopt options_trajopt;
+  options_trajopt.max_iter = 200;
+  options_trajopt.weight_goal = 100;
+  // options_trajopt.collision_weight = 400;
+  options_trajopt.smooth_traj = true;
+  options_trajopt.solver_id = 1;
+  // options_trajopt.k_contour = 50;
+
+  Result_opti opti_out;
+
+  trajectory_optimization(problem, traj, options_trajopt, traj_out, opti_out);
+
+  {
+    std::ofstream out("out_opt.yaml");
+    traj_out.to_yaml_format(out);
+  }
+}
+
+BOOST_AUTO_TEST_CASE(t_quad3d_recovery_obs) {
+
+  Problem problem("../benchmark/quadrotor_0/recovery_with_obs.yaml");
+  Trajectory traj_in, traj_out;
+  traj_in.read_from_yaml("../build/recovery_with_obs_delta7.yaml");
+
+  std::shared_ptr<Model_robot> robot =
+      std::make_shared<Model_quad3d>("../models/quad3d_v0.yaml");
+
+  for (auto &s : traj_in.states) {
+    robot->ensure(s, s);
+  }
+
+  traj_in.check(robot, true);
+
+  Options_trajopt options_trajopt;
+  options_trajopt.max_iter = 200;
+  options_trajopt.weight_goal = 100;
+  options_trajopt.smooth_traj = true;
+  options_trajopt.solver_id = 0;
+  // options_trajopt.k_contour = 50;
+
+  Result_opti opti_out;
+
+  trajectory_optimization(problem, traj_in, options_trajopt, traj_out,
+                          opti_out);
+
+  {
+    std::ofstream out("out_opt.yaml");
+    traj_out.to_yaml_format(out);
+  }
+}

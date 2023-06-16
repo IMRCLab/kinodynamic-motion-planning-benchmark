@@ -120,6 +120,8 @@ void solve_sst(const Problem &problem, const Options_sst &options_ompl_sst,
             .count());
   };
 
+  size_t num_solutions = 0;
+
   pdef->setIntermediateSolutionCallback(
       [&](const ob::Planner *pp, const std::vector<const ob::State *> &states,
           const ob::Cost cost) {
@@ -230,6 +232,7 @@ void solve_sst(const Problem &problem, const Options_sst &options_ompl_sst,
             info_out_omplsst.trajs_opt.push_back(traj_opt);
 
             if (traj_opt.feasible) {
+              num_solutions++;
               std::cout << "optimization is feasible " << std::endl;
               info_out_omplsst.solved = true;
               if (traj_opt.cost < info_out_omplsst.cost) {
@@ -275,39 +278,56 @@ void solve_sst(const Problem &problem, const Options_sst &options_ompl_sst,
 
   // for (int i = 0; i < 3; ++i) {
   solved = planner->ob::Planner::solve(options_ompl_sst.timelimit);
+
+  // solved = planner->ob::Planner::solve(
+  //     [&] {
+  //       if (get_time_stamp_ms() > options_ompl_sst.timelimit * 1000.0) {
+  //         std::cout << "Stop SST*: time limit reached" << std::endl;
+  //         return true;
+  //       }
+  //       if (num_solutions > options_ompl_sst.max_solutions) {
+  //         std::cout << "Stop SST*: Max solutions" << std::endl;
+  //         return true;
+  //       } else
+  //         return false;
+  //     },
+  //     -1);
+
   CSTR_(solved);
 
   {
     Trajectory traj_sst;
     std::vector<ompl::base::PlannerSolution> solutions = pdef->getSolutions();
     CSTR_(solutions.size());
-    CHECK_EQ(solutions.size(), 1, AT);
-    ompl::base::PlannerSolution sol = solutions.front();
-    auto sol_control = sol.path_->as<ompl::control::PathControl>();
-    std::vector<ob::State *> states = sol_control->getStates();
-    sol_control->print(std::cout);
-    sol_control->interpolate();
-    sol_control->print(std::cout);
+    if (solutions.size()) {
+      // TODO : why I am doint this here? Clean the code!!
+      ompl::base::PlannerSolution sol = solutions.front();
+      auto sol_control = sol.path_->as<ompl::control::PathControl>();
+      std::vector<ob::State *> states = sol_control->getStates();
+      sol_control->print(std::cout);
+      sol_control->interpolate();
+      sol_control->print(std::cout);
 
-    Eigen::VectorXd x;
-    for (size_t i = 0; i < sol_control->getStateCount(); ++i) {
-      const auto state = sol_control->getState(i);
-      state_to_eigen(x, si, state);
-      traj_sst.states.push_back(x);
-    }
+      Eigen::VectorXd x;
+      for (size_t i = 0; i < sol_control->getStateCount(); ++i) {
+        const auto state = sol_control->getState(i);
+        state_to_eigen(x, si, state);
+        traj_sst.states.push_back(x);
+      }
 
-    Eigen::VectorXd u;
-    for (size_t i = 0; i < sol_control->getControlCount(); ++i) {
-      const auto action = sol_control->getControl(i);
-      control_to_eigen(u, si, action);
-      traj_sst.actions.push_back(u);
-    }
+      Eigen::VectorXd u;
+      for (size_t i = 0; i < sol_control->getControlCount(); ++i) {
+        const auto action = sol_control->getControl(i);
+        control_to_eigen(u, si, action);
+        traj_sst.actions.push_back(u);
+      }
 
-    traj_sst.check(robot->diff_model);
+      traj_sst.check(robot->diff_model);
 
-    {
-      std::ofstream out("debug_sst_traj.yaml");
-      traj_sst.to_yaml_format(out);
+      {
+        std::ofstream out("debug_sst_traj.yaml");
+        traj_sst.to_yaml_format(out);
+      }
     }
   }
 
