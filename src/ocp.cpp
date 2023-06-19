@@ -1355,7 +1355,8 @@ void __trajectory_optimization(const Problem &problem,
           xs_init, us_init, model_robot, problem,
           (folder_tmptraj + "init_guess_issue_quat.yaml").c_str());
 
-      ERROR_WITH_INFO("quad3d I should flip the goal state");
+      WARN_WITH_INFO("quad3d -- I flip the quaternion of the goal state");
+      goal.segment<4>(3) *= -1.;
     }
   }
 

@@ -1,8 +1,8 @@
 # distance_weights: [1. , .5, .2, .2 ]
-distance_weights: [1., .4, .1, .05]
+distance_weights: [1., .5, .1, .05]
 max_vel: 4
 max_angular_vel: 8
-max_acc: 25 # used for bounds on time
+ax_acc: 25 # used for bounds on time
 max_angular_acc: 20 # used for bounds on time
 motor_control: false # True = controls are forces in the motors (False is NOT implemented)
 m: 1.
@@ -12,4 +12,5 @@ J_v: [1., 1., 1.] # inertia matrix
 u_lb: [0.0, -2., -2., -2.] # 1 -> 20 rad / s^2
 u_ub: [1.5, 2., 2., 2.]
 dt: .01
+size: [.25]
 dynamics: quad3d

@@ -101,7 +101,7 @@ class Robot():
         self.o1.set_transform(t + self.ax.transData)
 
         p = .2 * np.array([np.cos(angle + np.pi / 2),
-                          np.sin(angle + np.pi / 2)])
+                           np.sin(angle + np.pi / 2)])
         self.o2.center = (p + center).tolist()
 
         p = compute_pole_pose(X, r)

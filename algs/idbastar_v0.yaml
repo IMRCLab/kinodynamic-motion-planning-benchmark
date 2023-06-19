@@ -106,7 +106,7 @@ quad3d_v0:
     max_iter: 200
     weight_goal: 300
     smooth_traj: true
-    solver_id: 0
+    solver_id: 0 # TODO: check with solver=1
     motionsFile: ../cloud/motionsV2/good/quad3d_v0/quad3d_v0_all3.bin.im.bin.sp1.bin.ca.bin
     delta_0: .8
     num_primitives_0: 5000
@@ -115,6 +115,34 @@ quad3d_v0:
     use_collision_shape: false
     limit_branching_factor: 30
   recovery_with_obs:
+    weight_goal: 100
+    delta_0: .7
+  quad_one_obs:
+    num_primitives_0: 3000
+
+quad3d_omplapp:
+  # TODO: try to come up with parameters that work for all!!
+  # TODO: I think that for the scheduling of delta and the number of  primitives
+  # I need something more intelligent? (e.g. no reduce delta if I exit with empty queue!!!)
+  default:
+    search_timelimit: 60000
+    max_iter: 200
+    weight_goal: 300
+    smooth_traj: true
+    solver_id: 0
+    # motionsFile: ../cloud/motionsV2/good/quad3d_omplapp/quad3dompl_all.bin.sp.bin.ca.bin
+    motionsFile: ../cloud/motionsV2/good/quad3d_omplapp/quad3dompl_all.bin.im.bin.sp1.bin.ca.bin
+    delta_0: .8
+    num_primitives_0: 5000
+    max_motions_primitives: 50000
+    new_invariance: true
+    use_collision_shape: false
+    limit_branching_factor: 30
+  window:
+    num_primitives_0: 2000
+    limit_branching_factor: 15
+  recovery_with_obs:
+    num_primitives_0: 8000
     weight_goal: 100
     delta_0: .7
   quad_one_obs:

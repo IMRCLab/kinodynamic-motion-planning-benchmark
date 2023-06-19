@@ -575,7 +575,7 @@ def compare_search(
             for key in keys:
                 print(problem, alg, key)
                 val = float(df.loc[(df["problem"] == problem)
-                            & (df["alg"] == alg)][key].iloc[0])
+                                   & (df["alg"] == alg)][key].iloc[0])
                 is_bold = is_best(val, key, problem, algs)
 
                 if is_bold:
@@ -821,7 +821,7 @@ def compare_time(
             for key in keys:
                 print(guess, alg, key)
                 val = float(df.loc[(df["guess"] == guess)
-                            & (df["alg"] == alg)][key].iloc[0])
+                                   & (df["alg"] == alg)][key].iloc[0])
                 is_bold = is_best(val, key, guess, algs)
 
                 if is_bold:
@@ -880,7 +880,7 @@ def compare_time(
     # fig, ax = plt.subplots(2, 1, sharex=True)
 
     all_problems = set([data["problem"] + "+" + data["guess"]
-                       for data in reduced_data])
+                        for data in reduced_data])
 
     D = {}
 
@@ -2324,6 +2324,7 @@ def parse_for_component_analysis(files: List[str]):
         plt.show()
 
     print("done")
+
 
     # group by problem
     # should I use the latex output of pandas?

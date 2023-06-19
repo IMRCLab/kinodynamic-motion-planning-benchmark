@@ -34,7 +34,7 @@ class Robot():
             np.array([np.cos(3 * np.pi / 2 + q1), np.sin(3 * np.pi / 2 + q1)])
         p2 = p1 + self.l2 * \
             np.array([np.cos(3 * np.pi / 2 + q1 + q2),
-                     np.sin(3 * np.pi / 2 + q1 + q2)])
+                      np.sin(3 * np.pi / 2 + q1 + q2)])
         return p1, p2
 
     def get_centers(self, x):
@@ -46,7 +46,7 @@ class Robot():
             np.array([np.cos(3 * np.pi / 2 + q1), np.sin(3 * np.pi / 2 + q1)])
         c2 = pivot2 + self.lc2 * \
             np.array([np.cos(3 * np.pi / 2 + q1 + q2),
-                     np.sin(3 * np.pi / 2 + q1 + q2)])
+                      np.sin(3 * np.pi / 2 + q1 + q2)])
         return c1, c2
 
     def draw(self, ax, x, **kwargs):
@@ -87,7 +87,7 @@ class Robot():
             np.array([np.cos(3 * np.pi / 2 + q1), np.sin(3 * np.pi / 2 + q1)])
         e2 = e1 + self.l2 * \
             np.array([np.cos(3 * np.pi / 2 + q1 + q2),
-                     np.sin(3 * np.pi / 2 + q1 + q2)])
+                      np.sin(3 * np.pi / 2 + q1 + q2)])
         return e1, e2
 
     def draw_basic(self, ax, x, **kwargs):
