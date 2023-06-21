@@ -2018,6 +2018,13 @@ void __trajectory_optimization(const Problem &problem,
         std::string filename = folder_tmptraj + "opt_" + random_id + ".yaml";
         write_states_controls(ddp.get_xs(), ddp.get_us(), model_robot, problem,
                               filename.c_str());
+
+        std::string filename_raw =
+            folder_tmptraj + "opt_" + random_id + ".raw.yaml";
+        Trajectory traj;
+        traj.states = ddp.get_xs();
+        traj.actions = ddp.get_us();
+        traj.to_yaml_format(filename_raw.c_str());
       }
 
       double time_i = timer.get_duration();

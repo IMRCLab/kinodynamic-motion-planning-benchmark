@@ -250,6 +250,8 @@ struct Info_out {
                      const std::string &af = ": ") const;
   void virtual to_yaml(std::ostream &out, const std::string &be = "",
                        const std::string &af = ": ") const;
+
+  void virtual print_trajs(const char *path);
 };
 
 void load_env_quim(Model_robot &robot, const Problem &problem);

@@ -140,6 +140,33 @@ protected:
   double stddev_;
 };
 
+class ControlSamplerV : public oc::ControlSampler {
+public:
+  ControlSamplerV(const oc::ControlSpace *space, const Eigen::VectorXd &mean,
+                  const Eigen::VectorXd &std)
+      : oc::ControlSampler(space), mean(mean), std(std) {}
+
+  void sample(oc::Control *control) override {
+    const unsigned int dim = space_->getDimension();
+
+    const ob::RealVectorBounds &bounds =
+        static_cast<const oc::RealVectorControlSpace *>(space_)->getBounds();
+
+    auto *rcontrol =
+        static_cast<oc::RealVectorControlSpace::ControlType *>(control);
+    for (unsigned int i = 0; i < dim; ++i) {
+      // rcontrol->values[i] = rng_.uniformReal(bounds.low[i],
+      // bounds.high[i]);
+      rcontrol->values[i] =
+          clamp(rng_.gaussian(mean(i), std(i)), bounds.low[i], bounds.high[i]);
+    }
+  }
+
+protected:
+  Eigen::VectorXd mean;
+  Eigen::VectorXd std;
+};
+
 class ControlSampler : public oc::ControlSampler {
 public:
   ControlSampler(const oc::ControlSpace *space, double mean, double stddev)
@@ -1241,10 +1268,19 @@ public:
 
     si_ = std::make_shared<oc::SpaceInformation>(space, cspace);
 
-    cspace->setControlSamplerAllocator([](const oc::ControlSpace *space) {
-      return std::make_shared<ControlSampler>(
-          space, 1.0, 0.05); // why not uniform in bounds?
-    });
+    // cspace->setControlSamplerAllocator([](const oc::ControlSpace *space) {
+    //   return std::make_shared<ControlSampler>(
+    //       space, 1.0, 0.05); // why not uniform in bounds?
+    // });
+  }
+
+  virtual void setCustomStateSampling() override {
+
+    si_->getControlSpace()->setControlSamplerAllocator(
+        [](const oc::ControlSpace *space) {
+          return std::make_shared<ControlSampler>(
+              space, 1.1, 0.2); // why not uniform in bounds?
+        });
   }
 
   virtual void toEigen(const ompl::base::State *x_ompl,
@@ -1514,16 +1550,19 @@ public:
     space->setAngularVelocityBounds(w_bounds);
 
     si_ = std::make_shared<oc::SpaceInformation>(space, cspace);
+  }
 
-    cspace->setControlSamplerAllocator([](const oc::ControlSpace *space) {
-      return std::make_shared<ControlSampler>(
-          space, 1.0, 0.05); // why not uniform in bounds?
-    });
+  virtual void setCustomStateSampling() override {
+
+    si_->getControlSpace()->setControlSamplerAllocator(
+        [](const oc::ControlSpace *space) {
+          return std::make_shared<ControlSampler>(
+              space, 1.0, 0.2); // why not uniform in bounds?
+        });
   }
 
   virtual void toEigen(const ompl::base::State *x_ompl,
                        Eigen::Ref<Eigen::VectorXd> x_eigen) override {
-
     assert(x_eigen.size() == 6);
     auto startTyped = x_ompl->as<StateSpace::StateType>();
     x_eigen(0) = startTyped->getX();
@@ -1536,7 +1575,6 @@ public:
 
   virtual void toEigenU(const ompl::control::Control *control,
                         Eigen::Ref<Eigen::VectorXd> u_eigen) override {
-
     assert(u_eigen.size() == 2);
     const double *ctrl =
         control->as<ompl::control::RealVectorControlSpace::ControlType>()
@@ -1548,7 +1586,6 @@ public:
   virtual void
   fromEigen(ompl::base::State *x_ompl,
             const Eigen::Ref<const Eigen::VectorXd> &x_eigen) override {
-
     assert(x_eigen.size() == 6);
     auto x_typed = x_ompl->as<StateSpace::StateType>();
 
@@ -2318,8 +2355,6 @@ public:
     }
     cspace->setBounds(cbounds);
     si_ = std::make_shared<oc::SpaceInformation>(space, cspace);
-
-    // TODO: what about the bounds on the trailer?
   }
 
   virtual size_t numParts() override { return hitch_lengths_.size() + 1; }
@@ -2569,11 +2604,11 @@ public:
     //       space, 1., 0.01); // why not uniform in bounds?
     // });
 
-    cspace->setControlSamplerAllocator(
-        [t_model](const oc::ControlSpace *space) {
-          return std::make_shared<ControlSamplerMixer>(
-              t_model, space, 1., 0.01); // why not uniform in bounds?
-        });
+    // cspace->setControlSamplerAllocator(
+    //     [t_model](const oc::ControlSpace *space) {
+    //       return std::make_shared<ControlSamplerMixer>(
+    //           t_model, space, 1., 0.01); // why not uniform in bounds?
+    //     });
 
     ob::RealVectorBounds cbounds(4);
     cbounds.setLow(0);
@@ -2592,6 +2627,32 @@ public:
 
     // construct an instance of  space information from this control space
     si_ = std::make_shared<oc::SpaceInformation>(space, cspace);
+  }
+
+  virtual void setCustomStateSampling() override {
+
+    // check if it is force control or no.
+
+    auto p_derived = std::dynamic_pointer_cast<Model_quad3d>(diff_model);
+
+    if (p_derived) {
+      if (p_derived->params.motor_control) {
+        si_->getControlSpace()->setControlSamplerAllocator(
+            [](const oc::ControlSpace *space) {
+              return std::make_shared<ControlSampler>(space, 1.0, 0.01);
+            });
+      } else {
+        si_->getControlSpace()->setControlSamplerAllocator(
+            [](const oc::ControlSpace *space) {
+              using v4 = Eigen::Vector4d;
+              return std::make_shared<ControlSamplerV>(
+                  space, v4(1.0, 0, 0, 0), v4(.2, 0.05, 0.05, 0.05));
+            });
+      }
+    } else {
+
+      ERROR_WITH_INFO("why not quad3d model?");
+    }
   }
 
   virtual void toEigen(const ompl::base::State *x_ompl,

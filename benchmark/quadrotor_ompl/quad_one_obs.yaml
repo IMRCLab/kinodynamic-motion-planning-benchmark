@@ -1,0 +1,39 @@
+environment:
+  min: [0, 0, 0]
+  max: [6, 6, 6]
+  obstacles:
+    - type: box
+      center: [3, 3, 3]
+      size: [3, 3, 2]
+robots:
+  - type: quad3d_omplapp
+    start: [
+        1.,
+        1.,
+        3., #p
+        0,
+        0,
+        0,
+        1, #quat
+        0,
+        0,
+        0, #vel
+        0,
+        0,
+        0, #ang vel
+      ]
+    goal: [
+        5.,
+        5.,
+        3., #p
+        0,
+        0,
+        0,
+        1, # quat
+        0,
+        0,
+        0, # vel
+        0,
+        0,
+        0, #ang vel
+      ]

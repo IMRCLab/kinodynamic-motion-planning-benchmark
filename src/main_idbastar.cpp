@@ -100,16 +100,7 @@ int main(int argc, char *argv[]) {
   write_results_idbastar(results_file.c_str(), options_idbastar,
                          options_dbastar, options_trajopt, info_out_idbastar);
 
-  for (size_t i = 0; i < info_out_idbastar.trajs_opt.size(); i++) {
-    std::string file = results_file + ".trajopt-" + std::to_string(i) + ".yaml";
-    std::ofstream out(file);
-    info_out_idbastar.trajs_opt.at(i).to_yaml_format(out);
-  }
-  for (size_t i = 0; i < info_out_idbastar.trajs_raw.size(); i++) {
-    std::string file = results_file + ".trajraw-" + std::to_string(i) + ".yaml";
-    std::ofstream out(file);
-    info_out_idbastar.trajs_raw.at(i).to_yaml_format(out);
-  }
+  info_out_idbastar.print_trajs(results_file.c_str());
 
   if (traj_out.states.size() && traj_out.actions.size()) {
     std::string file = results_file + ".traj-sol.yaml";

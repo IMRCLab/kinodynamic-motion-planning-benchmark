@@ -480,6 +480,22 @@ void Info_out::print(std::ostream &out, const std::string &be,
   STRY(cost, out, be, af);
 }
 
+void Info_out::print_trajs(const char *path) {
+
+  for (size_t i = 0; i < trajs_opt.size(); i++) {
+    std::string file =
+        path + std::string(".trajopt-") + std::to_string(i) + ".yaml";
+    std::ofstream out(file);
+    trajs_opt.at(i).to_yaml_format(out);
+  }
+  for (size_t i = 0; i < trajs_raw.size(); i++) {
+    std::string file =
+        path + std::string(".trajraw-") + std::to_string(i) + ".yaml";
+    std::ofstream out(file);
+    trajs_raw.at(i).to_yaml_format(out);
+  }
+}
+
 void Info_out::to_yaml(std::ostream &out, const std::string &be,
                        const std::string &af) const {
 

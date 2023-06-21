@@ -20,6 +20,7 @@ import shutil
 
 print_lock = multiprocessing.Lock()
 
+unsolved_num = 999
 all_problems = [
     "unicycle_first_order_0/parallelpark_0",
     "unicycle_first_order_0/bugtrap_0",
@@ -44,6 +45,56 @@ all_problems = [
     "car_first_order_with_1_trailers_0/easy_0"]
 
 
+benchmark_problems = [
+    # "unicycle_first_order_0/parallelpark_0",
+    "unicycle_first_order_0/bugtrap_0",
+    "unicycle_first_order_0/kink_0",
+    # "unicycle_first_order_1/kink_0",
+    "unicycle_first_order_2/wall_0",
+    # "unicycle_second_order_0/kink_0",
+    "unicycle_second_order_0/parallelpark_0",
+    "unicycle_second_order_0/bugtrap_0",
+    "car_first_order_with_1_trailers_0/kink_0",
+    # "car_first_order_with_1_trailers_0/bugtrap_0",
+    # "car_first_order_with_1_trailers_0/parallelpark_0",
+    # "quad2d/empty_0",
+    # "quad2d/empty_1",
+    # "quad2d/quad_obs_column",
+    "quad2d/quad_bugtrap",
+    # "quad2d/quad2d_recovery_wo_obs",
+    "quad2d/quad2d_recovery_obs",
+    # "quad2d/fall_through",
+    # "quad2dpole/move_with_down",
+    # "quad2dpole/move_with_up",
+    # "quad2dpole/up",
+    # "quad2dpole/down",
+    "quad2dpole/up_obs",
+    # "quad2dpole/window_easy",
+    # "quad2dpole/window",
+    "quad2dpole/window_hard",
+    "acrobot/swing_up_empty",
+    # "acrobot/swing_up_obs",
+    "acrobot/swing_up_obs_hard",
+    # "acrobot/swing_down_easy",
+    # "acrobot/swing_down",
+    #
+    # #  QUADROTOR_0
+    # "quadrotor_0/empty_0_easy",
+    # "quadrotor_0/empty_1_easy",
+    # "quadrotor_0/window",
+    "quadrotor_0/recovery",
+    "quadrotor_0/recovery_with_obs",
+    # "quadrotor_0/quad_one_obs",
+    # # quadrotor_ompl
+    # "quadrotor_ompl/empty_0_easy",
+    # "quadrotor_ompl/empty_1_easy",
+    "quadrotor_ompl/window",
+    # "quadrotor_ompl/recovery",
+    # "quadrotor_ompl/quad_one_obs",
+    # "quadrotor_ompl/recovery_with_obs"
+]
+
+
 parser = argparse.ArgumentParser()
 parser.add_argument("-m", "--mode")
 parser.add_argument("-bc", "--bench_cfg")
@@ -59,7 +110,7 @@ bench_cfg = args.bench_cfg
 file_in = args.file_in
 dynamics = args.dynamics
 
-MAX_TIME_PLOTS = 40
+MAX_TIME_PLOTS = 120
 
 
 do_compare = False
@@ -420,6 +471,19 @@ class Experiment():
     def __str__(self):
         return f"path:{self.path}\n problem:{self.problem}\n alg:{self.alg}\n guess:{self.guess}"
 
+    def to_dict(self):
+        return {
+            "path": self.path,
+            "problem": self.problem,
+            "alg": self.alg,
+            "guess": self.guess}
+
+    def from_dict(self, D):
+        self.path = D["path"]
+        self.problem = D["problem"]
+        self.alg = D["alg"]
+        self.guess = D["guess"]
+
 
 redirect_output = True
 
@@ -546,6 +610,7 @@ def compare_search(
     # all_problems = set([data["problem"] for data in reduced_data])
     df = pandas.DataFrame.from_dict(reduced_data)
     problems = df["problem"].unique().tolist()
+    problems = sorted(list(problems))
 
     algs = ["dbastar_v0_heu0", "dbastar_v0_heu1", "dbastar_v0_heuNO"]
     keys = ["expands_mean", "time_search_mean"]
@@ -1081,6 +1146,15 @@ def benchmark_search(bench_cfg: str):
     print("Pool is DONE")
 
     fileouts = []
+
+    experiments_outs = [e.to_dict() for e in experiments]
+    id = str(uuid.uuid4())[:7]
+    filename_experimentes_out = f"/tmp/dbastar/experimentes_info_{id}.yaml"
+    pathlib.Path(filename_experimentes_out).parent.mkdir(
+        parents=True, exist_ok=True)
+    with open(filename_experimentes_out, "w") as f:
+        yaml.dump(experiments_outs, f)
+
     for experiment in experiments:
         print(f"experiment: {experiment}")
         fileout, _ = analyze_search(
@@ -1172,6 +1246,15 @@ def benchmark_opti(bench_cfg: str):
     print("Pool is DONE")
 
     fileouts = []
+
+    experiments_outs = [e.to_dict() for e in experiments]
+    id = str(uuid.uuid4())[:7]
+    filename_experimentes_out = f"/tmp/dbastar/experimentes_info_{id}.yaml"
+    pathlib.Path(filename_experimentes_out).parent.mkdir(
+        parents=True, exist_ok=True)
+    with open(filename_experimentes_out, "w") as f:
+        yaml.dump(experiments_outs, f)
+
     for experiment in experiments:
         print(f"experiment: {experiment}")
         fileout, _ = analyze_runs_time(
@@ -1240,6 +1323,15 @@ def benchmark(bench_cfg: str):
     print("Pool is DONE")
 
     fileouts = []
+
+    experiments_outs = [e.to_dict() for e in experiments]
+    id = str(uuid.uuid4())[:7]
+    filename_experimentes_out = f"/tmp/dbastar/experimentes_info_{id}.yaml"
+    pathlib.Path(filename_experimentes_out).parent.mkdir(
+        parents=True, exist_ok=True)
+    with open(filename_experimentes_out, "w") as f:
+        yaml.dump(experiments_outs, f)
+
     for experiment in experiments:
         print("experiment")
         print(experiment)
@@ -1270,7 +1362,21 @@ def compare(
         with open(file, 'r') as f:
             data = yaml.safe_load(f)
             datas.append(data)
-    print("datas\n", datas)
+    # print("datas\n", datas)
+    print(len(datas))
+    print(datas[0])
+
+    use_only_some_algs = True
+
+    selected_algs = ["idbastar_v0", "sst_tmp", "geo_v1"]
+    if use_only_some_algs:
+        print("WARNING: using only some algs!")
+        print("selected_algs")
+        print(selected_algs)
+        datas = [d for d in datas if d["alg"] in selected_algs]
+
+    print(len(datas))
+    sys.exit(0)
 
     # print("artificially adding the problem...")
     # for data in datas:
@@ -1298,6 +1404,7 @@ def compare(
         dd = {}
         for field in fields:
             dd[field] = d[field]
+
         reduced_data.append(dd)
 
     # save as csv file
@@ -1342,6 +1449,7 @@ def compare(
         print(myFile.read())
 
     all_problems = set([data["problem"] for data in reduced_data])
+    all_problems = sorted(list(all_problems))
 
     for problem in all_problems:
         print(f"problem {problem}")
@@ -1477,7 +1585,6 @@ def get_cost_evolution(ax, file: str, **kwargs):
 
     if len(time_cost_pairs) == 0:
         print("there is not solution...")
-        unsolved_num = 100
         time_cost_pairs.append([unsolved_num, unsolved_num])
 
     # plot
@@ -1497,9 +1604,11 @@ def get_av_cost(all_costs_np) -> Tuple[np.ndarray, np.ndarray]:
     # more complex.
     # wait until half of them are solved
 
-    print("all_costs_np")
-    print(all_costs_np)
-
+    # print("all_costs_np")
+    # print(all_costs_np)
+    #
+    # if (all_costs_np.size() == 0):
+    #
     num_instances = all_costs_np.shape[0]
     mean = []
     std = []
@@ -1693,25 +1802,35 @@ def analyze_runs(path_to_dir: str,
     first_solution = []
     raw_data = []
 
-    for file in [str(f) for f in files]:
-        time_cost_pairs = get_cost_evolution(ax[0], file, **kwargs)
-        raw_data.append(time_cost_pairs)
-        first_solution.append(time_cost_pairs[0][0])
-        t = [x[0] for x in time_cost_pairs]
-        c = [x[1] for x in time_cost_pairs]
+    if len(files) == 0:
+        print("WARNING: there are no files")
+        # mean = np.array( (int(T / dt) + 1) * [ np.nan] )
+        # std = np.array( (int(T / dt) + 1) * [ np.nan] )
+        all_costs_np = np.array([(int(T / dt) + 1) * [np.nan]])
 
-        t.insert(0, 0)
-        c.insert(0, np.nan)
+    else:
+        for file in [str(f) for f in files]:
+            time_cost_pairs = get_cost_evolution(ax[0], file, **kwargs)
+            raw_data.append(time_cost_pairs)
+            first_solution.append(time_cost_pairs[0][0])
+            t = [x[0] for x in time_cost_pairs]
+            c = [x[1] for x in time_cost_pairs]
 
-        t.append(T)
-        c.append(c[-1])
+            t.insert(0, 0)
+            c.insert(0, np.nan)
 
-        cost_times = np.interp(times, t, c)
-        print(cost_times)
-        all_costs.append(cost_times)
+            t.append(T)
+            c.append(c[-1])
 
-    all_costs_np = np.array(all_costs)
+            cost_times = np.interp(times, t, c)
+            print(cost_times)
+            all_costs.append(cost_times)
 
+        all_costs_np = np.array(all_costs)
+    print("all_costs_np")
+    print(all_costs_np)
+    print(all_costs_np.shape)
+    print(all_costs_np[0])
     mean, std = get_av_cost(all_costs_np)
 
     # // nan nan 1
@@ -1743,7 +1862,7 @@ def analyze_runs(path_to_dir: str,
 
     success = np.count_nonzero(
         ~np.isnan(all_costs_np),
-        axis=0) / len(files) * 100
+        axis=0) / all_costs_np.shape[0] * 100
 
     ax[0].plot(times, mean, color='blue')
     ax[0].fill_between(
@@ -1957,19 +2076,26 @@ def fancy_table(filenames: List[str]):
 
     data = []
 
-    algs = ["idbastar_v0", "sst_v0", "geo_v1"]
+    algs = ["idbastar_v0", "sst_tmp", "geo_v1"]
+    # algs = ["sst_v0", "sst_tmp", "geo_v1"]
+    # algs = ["sst_v0", "sst_tmp", "geo_v1"]
     fields = ["cost_first_solution", "last_cost", "time_first_solution"]
 
-    def get_column_name(alg: str, field: str):
-        token1 = ""
+    def alg_short(alg: str) -> str:
         if alg == "idbastar_v0":
             token1 = "i"
         elif alg == "sst_v0":
             token1 = "s"
         elif alg == "geo_v1":
             token1 = "g"
+        elif alg == "sst_tmp":
+            token1 = "st"
         else:
             raise KeyError(alg)
+        return token1
+
+    def get_column_name(alg: str, field: str):
+        token1 = alg_short(alg)
         token2 = ""
         if field == "cost_first_solution":
             token2 = "cf"
@@ -1990,6 +2116,18 @@ def fancy_table(filenames: List[str]):
     #     "unicycle_second_order_0/parallelpark_0"]
 
     problems = df.problem.unique()
+
+    problems = sorted(list(problems))
+
+    only_chosen = True
+
+    if only_chosen:
+        print("Warning: only chose problems!!")
+
+        problems = sorted(
+            list(
+                set(problems).intersection(
+                    set(benchmark_problems))))
 
     all_df = pandas.DataFrame()
 
@@ -2016,8 +2154,7 @@ def fancy_table(filenames: List[str]):
 
     print("changing all -1 to 99...")
 
-    all_df = all_df.replace(-1, 99)
-    # all_df.replace(-1., 99.)
+    all_df = all_df.replace(-1, unsolved_num)
 
     all_df.to_csv("tmp.csv")
     # now i could just export as table!!
@@ -2027,9 +2164,9 @@ def fancy_table(filenames: List[str]):
 
     lines = str_.splitlines()
 
-    algs = r"&  \multicolumn{3}{c}{idba*} & \multicolumn{3}{c}{sst} & \multicolumn{3}{c}{geo}\\"
+    algs_line = r"&  \multicolumn{3}{c}{idba*} & \multicolumn{3}{c}{sst} & \multicolumn{3}{c}{geo}\\"
     mid_rules = r"\cmidrule(lr){2-4}\cmidrule(lr){5-7}\cmidrule(lr){8-10}"
-    lines.insert(2, algs)
+    lines.insert(2, algs_line)
     lines.insert(3, mid_rules)
 
     now = datetime.now()  # current date and time
@@ -2048,7 +2185,10 @@ def fancy_table(filenames: List[str]):
 
     #
     line = []
-    _algs = ["i", "s", "g"]
+    # _algs = ["i", "s", "g"]
+
+    _algs = [alg_short(alg) for alg in algs]
+
     _metrics = ["cf", "lc", "tf"]
 
     def is_best(val: float, metric: str, problem: str, _algs: List[str]):
@@ -2079,23 +2219,27 @@ def fancy_table(filenames: List[str]):
     print(custom_lines)
 
     header = [
-        r"\begin{tabular}{lrrrrrrrrr}", r"\toprule",
-        r"&  \multicolumn{3}{c}{idba*} & \multicolumn{3}{c}{sst} & \multicolumn{3}{c}{geo}\\",
+        r"\begin{tabular}{lrrrrrrrrr}",
+        r"\toprule",
+        r"&  \multicolumn{3}{c}{idba*} & \multicolumn{3}{c}{sst*} & \multicolumn{3}{c}{geo}\\",
         r"\cmidrule(lr){2-4}\cmidrule(lr){5-7}\cmidrule(lr){8-10}",
-        r"& icf & ilc & itf & scf & slc & stf & gcf & glc & gtf \\",
+        r"& cf & cl & tf & cf & cl & tf & cf & cl & tf \\",
         r"\midrule"]
 
     footer = [r"\bottomrule", r"\end{tabular}"]
 
-    with open("tt_new.tex", "w") as f:
+    fileout_nice = fileout + ".nice.tex"
+    print("writing:", fileout_nice)
+    with open(fileout_nice, "w") as f:
         for h in header:
             f.write(h)
             f.write('\n')
         for cl in custom_lines:
             print("cl ", cl)
             _str = format_latex_str(' & '.join(cl))
-            _str = _str.replace("99.0", "-")
-            _str = _str.replace("40.1", "-")
+            _str = _str.replace("999.0", "-")
+            # _str = _str.replace("40.1", "-")
+            _str = _str.replace("120.1", "-")
             f.write(_str)
 
             f.write(r'\\')
@@ -2121,8 +2265,7 @@ def fancy_table(filenames: List[str]):
 
   # close new table
 
-    print("saving", fileout)
-
+    print("writing:", fileout)
     with open(fileout, "w") as f:
         f.write('\n'.join(lines))
 
@@ -2133,7 +2276,7 @@ def fancy_table(filenames: List[str]):
         D = {
             "input": filenames,
             "output": fileout,
-            "problems": problems.tolist(),
+            "problems": problems,
 
             "date": date_time, "hostname": os.uname()[1]}
 
@@ -2325,10 +2468,65 @@ def parse_for_component_analysis(files: List[str]):
 
     print("done")
 
-
     # group by problem
     # should I use the latex output of pandas?
 if __name__ == "__main__":
+
+    if True:
+
+        # file = "../bench_logs/server_idbastar_lunch_compare.yaml"
+        #
+        # # file = "../bench_logs/server_idbastar_short_compare.yaml"
+        # with open(file, "r") as f:
+        #     d = yaml.safe_load(f)
+        # data = d["data"]
+        # compare(data)
+        # sys.exit(0)
+
+        files = [
+            "../bench_logs/server_tt_compare.yaml",
+            "../bench_logs/server_geo_compare.yaml",
+            "../bench_logs/server_idbastar_lunch_compare.yaml"]
+
+        data = []
+        for fi in files:
+            with open(fi, "r") as f:
+                d = yaml.safe_load(f)
+            _data = d["data"]
+            data += _data
+
+        def check(d):
+            algs = ["idbastar_v0", "sst_tmp", "geo_v1"]
+
+            for a in algs:
+                if a in d:
+                    return True
+            return False
+
+        print(len(data))
+        data = [d for d in data if check(d)]
+        print(len(data))
+        compare(data)
+        sys.exit(0)
+
+    #
+    #
+    # results_new/plots/plot_2023-06-20--18-32-25.pdf.log"
+
+    # file = "../results_new/plots/plot_2023-06-20--18-32-25.pdf.log"
+    #
+    #
+    # with open(file,"r") as f:
+    #     d = yaml.safe_load(f)
+    #
+    # input = d["input"]
+    #
+    #
+    # input = [ ii for ii in input if "window" in ii ]
+    #
+    # compare(input)
+    #
+    # sys.exit(0)
 
     # path_to_dir="../results_new/unicycle_second_order_0/parallelpark_0/sst_v1/2023-06-14--14-17-18"
     # problem="unicycle_second_order_0/parallelpark_0"
@@ -2403,15 +2601,18 @@ if __name__ == "__main__":
 
     if do_fancy_table:
 
-        files = [
-            "/home/quim/stg/wolfgang/kinodynamic-motion-planning-benchmark/results_new/summary/summary_2023-05-10--15-18-08.csv",
-            "/home/quim/stg/wolfgang/kinodynamic-motion-planning-benchmark/results_new/summary/summary_2023-05-10--15-41-42.csv",
-            "/home/quim/stg/wolfgang/kinodynamic-motion-planning-benchmark/results_new/summary/summary_2023-05-10--15-56-06.csv",
-            "/home/quim/stg/wolfgang/kinodynamic-motion-planning-benchmark/results_new/summary/summary_2023-05-11--07-50-08.csv",
-            "/home/quim/stg/wolfgang/kinodynamic-motion-planning-benchmark/results_new/summary/summary_2023-05-11--12-02-25.csv",
-            "/home/quim/stg/wolfgang/kinodynamic-motion-planning-benchmark/results_new/summary/summary_2023-05-11--15-06-40.csv",
-            "/home/quim/stg/wolfgang/kinodynamic-motion-planning-benchmark/results_new/summary/summary_2023-05-11--17-34-33.csv",
-        ]
+        # files = [
+        #     "/home/quim/stg/wolfgang/kinodynamic-motion-planning-benchmark/results_new/summary/summary_2023-05-10--15-18-08.csv",
+        #     "/home/quim/stg/wolfgang/kinodynamic-motion-planning-benchmark/results_new/summary/summary_2023-05-10--15-41-42.csv",
+        #     "/home/quim/stg/wolfgang/kinodynamic-motion-planning-benchmark/results_new/summary/summary_2023-05-10--15-56-06.csv",
+        #     "/home/quim/stg/wolfgang/kinodynamic-motion-planning-benchmark/results_new/summary/summary_2023-05-11--07-50-08.csv",
+        #     "/home/quim/stg/wolfgang/kinodynamic-motion-planning-benchmark/results_new/summary/summary_2023-05-11--12-02-25.csv",
+        #     "/home/quim/stg/wolfgang/kinodynamic-motion-planning-benchmark/results_new/summary/summary_2023-05-11--15-06-40.csv",
+        #     "/home/quim/stg/wolfgang/kinodynamic-motion-planning-benchmark/results_new/summary/summary_2023-05-11--17-34-33.csv",
+        # ]
+
+        files = ["../results_new/summary/summary_2023-06-21--11-24-51.csv",
+                 "../results_new/summary/summary_2023-06-21--13-56-25.csv"]
 
         fancy_table(files)
         sys.exit(0)

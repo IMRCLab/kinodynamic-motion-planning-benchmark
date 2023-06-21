@@ -207,18 +207,22 @@ void solve_ompl_geometric(const Problem &problem,
   // terminate if no better solution is found within the timelimit
   // WHY?
 
-  solved = planner->solve(
-      ob::PlannerTerminationCondition([&previous_solution, &has_solution] {
-        if (!has_solution) {
-          return false;
-        }
-        auto now = std::chrono::steady_clock::now();
-        double dt = std::chrono::duration_cast<std::chrono::milliseconds>(
-                        now - previous_solution)
-                        .count() /
-                    1000.0f;
-        return dt > 1.0;
-      }));
+  solved = planner->solve(ob::PlannerTerminationCondition([&] {
+    if (get_time_stamp_ms() > options_geo.timelimit * 1000) {
+      WARN_WITH_INFO("time limit reached");
+      return true;
+    }
+
+    if (!has_solution) {
+      return false;
+    }
+    auto now = std::chrono::steady_clock::now();
+    double dt = std::chrono::duration_cast<std::chrono::milliseconds>(
+                    now - previous_solution)
+                    .count() /
+                1000.0f;
+    return dt > 1.0;
+  }));
   std::cout << solved << std::endl;
 
   // lets print all the paths

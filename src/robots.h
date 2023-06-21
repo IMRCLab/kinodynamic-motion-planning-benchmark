@@ -74,6 +74,8 @@ struct RobotOmpl {
   Eigen::VectorXd yy; // data
   Eigen::VectorXd uu; // data
 
+  virtual void setCustomStateSampling() { NOT_IMPLEMENTED; }
+
   virtual void geometric_interpolation(const ompl::base::State *from,
                                        const ompl::base::State *to, double t,
                                        ompl::base::State *out);

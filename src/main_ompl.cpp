@@ -22,6 +22,8 @@
 
 int main(int argc, char *argv[]) {
 
+  srand(time(0));
+
   Options_sst options_ompl_sst;
   Options_trajopt
       options_trajopt; // only use if we optimize to reach the goal exactly
@@ -66,13 +68,12 @@ int main(int argc, char *argv[]) {
 
   Problem problem(env_file.c_str());
   Trajectory traj_out;
-  Info_out info_out_omplgeo;
+  Info_out info_out;
 
-  solve_sst(problem, options_ompl_sst, options_trajopt, traj_out,
-            info_out_omplgeo);
+  solve_sst(problem, options_ompl_sst, options_trajopt, traj_out, info_out);
 
   std::cout << "solve_sst done" << std::endl;
-  info_out_omplgeo.print(std::cout);
+  info_out.print(std::cout);
 
   std::ofstream results(results_file);
 
@@ -85,5 +86,13 @@ int main(int argc, char *argv[]) {
   results << "options_trajopt:" << std::endl;
   options_trajopt.print(results, "  ");
 
-  info_out_omplgeo.to_yaml(results);
+  info_out.to_yaml(results);
+
+  info_out.print_trajs(results_file.c_str());
+
+  if (traj_out.states.size() && traj_out.actions.size()) {
+    std::string file = results_file + ".traj-sol.yaml";
+    std::ofstream out(file);
+    traj_out.to_yaml_format(out);
+  }
 }

@@ -228,6 +228,7 @@ struct Model_robot {
 
   Eigen::VectorXd x_ub;
   Eigen::VectorXd x_lb;
+  bool uniform_sampling_u = true;
 
   // TODO: transition towards this API. The robot model should include
   // regularization features/ineqs...

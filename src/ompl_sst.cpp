@@ -31,9 +31,17 @@ void solve_sst(const Problem &problem, const Options_sst &options_ompl_sst,
                const Options_trajopt &options_trajopt, Trajectory &traj_out,
                Info_out &info_out_omplsst) {
 
+  std::string random_id = gen_random(6);
+
   auto robot = robot_factory_ompl(problem);
 
   auto si = robot->getSpaceInformation();
+
+  // modify the sampling if required
+
+  if (options_ompl_sst.custom_sampling) {
+    robot->setCustomStateSampling();
+  }
 
   si->setPropagationStepSize(options_ompl_sst.propagation_step_size);
   si->setMinMaxControlDuration(options_ompl_sst.min_control_duration,
@@ -137,7 +145,6 @@ void solve_sst(const Problem &problem, const Options_sst &options_ompl_sst,
           traj_sst.goal = goal_eigen;
           traj_sst.time_stamp = tt;
 
-          std::cout << "hello world 22 " << std::endl;
           const SST_public_interface *planner =
               dynamic_cast<const SST_public_interface *>(pp);
           auto states = planner->get_prevSolution_();
@@ -151,10 +158,6 @@ void solve_sst(const Problem &problem, const Options_sst &options_ompl_sst,
           path->append(states[0]);
 
           path->interpolate(); // normalize to a single control step
-                               //
-                               //
-                               //
-                               //
           Eigen::VectorXd x;
           for (size_t i = 0; i < path->getStateCount(); ++i) {
             const auto state = path->getState(i);
@@ -304,6 +307,14 @@ void solve_sst(const Problem &problem, const Options_sst &options_ompl_sst,
       ompl::base::PlannerSolution sol = solutions.front();
       auto sol_control = sol.path_->as<ompl::control::PathControl>();
       std::vector<ob::State *> states = sol_control->getStates();
+
+      //
+      std::cout << "last state is " << std::endl;
+      si->printState(states.back(), std::cout);
+
+      double distance_to_goal = si->distance(states.back(), goalState);
+      CSTR_(distance_to_goal);
+
       sol_control->print(std::cout);
       sol_control->interpolate();
       sol_control->print(std::cout);
@@ -325,7 +336,8 @@ void solve_sst(const Problem &problem, const Options_sst &options_ompl_sst,
       traj_sst.check(robot->diff_model);
 
       {
-        std::ofstream out("debug_sst_traj.yaml");
+        std::ofstream out("/tmp/dbastar/" + std::string("sst_approx_") +
+                          random_id + ".yaml");
         traj_sst.to_yaml_format(out);
       }
     }
@@ -337,7 +349,7 @@ void solve_sst(const Problem &problem, const Options_sst &options_ompl_sst,
 
   std::vector<Eigen::VectorXd> states;
   std::vector<std::vector<unsigned int>> edges;
-  CSTR_(data.numVertices());
+  // CSTR_(data.numVertices());
   for (size_t i = 0; i < data.numVertices(); i++) {
     auto vertex = data.getVertex(i);
     // std::cout << "tag " << vertex.getTag() << std::endl;
@@ -345,11 +357,11 @@ void solve_sst(const Problem &problem, const Options_sst &options_ompl_sst,
     // std::cout << std::endl;
 
     std::vector<unsigned int> edgeList;
-    std::cout << "vertex: " << i << std::endl;
+    // std::cout << "vertex: " << i << std::endl;
     data.getEdges(i, edgeList);
-    for (auto &e : edgeList) {
-      std::cout << "  edge: " << i << "-" << e << std::endl;
-    }
+    // for (auto &e : edgeList) {
+    //   std::cout << "  edge: " << i << "-" << e << std::endl;
+    // }
     edges.push_back(edgeList);
 
     Eigen::VectorXd x(robot->nx);
@@ -373,7 +385,9 @@ void solve_sst(const Problem &problem, const Options_sst &options_ompl_sst,
   // write down the states
 
   {
-    std::ofstream out("debug_sst.yaml");
+
+    std::ofstream out("/tmp/dbastar/" + std::string("sst_states_") + random_id +
+                      ".yaml");
     CHECK_EQ(states.size(), edges.size(), AT);
     for (size_t i = 0; i < states.size(); i++) {
       auto &state = states.at(i);

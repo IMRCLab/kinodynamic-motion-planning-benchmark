@@ -1,3 +1,5 @@
+reference: idbastar_v0
+
 default:
   solver_id: 1
   smooth_traj: true

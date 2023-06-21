@@ -27,6 +27,7 @@ struct Options_sst {
 
   std::string planner = "sst";
   int max_solutions = 10;
+  bool custom_sampling = false;
   double timelimit = 60; // seconds
   double goal_epsilon = .1;
   double goal_bias = .05;
@@ -39,6 +40,7 @@ struct Options_sst {
   int max_control_duration = 10;
 
   void add_options(po::options_description &desc) {
+    set_from_boostop(desc, VAR_WITH_NAME(custom_sampling));
     set_from_boostop(desc, VAR_WITH_NAME(planner));
     set_from_boostop(desc, VAR_WITH_NAME(timelimit));
     set_from_boostop(desc, VAR_WITH_NAME(goal_epsilon));
@@ -54,6 +56,8 @@ struct Options_sst {
 
   void print(std::ostream &out, const std::string &be = "",
              const std::string &af = ": ") {
+
+    STRY(custom_sampling, out, be, af);
     STRY(planner, out, be, af);
     STRY(timelimit, out, be, af);
     STRY(goal_epsilon, out, be, af);
@@ -67,6 +71,7 @@ struct Options_sst {
   }
 
   void __read_from_node(const YAML::Node &node) {
+    set_from_yaml(node, VAR_WITH_NAME(custom_sampling));
     set_from_yaml(node, VAR_WITH_NAME(planner));
     set_from_yaml(node, VAR_WITH_NAME(timelimit));
     set_from_yaml(node, VAR_WITH_NAME(goal_epsilon));

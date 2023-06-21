@@ -131,9 +131,13 @@ void modify_u_bound_for_free_time(const Vxd &__u_lb, const Vxd &__u_ub,
   u_ub = Vxd(nu);
   u_ref = Vxd(nu);
 
-  u_lb << __u_lb, .4;
-  u_ub << __u_ub, 1.5;
-  u_ref << __u__ref, .5;
+  const double min_time_rate = .4;
+  const double max_time_rate = 2;
+  const double ref_time_rate = .5;
+
+  u_lb << __u_lb, min_time_rate;
+  u_ub << __u_ub, max_time_rate;
+  u_ref << __u__ref, ref_time_rate;
   u_weight << __u__weight, .7;
 }
 
