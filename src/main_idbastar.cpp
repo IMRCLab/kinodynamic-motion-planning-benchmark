@@ -97,7 +97,7 @@ int main(int argc, char *argv[]) {
   info_out_idbastar.print(std::cout);
   std::cout << "***" << std::endl;
 
-  write_results_idbastar(results_file.c_str(), options_idbastar,
+  write_results_idbastar(results_file.c_str(), problem, options_idbastar,
                          options_dbastar, options_trajopt, info_out_idbastar);
 
   info_out_idbastar.print_trajs(results_file.c_str());

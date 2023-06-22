@@ -33,10 +33,11 @@ void get_states_and_actions(const YAML::Node &data,
 struct Problem {
   using Vxd = Eigen::VectorXd;
 
-  Problem(const char *file) { read_from_yaml(file); }
+  Problem(const char *t_file) : file(t_file) { read_from_yaml(t_file); }
   Problem() = default;
 
   std::string name; // name of the proble: E.g. bugtrap-car1
+  std::string file;
 
   Eigen::VectorXd goal;
   Eigen::VectorXd start;

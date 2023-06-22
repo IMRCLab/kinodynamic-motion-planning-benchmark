@@ -289,7 +289,7 @@ void idbA(const Problem &problem, const Options_idbAStar &options_idbas,
             << static_cast<int>(info_out_idbastar.exit_criteria) << std::endl;
 }
 
-void write_results_idbastar(const char *results_file,
+void write_results_idbastar(const char *results_file, const Problem &problem,
                             const Options_idbAStar &options_idbastar,
                             const Options_dbastar &options_dbastar,
                             const Options_trajopt &options_trajopt,
@@ -298,6 +298,8 @@ void write_results_idbastar(const char *results_file,
   std::ofstream results(results_file);
 
   results << "alg: idbastar" << std::endl;
+  results << "problem_file: " << problem.file << std::endl;
+  results << "robot_type: " << problem.robotType << std::endl;
   results << "time_stamp: " << get_time_stamp() << std::endl;
 
   results << "options_idbastar:" << std::endl;

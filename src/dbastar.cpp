@@ -3039,8 +3039,8 @@ void dbastar(const Problem &problem, const Options_dbastar &options_dbastar,
                   // old_fscore
                   //           << " -- new -- " << entry->fScore <<
                   //           std::endl;
-                  open.update(entry->handle); // increase? decrease? check the
-                                              // original implementation
+                  open.increase(entry->handle); // increase? decrease? check the
+                                                // original implementation
                 } else {
                   auto handle = open.push(entry);
                   entry->handle = handle;

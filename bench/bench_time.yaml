@@ -3,23 +3,42 @@ n_cores: -1 # -1=auto
 
 # solve a distribution of problems
 problems:
-  - env: unicycle_first_order_0/bugtrap_0
-    guess: unicycle1_v0/bugtrap_0/delta_03_v0
-
+  # - env: unicycle_first_order_0/bugtrap_0
+  #   guess: unicycle1_v0/bugtrap_0/delta_03_v0
+  #
   - env: unicycle_first_order_0/bugtrap_0
     guess: unicycle1_v0/bugtrap_0/delta_02_v0
-
+  #
   - env: unicycle_first_order_0/bugtrap_0
     guess: unicycle1_v0/bugtrap_0/delta_05_v0
-
+  #
   - env: unicycle_second_order_0/bugtrap_0
     guess: unicycle2_v0/bugtrap_0/delta_02_v0
-
-  - env: unicycle_second_order_0/bugtrap_0
-    guess: unicycle2_v0/bugtrap_0/delta_03_v0
-
+  #
+  # - env: unicycle_second_order_0/bugtrap_0
+  #   guess: unicycle2_v0/bugtrap_0/delta_03_v0
+  #
   - env: unicycle_second_order_0/bugtrap_0
     guess: unicycle2_v0/bugtrap_0/delta_05_v0
+
+  # lets use the bugtrap
+
+  # - quad2d/empty_0
+  # - quad2d/empty_1
+  # - quad2d/quad_obs_column
+  # - quad2d/quad_bugtrap
+  # - quad2d/quad2d_recovery_wo_obs
+  # - quad2d/quad2d_recovery_obs
+  # - quad2d/fall_through
+
+  # - env: quad2d/quad_obs_column
+  #   guess: TODO
+
+  - env: quad2d/quad_bugtrap
+    guess: quad2d/bugtrap/delta_05_v0
+
+  - env: quad2d/quad_bugtrap
+    guess: quad2d/bugtrap/delta_045_v0
 
 algs:
   # - idbastar_v0_heu0

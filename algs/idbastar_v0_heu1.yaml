@@ -2,7 +2,7 @@
 reference: "idbastar_v0"
 default:
   heuristic: 1
-  search_timelimit: 30000 # in ms
+  search_timelimit: 50000 # in ms
   cost_delta_factor: 1
 unicycle1_v0:
   default:

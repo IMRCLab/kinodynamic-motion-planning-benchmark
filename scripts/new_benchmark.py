@@ -120,6 +120,11 @@ do_vis_primitives = False
 do_bench_time = False
 do_fancy_table = False
 do_bench_search = False
+do_study = False
+
+
+if mode == "study":
+    do_study = True
 
 if mode == "bench_time":
     do_bench_time = True
@@ -596,7 +601,9 @@ def compare_search(
         for dictionary in reduced_data:
             writer.writerow(dictionary.values())
 
-    shutil.copy(filename_csv, '/tmp/tmp_reduced_data.csv')
+    copy_to = '/tmp/tmp_reduced_data.csv'
+    print(f"copy_to { copy_to }")
+    shutil.copy(filename_csv, copy_to)
 
     # create a new table using pandas
 
@@ -613,6 +620,10 @@ def compare_search(
     problems = sorted(list(problems))
 
     algs = ["dbastar_v0_heu0", "dbastar_v0_heu1", "dbastar_v0_heuNO"]
+
+    if set(algs) != set(df["alg"].unique().tolist()):
+        raise RuntimeError("must have three algs for doing the table")
+
     keys = ["expands_mean", "time_search_mean"]
 
     header = [
@@ -638,15 +649,19 @@ def compare_search(
         line.append(problem)
         for alg in algs:
             for key in keys:
-                print(problem, alg, key)
-                val = float(df.loc[(df["problem"] == problem)
-                                   & (df["alg"] == alg)][key].iloc[0])
-                is_bold = is_best(val, key, problem, algs)
-
-                if is_bold:
-                    tt = r"\textbf{" + f'{val:.1f}' + "}"
+                if float(df.loc[(df["problem"] == problem) & (
+                        df["alg"] == alg)]["success_rate"].iloc[0]) < 1:
+                    print("warning not solved", algs, key, problem)
+                    tt = r"-"
                 else:
-                    tt = f"{val:.1f}"
+                    val = float(df.loc[(df["problem"] == problem) & (
+                        df["alg"] == alg)][key].iloc[0])
+                    is_bold = is_best(val, key, problem, algs)
+
+                    if is_bold:
+                        tt = r"\textbf{" + f'{val:.1f}' + "}"
+                    else:
+                        tt = f"{val:.1f}"
                 line.append(tt)
         lines.append(line)
 
@@ -654,14 +669,14 @@ def compare_search(
 
     filename_tex = f"../results_new_search/summary/summary_search_{date_time}.tex"
 
-    print(f"writing to {filename_tex}")
+    print(f"writing to: {filename_tex}")
 
     with open(filename_tex, "w") as f:
         for h in header:
             f.write(h)
             f.write('\n')
         for cl in lines:
-            print("cl ", cl)
+            # print("cl ", cl)
             _str = format_latex_str(' & '.join(cl))
             f.write(_str)
 
@@ -671,7 +686,9 @@ def compare_search(
             f.write(fo)
             f.write('\n')
 
-    shutil.copy(filename_tex, '/tmp/tmp_search.tex')
+    copy_to = '/tmp/tmp_search.tex'
+    shutil.copy(filename_tex, copy_to)
+    print(f"copy_to: {copy_to}")
 
     filename_log_tex = filename_tex + ".log"
 
@@ -755,7 +772,10 @@ def compare_search(
             plt.show()
 
     pp.close()
-    shutil.copy(filename_pdf, '/tmp/tmp_compare_search.pdf')
+
+    copy_to = '/tmp/tmp_compare_search.pdf'
+    shutil.copy(filename_pdf, copy_to)
+    print(f"copy to {copy_to}")
 
 
 def compare_time(
@@ -834,7 +854,9 @@ def compare_time(
             writer.writerow(dictionary.values())
 
     import shutil
-    shutil.copy(filename_csv, '/tmp/tmp_reduced_data.csv')
+    copy_to = '/tmp/tmp_reduced_data.csv'
+    shutil.copy(filename_csv, copy_to)
+    print(f"copy_to {copy_to}")
 
     print("reduced_data")
     print(reduced_data)
@@ -865,7 +887,8 @@ def compare_time(
         r"&   \multicolumn{2}{c}{dt} & \multicolumn{2}{c}{search} & \multicolumn{2}{c}{mpc}",
         r"& \multicolumn{2}{c}{mpcc} \\",
         r"\cmidrule(lr){2-3}\cmidrule(lr){4-5}\cmidrule(lr){6-7}\cmidrule(lr){8-9}",
-        r"&   c & t & c & t & c & t & c & t \\"]
+        r"&   c & t & c & t & c & t & c & t \\",
+        r"\midrule"]
 
     footer = [r"\bottomrule", r"\end{tabular}"]
 
@@ -915,7 +938,9 @@ def compare_time(
             f.write(fo)
             f.write('\n')
 
-    shutil.copy(filename_tex, '/tmp/tmp_search.tex')
+    copy_to = '/tmp/tmp_search.tex'
+    shutil.copy(filename_tex, copy_to)
+    print(f"copy_to {copy_to}")
 
     filename_log_tex = filename_tex + ".log"
 
@@ -1001,7 +1026,9 @@ def compare_time(
             plt.show()
 
     pp.close()
-    shutil.copy(filename_pdf, '/tmp/tmp_compare_time.pdf')
+    copy_to = '/tmp/tmp_compare_time.pdf'
+    shutil.copy(filename_pdf, copy_to)
+    print(f"copy_to {copy_to}")
     # create_latex_table(filename_csv)
     #
     # # check
@@ -1085,23 +1112,20 @@ def compare_time(
     #
 
 
-def benchmark_search(bench_cfg: str):
+def __benchmark_search(bench_cfg: str) -> List[str]:
 
     with open(bench_cfg) as f:
         data = yaml.safe_load(f)
 
     print("bench cfg")
     print(data)
-    problems = data["problems"]
-    algs = data["algs"]
-    trials = data["trials"]
-    n_cores = data["n_cores"]
 
+    n_cores = data["n_cores"]
     if n_cores == -1:
         n_cores = int(multiprocessing.cpu_count() / 2)
 
-    print(f"problems {problems}")
-    print(f"algs {algs}")
+    print(f"problems ", data["problems"])
+    print(f"algs", data["algs"])
 
     base_path_problem = "../benchmark/"
     folder_results = "../results_new_search/"
@@ -1113,8 +1137,8 @@ def benchmark_search(bench_cfg: str):
 
     experiments = []
 
-    for problem in problems:
-        for alg in algs:
+    for problem in data["problems"]:
+        for alg in data["algs"]:
             path_name = problem
             print(f"path_name: {path_name}")
             path = folder_results + path_name + "/" + alg + "/" + date_time
@@ -1125,7 +1149,7 @@ def benchmark_search(bench_cfg: str):
                     path=path,
                     problem=problem,
                     alg=alg))
-            for i in range(trials):
+            for i in range(data["trials"]):
                 out = path + f"/run_{i}_out.yaml"
                 cmd = solve_problem_search(
                     base_path_problem + problem + ".yaml",
@@ -1163,26 +1187,48 @@ def benchmark_search(bench_cfg: str):
             experiment.alg, False)
         fileouts.append(fileout)
 
+    return fileouts
+
+
+def benchmark_search(bench_cfg: str) -> None:
+    # fileouts = __benchmark_search(bench_cfg)
+
+    fileouts = [
+        '../results_new_search/unicycle_first_order_0/bugtrap_0/dbastar_v0_heu0/2023-06-22--20-40-26/report.yaml',
+        '../results_new_search/unicycle_first_order_0/bugtrap_0/dbastar_v0_heu1/2023-06-22--20-40-26/report.yaml',
+        '../results_new_search/unicycle_first_order_0/bugtrap_0/dbastar_v0_heuNO/2023-06-22--20-40-26/report.yaml',
+        '../results_new_search/unicycle_second_order_0/bugtrap_0/dbastar_v0_heu0/2023-06-22--20-40-26/report.yaml',
+        '../results_new_search/unicycle_second_order_0/bugtrap_0/dbastar_v0_heu1/2023-06-22--20-40-26/report.yaml',
+        '../results_new_search/unicycle_second_order_0/bugtrap_0/dbastar_v0_heuNO/2023-06-22--20-40-26/report.yaml',
+        '../results_new_search/quad2d/quad_bugtrap/dbastar_v0_heu0/2023-06-22--20-40-26/report.yaml',
+        '../results_new_search/quad2d/quad_bugtrap/dbastar_v0_heu1/2023-06-22--20-40-26/report.yaml',
+        '../results_new_search/quad2d/quad_bugtrap/dbastar_v0_heuNO/2023-06-22--20-40-26/report.yaml',
+        '../results_new_search/quadrotor_0/quad_one_obs/dbastar_v0_heu0/2023-06-22--20-40-26/report.yaml',
+        '../results_new_search/quadrotor_0/quad_one_obs/dbastar_v0_heu1/2023-06-22--20-40-26/report.yaml',
+        '../results_new_search/quadrotor_0/quad_one_obs/dbastar_v0_heuNO/2023-06-22--20-40-26/report.yaml']
+
+    #
+
+    # fileouts =  ['../results_new_search/unicycle_first_order_0/bugtrap_0/dbastar_v0_heu0/2023-06-22--20-31-26/report.yaml', '../results_new_search/unicycle_first_order_0/bugtrap_0/dbastar_v0_heuNO/2023-06-22--20-31-26/report.yaml', '../results_new_search/unicycle_second_order_0/bugtrap_0/dbastar_v0_heu0/2023-06-22--20-31-26/report.yaml', '../results_new_search/unicycle_second_order_0/bugtrap_0/dbastar_v0_heuNO/2023-06-22--20-31-26/report.yaml']
+
+    print(f"fileouts {fileouts}")
+
     compare_search(fileouts)
 
 
-def benchmark_opti(bench_cfg: str):
+def __benchmark_opti(bench_cfg: str) -> List[str]:
 
     with open(bench_cfg) as f:
         data = yaml.safe_load(f)
 
     print("bench cfg")
-    print(data)
-    problems = data["problems"]
-    algs = data["algs"]
-    trials = data["trials"]
     n_cores = data["n_cores"]
 
     if n_cores == -1:
         n_cores = int(multiprocessing.cpu_count() / 2)
 
-    print(f"problems {problems}")
-    print(f"algs {algs}")
+    print("problems", data["problems"])
+    print(f"algs ", data["algs"])
 
     base_path_problem = "../benchmark/"
     base_guess = "../benchmark_initguess/"
@@ -1202,12 +1248,12 @@ def benchmark_opti(bench_cfg: str):
         out = env_ + [guess_[-1]]
         return '/'.join(out)
 
-    for problem in problems:
+    for problem in data["problems"]:
         env = problem["env"]
         guess = problem["guess"]
         print(f"env {env}")
         print(f"guess {guess}")
-        for alg in algs:
+        for alg in data["algs"]:
             path_name = get_path_name_for_init_guess(env, guess)
             print(f"path_name: {path_name}")
             path = folder_results + path_name + "/" + alg + "/" + date_time
@@ -1219,7 +1265,7 @@ def benchmark_opti(bench_cfg: str):
                     problem=env,
                     alg=alg,
                     guess=guess))
-            for i in range(trials):
+            for i in range(data["trials"]):
                 out = path + f"/run_{i}_out.yaml"
                 cmd = solve_problem_time(
                     base_path_problem + env + ".yaml",
@@ -1265,28 +1311,30 @@ def benchmark_opti(bench_cfg: str):
             visualize=False)
         fileouts.append(fileout)
 
+    return fileouts
+
+
+def benchmark_opti(bench_cfg: str) -> None:
+    fileouts = __benchmark_opti(bench_cfg)
+    print(f"fileouts: { fileouts }")
     compare_time(fileouts)
 
     # compare(fileouts, False)
 
 
-def benchmark(bench_cfg: str):
+def __benchmark(bench_cfg: str):
 
     with open(bench_cfg) as f:
         data = yaml.safe_load(f)
 
     print("bench cfg")
     print(data)
-    problems = data["problems"]
-    algs = data["algs"]
-    trials = data["trials"]
-    timelimit = data["timelimit"]
     n_cores = data["n_cores"]
     if n_cores == -1:
         n_cores = int(multiprocessing.cpu_count() / 2)
 
-    print(f"problems {problems}")
-    print(f"algs {algs}")
+    print("problems", data["problems"])
+    print("algs", data["algs"])
 
     base_path_problem = "../benchmark/"
     folder_results = "../results_new/"
@@ -1297,16 +1345,16 @@ def benchmark(bench_cfg: str):
     paths = []
 
     experiments = []
-    for problem in problems:
-        for alg in algs:
+    for problem in data["problems"]:
+        for alg in data["algs"]:
             path = folder_results + problem + "/" + alg + "/" + date_time
             paths.append(path)
             pathlib.Path(path).mkdir(parents=True, exist_ok=True)
             experiments.append(Experiment(path=path, problem=problem, alg=alg))
-            for i in range(trials):
+            for i in range(data["trials"]):
                 out = path + f"/run_{i}_out.yaml"
                 cmd = solve_problem_with_alg(
-                    base_path_problem + problem + ".yaml", alg, out, timelimit)
+                    base_path_problem + problem + ".yaml", alg, out, data["timelimit"])
                 cmds.append(cmd)
     print("commands are: ")
     for i, cmd in enumerate(cmds):
@@ -1342,10 +1390,41 @@ def benchmark(bench_cfg: str):
             experiment.alg,
             visualize=False)
         fileouts.append(fileout)
+    return fileouts
 
     compare(fileouts, False)
 
     # basic analysisi of the results?
+
+
+def benchmark(bench_cfg: str):
+    fileouts = __benchmark(bench_cfg)
+    compare(fileouts, False)
+
+
+def study(bench_cfg: str):
+    # fileouts = __benchmark(bench_cfg)
+    # print("fileouts")
+    # print(fileouts)
+
+    fileouts = [
+        '../results_new/unicycle_first_order_0/bugtrap_0/idbastar_v0_analysis_d1/2023-06-22--16-05-15/report.yaml',
+        '../results_new/unicycle_first_order_0/bugtrap_0/idbastar_v0_analysis_d2/2023-06-22--16-05-15/report.yaml',
+        '../results_new/unicycle_second_order_0/bugtrap_0/idbastar_v0_analysis_d1/2023-06-22--16-05-15/report.yaml',
+        '../results_new/unicycle_second_order_0/bugtrap_0/idbastar_v0_analysis_d2/2023-06-22--16-05-15/report.yaml',
+        '../results_new/quad2d/quad_bugtrap/idbastar_v0_analysis_d1/2023-06-22--16-05-15/report.yaml',
+        '../results_new/quad2d/quad_bugtrap/idbastar_v0_analysis_d2/2023-06-22--16-05-15/report.yaml']
+
+    # example fileouts
+    #
+
+    # fileouts = ['../results_new/unicycle_first_order_0/bugtrap_0/idbastar_v0_analysis_d1/2023-06-22--15-29-54/report.yaml', '../results_new/unicycle_first_order_0/bugtrap_0/idbastar_v0_analysis_d2/2023-06-22--15-29-54/report.yaml', '../results_new/unicycle_second_order_0/bugtrap_0/idbastar_v0_analysis_d1/2023-06-22--15-29-54/report.yaml', '../results_new/unicycle_second_order_0/bugtrap_0/idbastar_v0_analysis_d2/2023-06-22--15-29-54/report.yaml', '../results_new/quad2d/quad_bugtrap/idbastar_v0_analysis_d1/2023-06-22--15-29-54/report.yaml', '../results_new/quad2d/quad_bugtrap/idbastar_v0_analysis_d2/2023-06-22--15-29-54/report.yaml']
+
+    files_ = [str(Path(file).parent / "run_0_out.yaml") for file in fileouts]
+
+    print(files_)
+
+    parse_for_component_analysis(files_)
 
 
 def compare(
@@ -1366,7 +1445,7 @@ def compare(
     print(len(datas))
     print(datas[0])
 
-    use_only_some_algs = True
+    use_only_some_algs = False
 
     selected_algs = ["idbastar_v0", "sst_tmp", "geo_v1"]
     if use_only_some_algs:
@@ -1374,9 +1453,6 @@ def compare(
         print("selected_algs")
         print(selected_algs)
         datas = [d for d in datas if d["alg"] in selected_algs]
-
-    print(len(datas))
-    sys.exit(0)
 
     # print("artificially adding the problem...")
     # for data in datas:
@@ -1439,7 +1515,9 @@ def compare(
             writer.writerow(dictionary.values())
 
     import shutil
-    shutil.copy(filename_csv, '/tmp/tmp_reduced_data.csv')
+    copy_to = '/tmp/tmp_reduced_data.csv'
+    shutil.copy(filename_csv, copy_to)
+    print(f"copy_to { copy_to} ")
 
     create_latex_table(filename_csv)
 
@@ -1506,7 +1584,7 @@ def compare(
                     N = 30
                     import random
                     nn = random.randint(0, N - 1)
-                    color = get_cmap(N, name='gray')(nn)
+                    color = get_cmap(N, name='hsv')(nn)
                     color_map[alg] = color
 
                 ax[0].plot(times, cost_mean, color=color, label=alg)
@@ -1535,7 +1613,9 @@ def compare(
     pp.close()
 
     import shutil
-    shutil.copy(filename_pdf, '/tmp/tmp_compare.pdf')
+    copy_to = '/tmp/tmp_compare.pdf'
+    shutil.copy(filename_pdf, copy_to)
+    print(f"copy_to {copy_to}")
 
 
 def make_videos(robot: str, problem: str, file: str):
@@ -2309,6 +2389,7 @@ def format_latex_str(str_in: str) -> str:
 def parse_for_component_analysis(files: List[str]):
 
     visualize = True
+    max_it = 1
 
     field_ddp = "ddp_time"
     field_search = "time_search"
@@ -2319,15 +2400,13 @@ def parse_for_component_analysis(files: List[str]):
     Ds = []
     for file in files:
         with open(file) as f:
-            D = yaml.safe_load(f)
+            _D = yaml.safe_load(f)
 
-        assert ('infos_opt' in D)
-        assert ('infos_raw' in D)
+        assert ('infos_opt' in _D)
+        assert ('infos_raw' in _D)
 
-        infos_opt = D['infos_opt']
-        infos_raw = D["infos_raw"]
-
-        max_it = 2
+        infos_opt = _D['infos_opt']
+        infos_raw = _D["infos_raw"]
 
         counter_ddp = 0
         counter_search = 0
@@ -2383,8 +2462,11 @@ def parse_for_component_analysis(files: List[str]):
         for k, v in D.items():
             p = ax.bar(0, v, width, label=k, bottom=bottom)
             bottom += v
-
-        ax.set_title("Number of penguins with above average body mass")
+        ax.set_title("time spent in each component -- " +
+                     _D["problem_file"] +
+                     ":" +
+                     str(_D["options_idbastar"]["delta_0"]) +
+                     str(_D["options_idbastar"]["num_primitives_0"]))
         ax.legend(loc="upper right")
 
         # per-iteration
@@ -2392,11 +2474,13 @@ def parse_for_component_analysis(files: List[str]):
         if visualize:
             plt.show()
 
-        max_it = 2
-
         # fig, ax = plt.subplots()
         for it in range(max_it):
-            D = {"counter_ddp": infos_opt[it][field_ddp],
+            D = {"problem_file": _D["problem_file"],
+                 "robot_type": _D["robot_type"],
+                 "delta": _D["options_idbastar"]["delta_0"],
+                 "prim": _D["options_idbastar"]["num_primitives_0"],
+                 "counter_ddp": infos_opt[it][field_ddp],
                  "counter_search_extra": infos_raw[it][field_search] -
                  infos_raw[it][field_nn] -
                  infos_raw[it][field_mm] -
@@ -2429,12 +2513,32 @@ def parse_for_component_analysis(files: List[str]):
     bottom = np.zeros(len(Ds))
     # it = np.arange(len(Ds))
 
+    keys = [
+        "counter_ddp",
+        "counter_search_extra",
+        "counter_nn",
+        "counter_mm",
+        "counter_col"]
+
     print("WARNING: it is hardcoded by hand!!")
 
-    it = ("uni1_bug/d1",
-          "uni1_bug/d2",
-          "uni2_bug/d1",
-          "uni2_bug/d2")
+    # it = ("uni1_bug/d1",
+    #       "uni1_bug/d2",
+    #       "uni2_bug/d1",
+    #       "uni2_bug/d2")
+
+    # it =  [ str(i) for i in np.arange( len(Ds)) ]
+    for D in Ds:
+        print(D)
+
+    print(" len(Ds)")
+    print(len(Ds))
+    it = [D["robot_type"] + str(D["delta"]) for D in Ds]
+    print(it)
+
+    # str(i) for i in np.arange( len(Ds)) ]
+
+    # generate it
 
     for key in keys:
         vv = np.array([D[key] for D in Ds])
@@ -2455,7 +2559,9 @@ def parse_for_component_analysis(files: List[str]):
     fig.tight_layout()
     plt.savefig(figureout)
 
-    shutil.copy(figureout, '/tmp/components.pdf')
+    copy_to = '/tmp/components.pdf'
+    shutil.copy(figureout, copy_to)
+    print(f"copy to {copy_to}")
 
     with open(figureout + ".log", "w") as f:
         yaml.dump({"input": files, "output": figureout,
@@ -2472,7 +2578,7 @@ def parse_for_component_analysis(files: List[str]):
     # should I use the latex output of pandas?
 if __name__ == "__main__":
 
-    if True:
+    if False:
 
         # file = "../bench_logs/server_idbastar_lunch_compare.yaml"
         #
@@ -2543,32 +2649,9 @@ if __name__ == "__main__":
 
     # TODO: how to I check the time spent in each component?
 
-    time_analysis = False
+    if do_study:
 
-    if time_analysis:
-        # file = "/home/quim/stg/wolfgang/kinodynamic-motion-planning-benchmark/results_new/unicycle_first_order_0/kink_0/idbastar_v0/2023-06-06--18-04-39/run_1_out.yaml"
-        # parse_for_component_analysis([file])
-
-        files = [
-            "/home/quim/stg/wolfgang/kinodynamic-motion-planning-benchmark/results_new/unicycle_first_order_0/kink_0/idbastar_v0/2023-06-06--18-04-39/run_1_out.yaml",
-            "../results_new/unicycle_second_order_0/bugtrap_0/idbastar_v0/2023-06-06--19-11-12/run_0_out.yaml"]
-
-        parse_for_component_analysis(files)
-
-        files2 = ["file1", "file2", "file3"]
-
-        def add_two_numbers(a: int, b: int):
-            return
-
-        def print_variable(a: int):
-            print(a)
-
-        # def concatenate_two_fils():
-        #
-        #
-        #
-        #
-        # sys.exit(0)
+        study(bench_cfg)
 
     do_table_search = False
     do_table_opti = False

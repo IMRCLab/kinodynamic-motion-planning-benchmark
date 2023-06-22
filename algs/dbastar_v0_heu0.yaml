@@ -1,5 +1,6 @@
-# general parameters, all systems and problems
+# I am calling dbastar instead of dbastar
 reference: "idbastar_v0"
+
 default:
   heuristic: 0
   search_timelimit: 30000 # in ms
@@ -19,11 +20,15 @@ unicycle2_v0:
 quad2d_v0:
   default:
     limit_branching_factor: 200
-    num_primitives: 40000
-    delta: .6
+    max_motions: 400
+    delta: .5
 
+# TODO: check that I can solve!!
 quad3d_v0:
   default:
-    num_primitives: 100000
-    cost_delta_factor: 0 # TODO: investigate why using =1 makes everything slower!
-
+    search_timelimit: 60000 # in ms
+    delta: .8
+    max_motions: 3000
+    connect_radius_h: 2
+    max_size_heu_map: 3000
+    num_sample_trials: 5000

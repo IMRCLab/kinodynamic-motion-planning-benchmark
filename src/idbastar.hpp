@@ -119,7 +119,7 @@ void idbA(const Problem &problem, const Options_idbAStar &options_idbas,
 
 // are you here?
 
-void write_results_idbastar(const char *results_file,
+void write_results_idbastar(const char *results_file, const Problem &problem,
                             const Options_idbAStar &options_idbastar,
                             const Options_dbastar &options_dbastar,
                             const Options_trajopt &options_trajopt,

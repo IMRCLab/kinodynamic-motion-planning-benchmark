@@ -71,7 +71,7 @@ BOOST_AUTO_TEST_CASE(bugtrap_uni1_new) {
   BOOST_TEST(info_out_idbastar.cost < 25.);
 
   std::string results_file = "tmp_results_idbastar.yaml";
-  write_results_idbastar(results_file.c_str(), options_idbas, options_dbastar,
+  write_results_idbastar(results_file.c_str(), problem, options_idbas, options_dbastar,
                          options_trajopt, info_out_idbastar);
 }
 
