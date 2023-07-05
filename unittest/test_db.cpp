@@ -27,6 +27,49 @@
 
 // quad2d is working!
 
+BOOST_AUTO_TEST_CASE(t_plot_primitives) {
+
+  Problem problem("../benchmark/quad2d/quad2d_recovery_obs.yaml");
+
+  std::shared_ptr<Model_robot> robot =
+      robot_factory(robot_type_to_path(problem.robotType).c_str());
+
+  int max_primitives = 5000;
+
+  // load primitives
+  Trajectories trajs;
+  const char *motionsFile =
+      "../cloud/motionsV2/good/quad2d_v0/quad2d_v0_all_im.bin.sp.bin.ca.bin";
+  trajs.load_file_boost(motionsFile);
+  if (max_primitives != -1 && max_primitives < trajs.data.size())
+    trajs.data.resize(max_primitives);
+
+  Eigen::VectorXd __canonical_state(robot->nx);
+  Eigen::VectorXd __current_state(robot->nx);
+  __current_state = problem.start;
+  robot->canonical_state(__current_state, __canonical_state);
+
+  double distance_threshold = .2; // currently, I have .4 in idbastar v0
+
+  Trajectories applicable_trajs;
+  Eigen::VectorXd offsete(robot->get_offset_dim());
+  robot->offset(__current_state, offsete);
+  for (auto &traj : trajs.data) {
+    if (robot->distance(traj.states[0], __canonical_state) <
+        distance_threshold) {
+      Trajectory tmp_traj;
+      robot->transform_primitive(offsete, traj.states, traj.actions,
+                                 tmp_traj.states, tmp_traj.actions);
+      applicable_trajs.data.push_back(tmp_traj);
+    }
+
+    // TODO: check cols
+  }
+  CSTR_(applicable_trajs.data.size());
+
+  applicable_trajs.save_file_yaml("tmp_applicable_trajs.yaml");
+}
+
 BOOST_AUTO_TEST_CASE(t_check_cols) {
 
   Trajectory traj;
@@ -34,14 +77,11 @@ BOOST_AUTO_TEST_CASE(t_check_cols) {
   // continue here
   Problem problem("../benchmark/quad2dpole/window.yaml");
 
-
   std::shared_ptr<Model_robot> model_robot =
       robot_factory(robot_type_to_path(problem.robotType).c_str());
   load_env_quim(*model_robot, problem);
 
   traj.check(model_robot, true);
-
-
 }
 
 BOOST_AUTO_TEST_CASE(test_distance) {
@@ -129,7 +169,8 @@ BOOST_AUTO_TEST_CASE(tt_quad2dpole) {
     options_dbastar.delta_factor_goal = 1;
     options_dbastar.use_nigh_nn = 1;
     options_dbastar.motionsFile = "../build/quad2dpole_all.bin.sp1.bin.ca.bin";
-    // options_dbastar.motionsFile = "../build/quad2dpole_all.bin.im.bin.sp1.bin.ca.bin";
+    // options_dbastar.motionsFile =
+    // "../build/quad2dpole_all.bin.im.bin.sp1.bin.ca.bin";
     options_dbastar.new_invariance = true;
     options_dbastar.use_collision_shape = false;
     options_dbastar.limit_branching_factor = 15;
@@ -164,7 +205,7 @@ BOOST_AUTO_TEST_CASE(tt_quad2dpole) {
     CSTR_(out_info_db.cost);
     BOOST_TEST(out_info_db.solved);
   }
-  if (false){
+  if (false) {
     // Problem problem("../benchmark/quad2dpole/window_easy.yaml");
     Problem problem("../benchmark/quad2dpole/down.yaml");
     Options_dbastar options_dbastar;
@@ -186,7 +227,6 @@ BOOST_AUTO_TEST_CASE(tt_quad2dpole) {
     dbastar(problem, options_dbastar, traj_out, out_info_db);
     CSTR_(out_info_db.cost);
     BOOST_TEST(out_info_db.solved);
-
   }
 }
 
@@ -375,6 +415,3 @@ BOOST_AUTO_TEST_CASE(t_quad2dpole_toy) {
   CSTR_(out_info_db.cost);
   BOOST_TEST(out_info_db.solved);
 }
-
-
-

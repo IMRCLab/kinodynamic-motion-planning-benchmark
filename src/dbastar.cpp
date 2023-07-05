@@ -2523,7 +2523,6 @@ void dbastar(const Problem &problem, const Options_dbastar &options_dbastar,
   robot->toEigen(goalState, goalState_eig);
 
   Stopwatch watch;
-
   while (true) {
 
     if (static_cast<size_t>(time_bench.expands) >=

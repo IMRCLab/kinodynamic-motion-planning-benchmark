@@ -3949,3 +3949,29 @@ BOOST_AUTO_TEST_CASE(t_quad3d_recovery_obs) {
     traj_out.to_yaml_format(out);
   }
 }
+
+BOOST_AUTO_TEST_CASE(t_extract_primitives) {
+
+  Trajectory traj;
+
+  traj.read_from_yaml(
+      "../results_new/quad2d/quad2d_recovery_obs/idbastar_v0/2023-06-21--12-40-54/"
+      "run_0_out.yaml.trajraw-0.yaml-fakeprimitives.yaml");
+
+  std::shared_ptr<Model_robot> robot =
+      std::make_shared<Model_quad2d>("../models/quad2d_v0.yaml");
+
+  std::vector<Trajectory> primitives = traj.find_discontinuities(robot);
+
+  // lets write the trajectories
+  std::ofstream out("fileout_primitives.yaml");
+  traj.to_yaml_format(out);
+
+  auto prefix1 = "  ";
+  auto prefix2 = "    ";
+  out << "primitives:" << std::endl;
+  for (auto &p : primitives) {
+    out << prefix1 << "- " << std::endl;
+    p.to_yaml_format(out, prefix2);
+  }
+}

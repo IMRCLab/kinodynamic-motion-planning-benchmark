@@ -142,6 +142,68 @@ struct Trajectory {
 
   void check(std::shared_ptr<Model_robot> &robot, bool verbose = false);
 
+  std::vector<Trajectory>
+  find_discontinuities(std::shared_ptr<Model_robot> &robot) {
+
+    Eigen::VectorXd dts;
+    if (!times.size()) {
+      size_t T = actions.size();
+      dts.resize(T);
+      dts.setOnes();
+      dts.array() *= robot->ref_dt;
+    }
+
+    CHECK(states.size(), AT);
+    CHECK(actions.size(), AT);
+    CHECK(robot, AT);
+    CHECK_EQ(states.size(), actions.size() + 1, AT);
+    CHECK_EQ(static_cast<size_t>(dts.size()),
+             static_cast<size_t>(actions.size()), AT);
+
+    size_t N = actions.size();
+
+    double threshold = 1e-2;
+
+    size_t start_primitive = 0;
+    using Vxd = Eigen::VectorXd;
+    std::vector<Trajectory> trajectories;
+    for (size_t i = 0; i < N; i++) {
+      Vxd xnext(robot->nx);
+      auto &x = states.at(i);
+      auto &u = actions.at(i);
+
+      robot->step(xnext, x, u, dts(i));
+
+      double jump = robot->distance(xnext, states.at(i + 1));
+      if (jump > threshold) {
+        std::cout << "jump of " << jump << std::endl;
+        CSTR_(i);
+        CSTR_V(x);
+        CSTR_V(u);
+        CSTR_V(xnext);
+        CSTR_V(states.at(i + 1));
+
+        Trajectory traj;
+        traj.states = {states.begin() + start_primitive,
+                       states.begin() + i + 1};
+        traj.states.push_back(xnext);
+        traj.actions = {actions.begin() + start_primitive,
+                        actions.begin() + i + 1};
+        start_primitive = i + 1;
+        trajectories.push_back(traj);
+      }
+    }
+    // add the last one
+    if (start_primitive < states.size()) {
+      Trajectory traj;
+      traj.states = {states.begin() + start_primitive, states.end()};
+      traj.actions = {actions.begin() + start_primitive, actions.end()};
+      trajectories.push_back(traj);
+    }
+
+    return trajectories;
+  }
+
   void update_feasibility(double traj_tol = 1e-2, double goal_tol = 1e-2,
                           double col_tol = 1e-2, double x_bound_tol = 1e-2,
                           double u_bound_tol = 1e-2, bool verbose = false);
