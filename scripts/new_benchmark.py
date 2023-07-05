@@ -20,6 +20,7 @@ import shutil
 
 print_lock = multiprocessing.Lock()
 
+
 unsolved_num = 999
 all_problems = [
     "unicycle_first_order_0/parallelpark_0",
@@ -2573,6 +2574,7 @@ def parse_for_component_analysis(files: List[str]):
         plt.show()
 
     print("done")
+
 
     # group by problem
     # should I use the latex output of pandas?
