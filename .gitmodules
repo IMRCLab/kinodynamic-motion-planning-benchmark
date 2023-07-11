@@ -19,3 +19,6 @@
 [submodule "deps/nigh"]
 	path = deps/nigh
 	url = https://github.com/quimortiz/nigh
+[submodule "deps/spdlog"]
+	path = deps/spdlog
+	url = https://github.com/gabime/spdlog
