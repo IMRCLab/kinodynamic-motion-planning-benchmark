@@ -79,6 +79,8 @@ void idbA(const Problem &problem, const Options_idbAStar &options_idbas,
   size_t num_solutions = 0;
 
   double non_counter_time = 0;
+  bool solved_db = false;
+  const bool use_non_counter_time = true;
 
   while (!finished) {
 
@@ -89,7 +91,15 @@ void idbA(const Problem &problem, const Options_idbAStar &options_idbas,
         options_dbastar_local.delta = options_idbas.delta_0;
         options_dbastar_local.max_motions = options_idbas.num_primitives_0;
       } else {
-        options_dbastar_local.delta *= options_idbas.delta_rate;
+        // options_dbastar_local.delta *= options_idbas.delta_rate;
+        // options_dbastar_local.max_motions *=
+        // options_idbas.num_primitives_rate;
+
+        // only reduce delta if I have solved with db first
+        if (solved_db) {
+          options_dbastar_local.delta *= options_idbas.delta_rate;
+        }
+        // always add primitives
         options_dbastar_local.max_motions *= options_idbas.num_primitives_rate;
       }
     } else {
@@ -105,18 +115,22 @@ void idbA(const Problem &problem, const Options_idbAStar &options_idbas,
 
     Trajectory traj_db, traj;
     Out_info_db out_info_db;
-    double __pre_t = get_time_stamp_ms();
 
     std::string id_db = gen_random(6);
 
     options_dbastar_local.outFile = "/tmp/dbastar/i_db_" + id_db + ".yaml";
 
+    Stopwatch sw;
     dbastar(problem, options_dbastar_local, traj_db, out_info_db);
+    non_counter_time += sw.elapsed_ms() - out_info_db.time_search;
+    solved_db = out_info_db.solved;
+    if (solved_db) {
+      info_out_idbastar.solved_raw = true;
+    }
+
     std::cout << "warning: using as time only the search!" << std::endl;
-    double __after_t = get_time_stamp_ms();
-    non_counter_time += __after_t - __pre_t - out_info_db.time_search;
-    CSTR_(non_counter_time);
-    traj_db.time_stamp = get_time_stamp_ms() - non_counter_time;
+    traj_db.time_stamp =
+        get_time_stamp_ms() - int(use_non_counter_time) * non_counter_time;
     info_out_idbastar.trajs_raw.push_back(traj_db);
     info_out_idbastar.infos_raw.push_back(out_info_db.data);
 
@@ -138,7 +152,10 @@ void idbA(const Problem &problem, const Options_idbAStar &options_idbas,
 
       Result_opti result;
       std::cout << "***Trajectory Optimization -- START ***" << std::endl;
+      Stopwatch stopwatch;
       trajectory_optimization(problem, traj_db, options_trajopt, traj, result);
+      non_counter_time +=
+          stopwatch.elapsed_ms() - std::stof(result.data.at("time_ddp_total"));
       std::cout << "***Trajectory Optimization -- DONE ***" << std::endl;
 
       // write trajectory to file
@@ -157,7 +174,8 @@ void idbA(const Problem &problem, const Options_idbAStar &options_idbas,
             std::filesystem::copy_options::overwrite_existing);
       }
 
-      traj.time_stamp = get_time_stamp_ms() - non_counter_time;
+      traj.time_stamp =
+          get_time_stamp_ms() - int(use_non_counter_time) * non_counter_time;
       info_out_idbastar.trajs_opt.push_back(traj);
       info_out_idbastar.infos_opt.push_back(result.data);
 
@@ -185,29 +203,9 @@ void idbA(const Problem &problem, const Options_idbAStar &options_idbas,
           auto &rr = robot->diff_model;
 
           Trajectories trajs_canonical;
-          for (const auto &traj : new_trajectories.data) {
 
-            Eigen::VectorXd x0(traj.states.front().size());
-            rr->canonical_state(traj.states.front(), x0);
-            std::vector<Eigen::VectorXd> xx = traj.states;
-            rr->rollout(x0, traj.actions, xx);
-
-            Trajectory traj_out;
-            traj_out.actions = traj.actions;
-            traj_out.states = xx;
-            traj_out.goal = traj_out.states.back();
-            traj_out.start = traj_out.states.front();
-            traj_out.cost = traj.cost;
-
-            {
-              traj_out.check(rr, true);
-              traj_out.update_feasibility();
-              // CHECK(traj_out.feasible, AT); // NOTE: some can go out of
-              // bounds in the canonical form.
-            }
-
-            trajs_canonical.data.push_back(traj_out);
-          }
+          make_trajs_canonical(*robot->diff_model, new_trajectories.data,
+                               trajs_canonical.data);
 
           {
             std::string filename =
@@ -285,7 +283,7 @@ void idbA(const Problem &problem, const Options_idbAStar &options_idbas,
                           std::filesystem::copy_options::overwrite_existing);
   }
 
-  std::cout << "exit criteria"
+  std::cout << "exit criteria: "
             << static_cast<int>(info_out_idbastar.exit_criteria) << std::endl;
 }
 

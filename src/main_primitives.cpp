@@ -12,6 +12,7 @@ enum class PRIMITIVE_MODE {
   make_canonical = 10,
   bintoyaml = 11,
   yamltobin = 12,
+  sort_with_rand_config = 13,
 };
 
 #include "generate_primitives.hpp"
@@ -283,6 +284,48 @@ int main(int argc, const char *argv[]) {
 
     if (out_file == "auto") {
       out_file = in_file + ".so.bin";
+    }
+
+    CSTR_(trajectories_out.data.size());
+    trajectories_out.save_file_boost(out_file.c_str());
+    trajectories_out.save_file_yaml((out_file + ".yaml").c_str(), 1000);
+
+    trajectories_out.compute_stats("tmp_stats.yaml");
+  }
+
+  if (mode == PRIMITIVE_MODE::sort_with_rand_config) {
+
+    Trajectories trajectories, trajectories_out;
+    trajectories.load_file_boost(in_file.c_str());
+    CSTR_(trajectories.data.size());
+
+    // if (options_primitives.max_num_primitives > 0 &&
+    //     static_cast<size_t>(options_primitives.max_num_primitives) <
+    //         trajectories.data.size()) {
+    //   trajectories.data.resize(options_primitives.max_num_primitives);
+    // }
+
+    std::shared_ptr<Model_robot> robot_model =
+        robot_factory(robot_type_to_path(options_primitives.dynamics).c_str());
+
+    sort_motion_primitives_rand_config(trajectories, trajectories_out,
+                                       robot_model,
+                                       options_primitives.max_num_primitives);
+
+    // check that they are valid...
+
+    for (auto &traj : trajectories_out.data) {
+      traj.check(robot_model, true);
+      traj.update_feasibility();
+
+      if (!traj.feasible) {
+        WARN_WITH_INFO("Trajectory is not feasible -- could happen when I "
+                       "transform to cannonical form");
+      }
+    }
+
+    if (out_file == "auto") {
+      out_file = in_file + ".so2.bin";
     }
 
     CSTR_(trajectories_out.data.size());

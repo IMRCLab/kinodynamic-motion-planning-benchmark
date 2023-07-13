@@ -1,3 +1,4 @@
+name: quadrotor_0-empty_2
 environment:
   min: [-1, -1, .8]
   max: [1, 1, 2.5]

@@ -26,7 +26,6 @@
 #include "ompl/base/ScopedState.h"
 #include "robot_models.hpp"
 #include "robots.h"
-#include <nigh/impl/kdtree_median/strategy.hpp>
 
 // boost stuff for the graph
 #include <boost/graph/adjacency_list.hpp>
@@ -38,11 +37,6 @@
 #include "general_utils.hpp"
 
 #include "nigh_custom_spaces.hpp"
-#include <nigh/kdtree_batch.hpp>
-#include <nigh/kdtree_median.hpp>
-#include <nigh/se3_space.hpp>
-#include <nigh/so2_space.hpp>
-#include <nigh/so3_space.hpp>
 
 namespace ob = ompl::base;
 namespace oc = ompl::control;
@@ -54,10 +48,6 @@ using Sample_ = ob::State;
 // nigh interface for OMPL
 
 const char *duplicate_detection_str[] = {"NO", "HARD", "SOFT"};
-
-const char *terminate_status_str[] = {
-    "SOLVED", "MAX_EXPANDS", "EMPTY_QUEUE", "MAX_TIME", "UNKNOWN",
-};
 
 void copyToArray(const ompl::base::StateSpacePtr &space, double *reals,
                  const ompl::base::State *source) {
@@ -821,35 +811,6 @@ double heuristicCollisionsTree(ompl::NearestNeighbors<HeuNode *> *T_heu,
 #define NAMEOF(variable) #variable
 #define VAR_WITH_NAME(variable) variable, #variable
 
-struct Loader {
-
-  bool use_boost = true; // boost (true) or yaml (false)
-  bool print = false;
-  void *source = nullptr;
-  std::string be = "";
-  std::string af = ": ";
-
-  template <typename T> void set(T &x, const char *name) {
-
-    if (use_boost) {
-      po::options_description *p =
-          static_cast<po::options_description *>(source);
-      CHECK(p, AT);
-      set_from_boostop(*p, x, name);
-    } else {
-      if (!print) {
-        YAML::Node *p = static_cast<YAML::Node *>(source);
-        CHECK(p, AT);
-        set_from_yaml(*p, x, name);
-      }
-      if (print) {
-        // use a write method
-        std::ostream *p = static_cast<std::ostream *>(source);
-        *p << be << name << af << x << std::endl;
-      }
-    }
-  }
-};
 // TODO: how to unify: write form boost and write from yaml?
 void Options_dbastar::__load_data(void *source, bool boost, bool write,
                                   const std::string &be) {
@@ -925,28 +886,6 @@ void Options_dbastar::__read_from_node(const YAML::Node &node) {
   __load_data(&const_cast<YAML::Node &>(node), false);
 }
 
-void Time_benchmark::write(std::ostream &out) {
-
-  std::string be = "";
-  std::string af = ": ";
-
-  out << be << STR(time_search, af) << std::endl;
-  out << be << STR(time_nearestMotion, af) << std::endl;
-  out << be << STR(time_nearestNode, af) << std::endl;
-  out << be << STR(time_nearestNode_add, af) << std::endl;
-  out << be << STR(time_nearestNode_search, af) << std::endl;
-  out << be << STR(time_collisions, af) << std::endl;
-  out << be << STR(prepare_time, af) << std::endl;
-  out << be << STR(total_time, af) << std::endl;
-  out << be << STR(expands, af) << std::endl;
-  out << be << STR(num_nn_motions, af) << std::endl;
-  out << be << STR(num_nn_states, af) << std::endl;
-  out << be << STR(num_col_motions, af) << std::endl;
-  out << be << STR(motions_tree_size, af) << std::endl;
-  out << be << STR(states_tree_size, af) << std::endl;
-  out << be << STR(time_hfun, af) << std::endl;
-};
-
 // void generate_env(YAML::Node &env,
 //                   std::vector<fcl::CollisionObjectf *> &obstacles,
 //                   fcl::BroadPhaseCollisionManagerf *bpcm_env) {
@@ -989,149 +928,9 @@ void Time_benchmark::write(std::ostream &out) {
 //   bpcm_env->setup();
 // }
 
-void compute_col_shape(Motion &m, RobotOmpl &robot) {
-  Eigen::VectorXd x(robot.diff_model->nx);
-  for (auto &state : m.states) {
-    robot.toEigen(state, x);
-    auto &ts_data = robot.diff_model->ts_data;
-    auto &col_geo = robot.diff_model->collision_geometries;
-    robot.diff_model->transformation_collision_geometries(x, ts_data);
-
-    for (size_t i = 0; i < ts_data.size(); i++) {
-      auto &transform = ts_data.at(i);
-      auto co = new fcl::CollisionObjectd(col_geo.at(i));
-      co->setTranslation(transform.translation());
-      co->setRotation(transform.rotation());
-      co->computeAABB();
-      m.collision_objects.push_back(co);
-    }
-  }
-
-  m.collision_manager.reset(
-      new ShiftableDynamicAABBTreeCollisionManager<double>());
-  m.collision_manager->registerObjects(m.collision_objects);
-};
-
-void traj_to_motion(const Trajectory &traj, RobotOmpl &robot,
-                    Motion &motion_out, bool compute_col) {
-
-  auto si = robot.getSpaceInformation();
-
-  motion_out.states.resize(traj.states.size());
-  motion_out.traj = traj;
-
-  std::transform(traj.states.begin(), traj.states.end(),
-                 motion_out.states.begin(), [&](auto &x) {
-                   // CSTR_V(x);
-                   ob::State *state = si->allocState();
-                   // printState(std::cout, si, state);
-                   robot.fromEigen(state, x);
-                   robot.enforceBounds(state);
-                   // printState(std::cout, si, state);
-                   return state;
-                 });
-
-  motion_out.actions.resize(traj.actions.size());
-
-  std::transform(traj.actions.begin(), traj.actions.end(),
-                 motion_out.actions.begin(), [&](auto &a) {
-                   oc::Control *action = si->allocControl();
-                   control_from_eigen(a, si, action);
-                   return action;
-                 });
-
-  if (compute_col)
-    compute_col_shape(motion_out, robot);
-  motion_out.cost = traj.cost;
-}
-
 //
 //
 // new!
-void load_motion_primitives_new(const std::string &motionsFile,
-                                RobotOmpl &robot, std::vector<Motion> &motions,
-                                int max_motions, bool cut_actions, bool shuffle,
-                                bool compute_col = true) {
-
-  Trajectories trajs;
-
-  trajs.load_file_boost(motionsFile.c_str());
-
-  // CSTR_(max_motions);
-  // CSTR_(trajs.data.size());
-  if (max_motions < trajs.data.size())
-    trajs.data.resize(max_motions);
-
-  std::cout << "trajs " << std::endl;
-  std::cout << "first state is " << std::endl;
-  CSTR_V(trajs.data.front().states.front());
-
-  motions.resize(trajs.data.size());
-
-  bool add_noise_first_state = true;
-  CSTR_(add_noise_first_state);
-
-  if (add_noise_first_state) {
-    std::cout << "WARNING:"
-              << "adding noise to first and last state" << std::endl;
-    const double noise = 1e-7;
-    for (auto &t : trajs.data) {
-      t.states.front() +=
-          noise * Eigen::VectorXd::Random(t.states.front().size());
-
-      t.states.back() +=
-          noise * Eigen::VectorXd::Random(t.states.back().size());
-    }
-  }
-  // ensure
-
-  if (startsWith(robot.diff_model->name, "quad3d")) {
-    // ensure quaternion
-    for (auto &t : trajs.data) {
-      for (auto &s : t.states) {
-        s.segment<4>(3).normalize();
-      }
-    }
-  }
-
-  CSTR_(trajs.data.size());
-  std::cout << "from boost to motion " << std::endl;
-
-  std::transform(trajs.data.begin(), trajs.data.end(), motions.begin(),
-                 [&](const auto &traj) {
-                   // traj.to_yaml_format(std::cout, "");
-                   Motion m;
-                   traj_to_motion(traj, robot, m, compute_col);
-                   return m;
-                 });
-
-  std::cout << "from boost to motion -- DONE " << std::endl;
-
-  CHECK(motions.size(), AT);
-  if (motions.front().cost > 1e5) {
-    std::cout << "WARNING: motions have infinite cost." << std::endl;
-    std::cout << "-- using default cost: TIME" << std::endl;
-    for (auto &m : motions) {
-      m.cost = robot.diff_model->ref_dt * m.actions.size();
-    }
-  }
-
-  if (cut_actions) {
-    NOT_IMPLEMENTED;
-  }
-
-  if (shuffle) {
-    std::shuffle(std::begin(motions), std::end(motions),
-                 std::default_random_engine{});
-  }
-
-  for (size_t idx = 0; idx < motions.size(); ++idx) {
-    motions[idx].idx = idx;
-  }
-
-  std::cout << "Second time: first state is " << std::endl;
-  CSTR_V(trajs.data.front().states.front());
-}
 
 void load_motion_primitives(const std::string &motionsFile, RobotOmpl &robot,
                             std::vector<Motion> &motions, int max_motions,
@@ -1505,249 +1304,6 @@ public:
 
 namespace nigh = unc::robotics::nigh;
 
-// using Key = Eigen::Vector3d;
-
-// TODO: Nigh with weight at run time from config file
-// Debug why nigh has problem with same state when using quaternions.
-// Maybe: clean primitives so that the start state is not repeated!! (just
-// erase one states and control!)
-
-// TODO: all this should be dynamic!!
-
-template <typename _T, typename Space>
-struct NearestNeighborsNigh : public ompl::NearestNeighbors<_T> {
-
-  using Key = typename Space::Type;
-
-  struct Functor {
-    std::vector<Key> *keys;
-    Functor(std::vector<Key> *keys) : keys(keys) {}
-    const Key &operator()(const std::size_t &i) const { return keys->at(i); }
-  };
-
-  using Tree = nigh::Nigh<size_t, Space, Functor, nigh::NoThreadSafety,
-                          nigh::KDTreeBatch<>>;
-
-  // unc::robotics::nigh::KDTreeBatch<>>;
-  std::function<Key(_T const &)> data_to_key;
-  std::vector<_T> __data{};
-  std::vector<Key> __keys{};
-  std::vector<size_t> __idxs{};
-
-  Functor functor;
-  Tree tree;
-
-  NearestNeighborsNigh() : functor(&this->__keys), tree(Space{}, functor) {}
-
-  NearestNeighborsNigh(std::function<Key(_T const &)> data_to_key)
-      : data_to_key(data_to_key), functor(&this->__keys),
-        tree(Space{}, functor) {}
-
-  NearestNeighborsNigh(const Space &space)
-      : functor(&this->__keys), tree(space, functor) {}
-
-  NearestNeighborsNigh(const Space &space,
-                       std::function<Key(_T const &)> data_to_key)
-      : data_to_key(data_to_key), functor(&this->__keys), tree(space, functor) {
-  }
-
-  virtual void add(const _T &data) override {
-    __data.push_back(data);
-    __keys.push_back(data_to_key.operator()(data));
-    __idxs.push_back(__idxs.size());
-    tree.insert(__idxs.back());
-  }
-
-  virtual void add(const std::vector<_T> &data) override {
-    for (auto &d : data) {
-      add(d);
-    }
-  }
-
-  virtual bool reportsSortedResults() const override { ERROR_WITH_INFO(AT); };
-
-  virtual void clear() override {
-    tree.clear();
-    __data.clear();
-    __keys.clear();
-    __idxs.clear();
-  };
-
-  bool remove(const _T &) override { ERROR_WITH_INFO(AT); }
-
-  virtual _T nearest(const _T &data) const override {
-    Key key = data_to_key.operator()(data);
-    std::optional<std::pair<size_t, double>> pt = tree.nearest(key);
-    if (pt) {
-      return __data.at(pt.value().first);
-    } else {
-      ERROR_WITH_INFO(AT);
-    }
-  }
-
-  virtual void nearestK(const _T &data, std::size_t k,
-                        std::vector<_T> &nbh) const override {
-    std::vector<std::pair<size_t, double>> __nbh;
-
-    Key key = data_to_key.operator()(data);
-    tree.nearest(__nbh, key, k);
-    nbh.resize(__nbh.size());
-    std::transform(__nbh.begin(), __nbh.end(), nbh.begin(),
-                   [this](const auto &x) { return __data.at(x.first); });
-  }
-
-  virtual void nearestR(const _T &data, double radius,
-                        std::vector<_T> &nbh) const override {
-    size_t max_k = 1e6; // max number of possible neighbours
-    std::vector<std::pair<size_t, double>> __nbh;
-
-    Key key = data_to_key.operator()(data);
-    tree.nearest(__nbh, key, max_k, radius);
-
-    nbh.resize(__nbh.size());
-    std::transform(__nbh.begin(), __nbh.end(), nbh.begin(),
-                   [this](auto &x) { return __data.at(x.first); });
-  }
-
-  virtual std::size_t size() const override { return __data.size(); }
-
-  virtual void list(std::vector<_T> &data) const override { data = __data; }
-};
-
-template <typename _T>
-ompl::NearestNeighbors<_T> *
-nigh_factory(const std::string &name, const std::shared_ptr<RobotOmpl> &robot) {
-  ompl::NearestNeighbors<_T> *out = nullptr;
-
-  auto &w = robot->diff_model->distance_weights;
-  CSTR_V(w);
-
-  if (startsWith(name, "unicycle1")) {
-
-    auto data_to_key = [robot](_T const &m) {
-      const ob::State *s = m->get_first_state();
-      Eigen::Vector3d __x;
-      robot->toEigen(s, __x);
-      return std::tuple(Eigen::Vector2d(__x.head(2)), __x(2));
-    };
-
-    CHECK_EQ(w.size(), 2, AT);
-    __Space space(double(w(0)), double(w(1)));
-
-    out = new NearestNeighborsNigh<_T, __Space>(space, data_to_key);
-
-  } else if (startsWith(name, "unicycle2")) {
-
-    auto data_to_key = [robot](_T const &m) {
-      using Vector5d = Eigen::Matrix<double, 5, 1>;
-      using Vector1d = Eigen::Matrix<double, 1, 1>;
-      const ob::State *s = m->get_first_state();
-      Vector5d __x;
-      robot->toEigen(s, __x);
-      return std::tuple(Eigen::Vector2d(__x.head(2)), __x(2), Vector1d(__x(3)),
-                        Vector1d(__x(4)));
-    };
-
-    // out = new NearestNeighborsNigh<_T, SpaceUni2>(data_to_key);
-
-    CHECK_EQ(w.size(), 4, AT);
-    __SpaceUni2 space(w(0), w(1), w(2), w(3));
-    out = new NearestNeighborsNigh<_T, __SpaceUni2>(space, data_to_key);
-  }
-
-  else if (startsWith(name, "quad2dpole")) {
-
-    auto data_to_key = [robot](_T const &m) {
-      using Vector8d = Eigen::Matrix<double, 8, 1>;
-      using Vector1d = Eigen::Matrix<double, 1, 1>;
-      const ob::State *s = m->get_first_state();
-      Vector8d __x;
-      robot->toEigen(s, __x);
-      return std::tuple(Eigen::Vector2d(__x.head(2)), __x(2), __x(3),
-                        Eigen::Vector2d(__x(4), __x(5)), V1d(__x(6)),
-                        V1d(__x(7)));
-    };
-
-    using Space = __SpaceQuad2dPole;
-    CHECK_EQ(w.size(), 6, AT);
-    Space space(w(0), w(1), w(2), w(3), w(4), w(5));
-
-    out = new NearestNeighborsNigh<_T, Space>(space, data_to_key);
-
-  }
-
-  else if (startsWith(name, "quad2d")) {
-
-    auto data_to_key = [robot](_T const &m) {
-      using Vector6d = Eigen::Matrix<double, 6, 1>;
-      const ob::State *s = m->get_first_state();
-      Vector6d __x;
-      robot->toEigen(s, __x);
-      return std::tuple(Eigen::Vector2d(__x.head(2)), __x(2),
-                        Eigen::Vector2d(__x(3), __x(4)), V1d(__x(5)));
-    };
-
-    CHECK_EQ(w.size(), 4, AT);
-    __SpaceQuad2d space(w(0), w(1), w(2), w(3));
-
-    out = new NearestNeighborsNigh<_T, __SpaceQuad2d>(space, data_to_key);
-
-    // continue here!!
-  } else if (startsWith(name, "acrobot")) {
-
-    auto data_to_key = [robot](_T const &m) {
-      const ob::State *s = m->get_first_state();
-      Eigen::Vector4d __x;
-      robot->toEigen(s, __x);
-      return std::tuple(__x(0), __x(1), Eigen::Vector2d(__x(2), __x(3)));
-    };
-
-    // out = new NearestNeighborsNigh<_T, SpaceAcrobot>(data_to_key);
-
-    CHECK_EQ(w.size(), 3, AT);
-    __SpaceAcrobot space(w(0), w(1), w(2));
-
-    out = new NearestNeighborsNigh<_T, __SpaceAcrobot>(space, data_to_key);
-
-  } else if (startsWith(name, "quad3d")) {
-
-    auto data_to_key = [robot](_T const &m) {
-      const ob::State *s = m->get_first_state();
-      using Vector13d = Eigen::Matrix<double, 13, 1>;
-      Vector13d __x;
-      robot->toEigen(s, __x);
-      return std::tuple(Eigen::Vector3d(__x(0), __x(1), __x(2)),
-                        Eigen::Quaterniond(__x(3), __x(4), __x(5), __x(6)),
-                        Eigen::Vector3d(__x(7), __x(8), __x(9)),
-                        Eigen::Vector3d(__x(10), __x(11), __x(12)));
-    };
-
-    CHECK_EQ(w.size(), 4, AT);
-    __SpaceQuad3d space(w(0), w(1), w(2), w(3));
-    // out = new NearestNeighborsNigh<_T, SpaceQuad3d>(data_to_key);
-    out = new NearestNeighborsNigh<_T, __SpaceQuad3d>(space, data_to_key);
-
-  } else if (startsWith(name, "car1")) {
-
-    auto data_to_key = [robot](_T const &m) {
-      const ob::State *s = m->get_first_state();
-      using Vector4d = Eigen::Matrix<double, 4, 1>;
-      Vector4d __x;
-      robot->toEigen(s, __x);
-      return std::tuple(Eigen::Vector2d(__x(0), __x(1)), __x(2), __x(3));
-    };
-    // out = new NearestNeighborsNigh<_T, SpaceCar1>(data_to_key);
-
-    CHECK_EQ(w.size(), 3, AT);
-    __SpaceCar1 space(w(0), w(1), w(2));
-    // out = new NearestNeighborsNigh<_T, SpaceQuad3d>(data_to_key);
-    out = new NearestNeighborsNigh<_T, __SpaceCar1>(space, data_to_key);
-  }
-
-  CHECK(out, AT);
-  return out;
-}
-
 // TODO: store all the queries, and try the kdtree.h!! both T_m and T_n!
 
 Heu_roadmap::Heu_roadmap(std::shared_ptr<RobotOmpl> robot,
@@ -1913,16 +1469,6 @@ void dbastar(const Problem &problem, const Options_dbastar &options_dbastar,
 
   // evaluate motions
 
-  Eigen::VectorXd __x(3);
-
-  struct Getkey {
-    const ob::State *operator()(Motion *m) { return m->states.front(); };
-    const ob::State *operator()(AStarNode *n) { return n->state; };
-  };
-
-  auto f1 = [](Motion *m) { return m->states.front(); };
-  auto f2 = [](AStarNode *m) { return m->state; };
-
   // std::variant<Motion *, AStarNode *> node;
   // std::visit(Getkey(), node);
   //
@@ -2058,8 +1604,12 @@ void dbastar(const Problem &problem, const Options_dbastar &options_dbastar,
         load_heu_map(options_dbastar_local.heu_map_file.c_str(), heu_map);
       } else {
         std::cout << "not heu map provided. Computing one .... " << std::endl;
+
+        Stopwatch sw;
         generate_heuristic_map(problem, robot_factory_ompl(problem),
                                options_dbastar_local, heu_map);
+        time_bench.build_heuristic = sw.elapsed_ms();
+
         write_heu_map(heu_map, "tmp_heu_map.yaml");
       }
       options_dbastar_local.heu_map_ptr = &heu_map;
@@ -2091,12 +1641,6 @@ void dbastar(const Problem &problem, const Options_dbastar &options_dbastar,
   T_n->setDistanceFunction([si](const AStarNode *a, const AStarNode *b) {
     return si->distance(a->state, b->state);
   });
-
-  std::function<Space::Type(AStarNode *const &)> fu = [&](AStarNode *const &m) {
-    CHECK(robot, AT);
-    robot->toEigen(m->state, __x);
-    return std::tuple(Eigen::Vector2d(__x.head(2)), __x(2));
-  };
 
   if (options_dbastar_local.use_nigh_nn) {
     T_n = nigh_factory<AStarNode *>(problem.robotType, robot);
@@ -2210,7 +1754,7 @@ void dbastar(const Problem &problem, const Options_dbastar &options_dbastar,
     bool verbose = true;
 
     if (options_dbastar_local.debug) {
-      si->getStateSpace()->copyToReals(real, fakeMotion.get_first_state());
+      si->getStateSpace()->copyToReals(real, fakeMotion.getState());
       data_out_query_Tm.push_back(real);
     }
 
@@ -2222,24 +1766,23 @@ void dbastar(const Problem &problem, const Options_dbastar &options_dbastar,
       num_nn_motions.push_back(neighbors_m.size());
       if (neighbors_m.size() > max_num_nn_motions) {
         max_num_nn_motions = neighbors_m.size();
-        si->getStateSpace()->copyState(state_more_nn,
-                                       fakeMotion.get_first_state());
+        si->getStateSpace()->copyState(state_more_nn, fakeMotion.getState());
         nn_of_best = neighbors_m;
       }
 
       if (!neighbors_m.size() && true) {
 
         std::cout << "no neighours for state " << std::endl;
-        si->printState(fakeMotion.get_first_state(), std::cout);
+        si->printState(fakeMotion.getState(), std::cout);
 
         std::cout << "close state is  " << std::endl;
         auto close_motion = T_m->nearest(&fakeMotion);
-        si->printState(close_motion->get_first_state(), std::cout);
+        si->printState(close_motion->getState(), std::cout);
         std::cout << std::endl;
 
         std::cout << "close distance is:  "
-                  << si->distance(close_motion->get_first_state(),
-                                  fakeMotion.get_first_state())
+                  << si->distance(close_motion->getState(),
+                                  fakeMotion.getState())
                   << std::endl;
         std::cout << "R is "
                   << options_dbastar_local.delta * options_dbastar_local.alpha
@@ -2446,11 +1989,11 @@ void dbastar(const Problem &problem, const Options_dbastar &options_dbastar,
 
           T_m->nearestK(&__fakeMotion, 1, ns);
           // CHECK_LEQ(
-          //     si->distance(ns.front()->get_first_state(),
-          //     p->get_first_state()), 1e-10, AT);
+          //     si->distance(ns.front()->getState(),
+          //     p->getState()), 1e-10, AT);
 
-          double d = si->distance(ns.at(0)->get_first_state(),
-                                  __fakeMotion.get_first_state());
+          double d =
+              si->distance(ns.at(0)->getState(), __fakeMotion.getState());
 
           if (d > max_distance) {
             ptr_motion_with_max_distance = p;
@@ -2460,8 +2003,8 @@ void dbastar(const Problem &problem, const Options_dbastar &options_dbastar,
 
           if (d < 1e-3) {
             std::cout << "two states are very close " << std::endl;
-            si->getStateSpace()->printState(ns.at(0)->get_first_state());
-            si->getStateSpace()->printState(__fakeMotion.get_first_state());
+            si->getStateSpace()->printState(ns.at(0)->getState());
+            si->getStateSpace()->printState(__fakeMotion.getState());
 
             // std::cout << "nn motion: " << std::endl;
             // ns.at(0)->print(std::cout, si);
@@ -2523,6 +2066,8 @@ void dbastar(const Problem &problem, const Options_dbastar &options_dbastar,
   robot->toEigen(goalState, goalState_eig);
 
   Stopwatch watch;
+  std::random_device rd;
+  std::mt19937 g(rd());
   while (true) {
 
     if (static_cast<size_t>(time_bench.expands) >=
@@ -2561,9 +2106,12 @@ void dbastar(const Problem &problem, const Options_dbastar &options_dbastar,
       std::cout << "END QUEUE" << std::endl;
     }
 
+    Stopwatch __sw;
     AStarNode *current = open.top();
-    closed_list.push_back(current);
     open.pop();
+    time_bench.time_queue += __sw.elapsed_ms();
+    closed_list.push_back(current);
+
     // std::cout << "current state ";
     // printState(std::cout, si, current->state);
     // std::cout << std::endl;
@@ -2682,8 +2230,6 @@ void dbastar(const Problem &problem, const Options_dbastar &options_dbastar,
 
     // use a limit on the branching factor!
 
-    std::random_device rd;
-    std::mt19937 g(rd());
     std::shuffle(neighbors_m.begin(), neighbors_m.end(), g);
 
     if (!neighbors_m.size()) {
@@ -2696,7 +2242,7 @@ void dbastar(const Problem &problem, const Options_dbastar &options_dbastar,
 
     for (const Motion *motion : neighbors_m) {
       // std::cout << "motion from ";
-      // si->getStateSpace()->printState(motion->get_first_state());
+      // si->getStateSpace()->printState(motion->getState());
       // std::cout << " to ";
       // si->getStateSpace()->printState(motion->states.back());
       // std::cout << std::endl;
@@ -2730,6 +2276,9 @@ void dbastar(const Problem &problem, const Options_dbastar &options_dbastar,
 
         robot->toEigen(current->state, ___current_state);
         robot->diff_model->offset(___current_state, offsete);
+        tmp_traj.states = motion->traj.states;
+        tmp_traj.actions = motion->traj.actions;
+
         robot->diff_model->transform_primitive(
             offsete, motion->traj.states, motion->traj.actions, tmp_traj.states,
             tmp_traj.actions);
@@ -2859,7 +2408,11 @@ void dbastar(const Problem &problem, const Options_dbastar &options_dbastar,
             node->used_motion = motion->idx;
             node->used_offset = computed_offset;
             node->is_in_open = true;
+
+            Stopwatch _sw;
             auto handle = open.push(node);
+
+            time_bench.time_queue += _sw.elapsed_ms();
             node->handle = handle;
 
             add_state_timed(node);
@@ -2949,7 +2502,10 @@ void dbastar(const Problem &problem, const Options_dbastar &options_dbastar,
             node->used_motion = motion->idx;
             node->used_offset = computed_offset;
             node->is_in_open = true;
+
+            Stopwatch _sw;
             auto handle = open.push(node);
+            time_bench.time_queue += _sw.elapsed_ms();
             node->handle = handle;
 
             add_state_timed(node);
@@ -3003,7 +2559,9 @@ void dbastar(const Problem &problem, const Options_dbastar &options_dbastar,
                   node->used_motion = motion->idx;
                   node->used_offset = computed_offset;
                   node->is_in_open = true;
+                  Stopwatch _sw;
                   auto handle = open.push(node);
+                  time_bench.time_queue += _sw.elapsed_ms();
                   node->handle = handle;
 
                   add_state_timed(node);
@@ -3015,7 +2573,10 @@ void dbastar(const Problem &problem, const Options_dbastar &options_dbastar,
                   entry->gScore = std::numeric_limits<double>::max();
                   entry->hScore = std::numeric_limits<double>::max();
                   entry->valid = false;
+
+                  Stopwatch _sw;
                   open.decrease(entry->handle);
+                  time_bench.time_queue += _sw.elapsed_ms();
                 }
               } else {
                 entry->gScore = tentative_gScore_;
@@ -3038,10 +2599,15 @@ void dbastar(const Problem &problem, const Options_dbastar &options_dbastar,
                   // old_fscore
                   //           << " -- new -- " << entry->fScore <<
                   //           std::endl;
+
+                  Stopwatch _sw;
                   open.increase(entry->handle); // increase? decrease? check the
                                                 // original implementation
+                  time_bench.time_queue += _sw.elapsed_ms();
                 } else {
+                  Stopwatch _sw;
                   auto handle = open.push(entry);
+                  time_bench.time_queue += _sw.elapsed_ms();
                   entry->handle = handle;
                   entry->is_in_open = true;
                 }
@@ -3060,7 +2626,10 @@ void dbastar(const Problem &problem, const Options_dbastar &options_dbastar,
         node->used_motion = motion->idx;
         node->used_offset = computed_offset;
         node->is_in_open = true;
+
+        Stopwatch _sw;
         auto handle = open.push(node);
+        time_bench.time_queue += _sw.elapsed_ms();
         node->handle = handle;
       }
     }
@@ -3102,7 +2671,7 @@ void dbastar(const Problem &problem, const Options_dbastar &options_dbastar,
 
       std::transform(m.begin(), m.end(), data_out_Tm.begin(), [&](auto &s) {
         std::vector<double> reals;
-        si->getStateSpace()->copyToReals(reals, s->get_first_state());
+        si->getStateSpace()->copyToReals(reals, s->getState());
         return reals;
       });
 
@@ -3122,7 +2691,7 @@ void dbastar(const Problem &problem, const Options_dbastar &options_dbastar,
 
       std::transform(m.begin(), m.end(), data_Tn.begin(), [&](auto &s) {
         std::vector<double> reals;
-        si->getStateSpace()->copyToReals(reals, s->get_first_state());
+        si->getStateSpace()->copyToReals(reals, s->getState());
         return reals;
       });
 
@@ -3144,7 +2713,7 @@ void dbastar(const Problem &problem, const Options_dbastar &options_dbastar,
   std::cout << "neighs=" << nn_of_best.size() << std::endl;
   // for (auto &n : nn_of_best) {
   //   std::cout << "first" << std::endl;
-  //   si->getStateSpace()->printState(n->get_first_state());
+  //   si->getStateSpace()->printState(n->getState());
   //   std::cout << "last" << std::endl;
   //   si->getStateSpace()->printState(n->states.back());
   // }
@@ -3418,9 +2987,9 @@ void dbastar(const Problem &problem, const Options_dbastar &options_dbastar,
         out << space6 + "# (offset) " << __offset.format(FMT) << std::endl;
         ;
 
-        std::vector<Eigen::VectorXd> xs;
-        std::vector<Eigen::VectorXd> us;
         auto &traj = motion.traj;
+        std::vector<Eigen::VectorXd> xs = traj.states;
+        std::vector<Eigen::VectorXd> us = traj.actions;
         robot->diff_model->transform_primitive(__offset, traj.states,
                                                traj.actions, xs, us);
         // TODO: missing additional offset, if any

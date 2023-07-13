@@ -64,6 +64,16 @@
     throw std::runtime_error(msg);                                             \
   }
 
+#define WARN_GEQ(A, B, msg)                                                    \
+  if (!(A >= B)) {                                                             \
+    std::cout << "WARN_GEQ failed: '" << #A << "'=" << A << " '" << #B         \
+              << "'=" << B << " -- " << msg << std::endl                       \
+              << AT << std::endl;                                              \
+    std::cerr << "WARN_GEQ failed: '" << #A << "'=" << A << " '" << #B         \
+              << "'=" << B << " -- " << msg << std::endl                       \
+              << AT << std::endl;                                              \
+  }
+
 #define CHECK_LEQ(A, B, msg)                                                   \
   if (!(A <= B)) {                                                             \
     std::cout << "CHECK_LEQ failed: '" << #A << "'=" << A << " '" << #B        \

@@ -1,3 +1,4 @@
+name: fall_through-quad2d_v0
 environment:
   min: [0.0, 0.0]
   max: [6, 6]

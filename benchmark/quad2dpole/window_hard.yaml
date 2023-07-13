@@ -1,3 +1,4 @@
+name: quad2dpole_v0-window_hard
 environment:
   min: [-1, 0]
   max: [5, 3.5]

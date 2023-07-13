@@ -1,3 +1,4 @@
+name: quadrotor_ompl-recovery
 environment:
   min: [-2, -2, -2] # TODO: add position bounds as constraints?
   max: [2, 2, 2]

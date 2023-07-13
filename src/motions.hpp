@@ -135,12 +135,15 @@ struct Trajectory {
   void to_yaml_format(std::ostream &out, const std::string &prefix = "") const;
 
   void to_yaml_format(const char *filename) const;
+  void to_yaml_format(const std::string &filename) const {
+    to_yaml_format(filename.c_str());
+  }
 
   void read_from_yaml(const YAML::Node &node);
 
   void read_from_yaml(const char *file);
 
-  void check(std::shared_ptr<Model_robot> &robot, bool verbose = false);
+  void check(std::shared_ptr<Model_robot> robot, bool verbose = false);
 
   std::vector<Trajectory>
   find_discontinuities(std::shared_ptr<Model_robot> &robot) {
@@ -300,6 +303,8 @@ void resample_trajectory(std::vector<Eigen::VectorXd> &xs_out,
 
 struct Info_out {
   bool solved = false;
+  bool solved_raw = false;
+  double cost_raw = 1e8;
   double cost = 1e8;
   std::vector<Trajectory> trajs_raw;
   std::vector<Trajectory> trajs_opt;
@@ -325,3 +330,7 @@ Trajectory from_quim_to_welf(const Trajectory &traj_raw, double u_nominal);
 
 Trajectories cut_trajectory(const Trajectory &traj, size_t number_of_cuts,
                             std::shared_ptr<Model_robot> &robot);
+
+void make_trajs_canonical(Model_robot &robot,
+                          const std::vector<Trajectory> &trajs,
+                          std::vector<Trajectory> &trajs_canonical);

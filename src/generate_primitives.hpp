@@ -54,6 +54,11 @@ void sort_motion_primitives(
         distance_fun,
     int top_k = -1, bool naive = false);
 
+void sort_motion_primitives_rand_config(const Trajectories &__trajs,
+                                        Trajectories &trajs_out,
+                                        std::shared_ptr<Model_robot> robot,
+                                        int top_k);
+
 void split_motion_primitives(const Trajectories &in,
                              const std::string &dynamics, Trajectories &out,
                              const Options_primitives &options_primitives);

@@ -2,6 +2,7 @@
 #include "Eigen/Core"
 #include "croco_macros.hpp"
 #include "fcl/broadphase/broadphase_collision_manager.h"
+#include "for_each_macro.hpp"
 #include "general_utils.hpp"
 #include "math_utils.hpp"
 #include "robot_models_base.hpp"
@@ -43,6 +44,11 @@ struct Car_params {
   Eigen::VectorXd distance_weights = Eigen::Vector3d(1, .5, .5);
   Eigen::VectorXd hitch_lengths = Eigen::Matrix<double, 1, 1>(.5);
 
+#define CAR_PARAMS_INOUT                                                       \
+  num_trailers, dt, l, max_vel, min_vel, max_steering_abs, max_angular_vel,    \
+      diff_max_abs, shape, shape_trailer, filename, size, size_trailer,        \
+      distance_weights, hitch_lengths
+
   void read_from_yaml(YAML::Node &node);
   void read_from_yaml(const char *file);
 
@@ -51,22 +57,9 @@ struct Car_params {
     const std::string be = "";
     const std::string af = ": ";
 
-    out << be << STR(num_trailers, af) << std::endl;
-    out << be << STR(dt, af) << std::endl;
-    out << be << STR(l, af) << std::endl;
-    out << be << STR(max_vel, af) << std::endl;
-    out << be << STR(min_vel, af) << std::endl;
-    out << be << STR(max_steering_abs, af) << std::endl;
-    out << be << STR(max_angular_vel, af) << std::endl;
-    out << be << STR(shape, af) << std::endl;
-    out << be << STR(shape_trailer, af) << std::endl;
-    out << be << STR(filename, af) << std::endl;
-    out << be << STR(diff_max_abs, af) << std::endl;
-
-    out << be << STR_VV(size, af) << std::endl;
-    out << be << STR_VV(size_trailer, af) << std::endl;
-    out << be << STR_VV(distance_weights, af) << std::endl;
-    out << be << STR_VV(hitch_lengths, af) << std::endl;
+#define X(a) out << be << STR(a, af) << std::endl;
+    APPLYXn(CAR_PARAMS_INOUT);
+#undef X
   }
 };
 
@@ -105,6 +98,11 @@ struct Car2_params {
   Eigen::Vector2d size = Eigen::Vector2d(.5, .25);
   Eigen::VectorXd distance_weights = Eigen::Vector4d(1, .5, .2, .2);
 
+#define CAR2_PARAMS_INOUT                                                      \
+  dt, l, max_vel, min_vel, max_steering_abs, max_angular_vel, max_acc_abs,     \
+      max_steer_vel_abs, shape, shape_trailer, filename, size,                 \
+      distance_weights
+
   void read_from_yaml(YAML::Node &node);
   void read_from_yaml(const char *file);
 
@@ -113,19 +111,9 @@ struct Car2_params {
     const std::string be = "";
     const std::string af = ": ";
 
-    out << be << STR(dt, af) << std::endl;
-    out << be << STR(l, af) << std::endl;
-    out << be << STR(max_vel, af) << std::endl;
-    out << be << STR(min_vel, af) << std::endl;
-    out << be << STR(max_steering_abs, af) << std::endl;
-    out << be << STR(max_angular_vel, af) << std::endl;
-    out << be << STR(shape, af) << std::endl;
-    out << be << STR(shape_trailer, af) << std::endl;
-    out << be << STR(filename, af) << std::endl;
-    out << be << STR(max_acc_abs, af) << std::endl;
-    out << be << STR(max_steer_vel_abs, af) << std::endl;
-    out << be << STR_VV(size, af) << std::endl;
-    out << be << STR_VV(distance_weights, af) << std::endl;
+#define X(a) out << be << STR(a, af) << std::endl;
+    APPLYXn(CAR2_PARAMS_INOUT);
+#undef X
   }
 };
 
@@ -1030,14 +1018,22 @@ struct Model_quad2dpole : Model_robot {
                       std::vector<Eigen::VectorXd> &xs_out,
                       std::vector<Eigen::VectorXd> &us_out) override {
 
+    CHECK_EQ(us_out.size(), us_in.size(), AT);
+    CHECK_EQ(xs_out.size(), xs_in.size(), AT);
+    CHECK_EQ(xs_out.front().size(), xs_in.front().size(), AT);
+    CHECK_EQ(us_out.front().size(), us_in.front().size(), AT);
+
     CHECK((p.size() == 2 || 4), AT);
 
     if (p.size() == 2) {
       Model_robot::transform_primitive(p, xs_in, us_in, xs_out, us_out);
     } else {
-      xs_out = xs_in;
-      us_out = us_in;
 
+      for (size_t i = 0; i < us_in.size(); i++) {
+        us_out[i] = us_in[i];
+      }
+
+      xs_out.front() = xs_in.front();
       xs_out.front().head(2) += p.head(2);
       xs_out.front().segment(4, 2) += p.tail(2);
       rollout(xs_out.front(), us_in, xs_out);
@@ -1150,12 +1146,20 @@ struct Model_quad2d : Model_robot {
 
     CHECK((p.size() == 2 || 4), AT);
 
+    CHECK_EQ(us_out.size(), us_in.size(), AT);
+    CHECK_EQ(xs_out.size(), xs_in.size(), AT);
+    CHECK_EQ(xs_out.front().size(), xs_in.front().size(), AT);
+    CHECK_EQ(us_out.front().size(), us_in.front().size(), AT);
+
     if (p.size() == 2) {
       Model_robot::transform_primitive(p, xs_in, us_in, xs_out, us_out);
     } else {
-      xs_out = xs_in;
-      us_out = xs_out;
 
+      for (size_t i = 0; i < us_in.size(); i++) {
+        us_out[i] = us_in[i];
+      }
+
+      xs_out.front() = xs_in.front();
       xs_out.front().head(2) += p.head(2);
       xs_out.front().segment(3, 2) += p.tail(2);
       rollout(xs_out.front(), us_in, xs_out);
@@ -1252,7 +1256,9 @@ struct Model_unicycle2 : Model_robot {
                        const Eigen::Ref<const Eigen::VectorXd> &y) override;
 };
 
-std::unique_ptr<Model_robot> robot_factory(const char *file);
+std::unique_ptr<Model_robot>
+robot_factory(const char *file, const Eigen::VectorXd &p_lb = Eigen::VectorXd(),
+              const Eigen::VectorXd &p_ub = Eigen::VectorXd());
 
 inline std::string robot_type_to_path(const std::string &robot_type) {
   const std::string base_path = "../models/";

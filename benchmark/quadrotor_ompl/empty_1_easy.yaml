@@ -1,3 +1,4 @@
+name: quadrotor_ompl-empty_1
 environment:
   min: [-1, -1, .8]
   max: [1, 1, 2.5]

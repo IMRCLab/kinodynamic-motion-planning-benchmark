@@ -4,6 +4,139 @@
 #include "ocp.hpp"
 #include <thread>
 
+void sort_motion_primitives_rand_config(const Trajectories &__trajs,
+                                        Trajectories &trajs_out,
+                                        std::shared_ptr<Model_robot> robot,
+                                        int top_k) {
+
+  Trajectories trajs = __trajs;
+
+  for (auto &t : trajs.data) {
+    if (!t.start.size()) {
+      CHECK(t.states.size(), AT);
+      t.start = t.states.front();
+    } else {
+      CHECK_LEQ((t.start - t.states.front()).norm(), 1e-7, AT);
+    }
+    if (!t.goal.size()) {
+      CHECK(t.states.size(), AT);
+      t.goal = t.states.back();
+    } else {
+      CHECK_LEQ((t.goal - t.states.back()).norm(), 1e-7, AT);
+    }
+  }
+
+  if (top_k == -1 || top_k > static_cast<int>(trajs.data.size())) {
+    top_k = trajs.data.size();
+  }
+
+  for (const auto &traj : trajs.data) {
+    CHECK_LEQ((traj.states.front() - traj.start).norm(), 1e-8, AT);
+    CHECK_LEQ((traj.states.back() - traj.goal).norm(), 1e-8, AT);
+  }
+
+  std::vector<int> used_motions;
+  std::set<int> unused_motions;
+
+  for (size_t i = 0; i < trajs.data.size(); i++) {
+    unused_motions.insert(i);
+  }
+
+  enum class Mode { START, GOAL, BOTH };
+
+  Mode mode = Mode::BOTH;
+  Eigen::VectorXd x(robot->nx), _x(robot->nx), goal(robot->nx);
+
+  size_t num_translation = robot->get_translation_invariance();
+  if (num_translation) {
+    Eigen::VectorXd p_lb(num_translation);
+    Eigen::VectorXd p_ub(num_translation);
+    p_lb.setOnes();
+    p_lb *= -1;
+    p_ub.setOnes();
+    robot->setPositionBounds(p_lb, p_ub);
+  }
+
+  for (size_t i = 0; i < top_k; i++) {
+
+    if (i % 1000 == 0) {
+      CSTR_(i);
+    }
+
+    int best_index = -1;
+
+    switch (mode) {
+
+    case Mode::START: {
+      robot->sample_uniform(_x);
+      robot->canonical_state(_x, x);
+
+      double min_d = std::sqrt(std::numeric_limits<double>::max());
+      for (auto &u : unused_motions) {
+        auto &traj = trajs.data.at(u);
+        double d = robot->distance(x, traj.states.front());
+        if (d < min_d) {
+          min_d = d;
+          best_index = u;
+        }
+      }
+
+    } break;
+
+      // sample one configuration
+    case Mode::GOAL: {
+      robot->sample_uniform(goal);
+      double min_d = std::sqrt(std::numeric_limits<double>::max());
+      for (auto &u : unused_motions) {
+        auto &traj = trajs.data.at(u);
+        double d = robot->distance(goal, traj.states.back());
+        if (d < min_d) {
+          min_d = d;
+          best_index = u;
+        }
+      }
+
+    } break;
+
+    case Mode::BOTH: {
+
+      robot->sample_uniform(_x);
+      robot->canonical_state(_x, x);
+
+      robot->sample_uniform(goal);
+
+      double min_d = std::sqrt(std::numeric_limits<double>::max());
+      for (auto &u : unused_motions) {
+        auto &traj = trajs.data.at(u);
+        double d = robot->distance(goal, traj.states.back()) +
+                   robot->distance(x, traj.states.front());
+
+        if (d < min_d) {
+          min_d = d;
+          best_index = u;
+        }
+      }
+
+      NOT_IMPLEMENTED;
+
+    } break;
+    default:
+      NOT_IMPLEMENTED;
+    }
+    CHECK_GEQ(best_index, 0, AT);
+    CHECK_LEQ(best_index, trajs.data.size() - 1, AT);
+    // assert(best_index < traj.data.size());
+
+    used_motions.push_back(best_index);
+    unused_motions.erase(best_index);
+  }
+
+  for (auto &i : used_motions) {
+    CSTR_(i);
+    trajs_out.data.push_back(trajs.data.at(i));
+  }
+}
+
 void sort_motion_primitives(
     const Trajectories &__trajs, Trajectories &trajs_out,
     std::function<double(const Eigen::VectorXd &, const Eigen::VectorXd &)>

@@ -1,21 +1,22 @@
+name: quadrotor_ompl-window
 environment:
   min: [1, 0.5, 1]
   max: [5, 5.5, 3]
   obstacles:
     - type: box
-      center: [4, 3, 1.5]
-      size: [2, .3, 3]
+      center: [4, 3, 2]
+      size: [2, .3, 2]
     - type: box
-      center: [.5, 3, 1.5]
-      size: [1, .3, 3]
+      center: [1.1, 3, 1.9]
+      size: [.2, .3, 1]
     # horizontal
     - type: box
-      center: [2, 3, 3]
-      size: [2, .3, 1.6]
-    # horizontal
-    - type: box
-      center: [2, 3, 1.1]
+      center: [2, 3, 2.7]
       size: [2, .3, .6]
+    # horizontal
+    - type: box
+      center: [2, 3, 1.2]
+      size: [2, .3, .4]
 robots:
   - type: quad3d_omplapp
     start: [

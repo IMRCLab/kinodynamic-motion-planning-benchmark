@@ -22,6 +22,7 @@
 
 struct Options_trajopt {
 
+  bool soft_control_bounds = false;
   bool CALLBACKS = true;
   std::string solver_name;
   bool use_finite_diff = false;
@@ -71,6 +72,7 @@ struct Options_trajopt {
   void read_from_yaml(const char *file);
 };
 
+// TODO: check which methods are deprecated!!
 enum class SOLVER {
   traj_opt = 0,
   traj_opt_free_time = 1,
@@ -87,7 +89,8 @@ enum class SOLVER {
   traj_opt_no_bound_bound = 12,
   traj_opt_free_time_proxi_linear = 13,
   traj_opt_free_time_linear = 14,
-  none = 15
+  first_fixed_then_free_time = 15,
+  none = 16
 };
 
 void PrintVariableMap(const boost::program_options::variables_map &vm,

@@ -1,6 +1,7 @@
+name: quadrotor_0-recovery
 environment:
-  min: [-2, -2, -1] # TODO: add position bounds as constraints?
-  max: [2, 2, 2]
+  min: [-1, -1, -2] # TODO: add position bounds as constraints?
+  max: [1, 2, 2]
   obstacles: []
 robots:
   - type: quad3d_v0
@@ -16,4 +17,4 @@ robots:
     #                     0., 0., 0.], dtype=np.float64)
     start:
       [0.0, 0.0, 1.0, -0.9990482, 0., 0., 0.0436194, 0., 0., 0., 0., 0., 0.]
-    goal: [0., 0.15, 1., 0., 0., 0., 1., 0., 0., 0., 0., 0., 0.]
+    goal: [0., .8, 1., 0., 0., 0., 1., 0., 0., 0., 0., 0., 0.]

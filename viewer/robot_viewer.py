@@ -14,7 +14,11 @@ class RobotViewer():
 
     def view_trajectory(self, ax, result, **kwargs):
         viewer_utils.draw_traj_default(
-            ax, result, self.RobotDrawerClass, draw_basic_every=10)
+            ax, result, self.RobotDrawerClass, draw_basic_every=50)
+
+    def view_trajectory_minimal(self, ax, result, **kwargs):
+        viewer_utils.draw_traj_minimal(
+            ax, result, self.RobotDrawerClass)
 
     def view_static(self, ax, env, result, **kwargs):
         self.view_problem(ax, env, **kwargs)

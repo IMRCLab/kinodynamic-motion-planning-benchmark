@@ -448,11 +448,24 @@ struct Model_robot {
     // basic transformation is translation invariance
     CHECK_EQ(p.size(), translation_invariance, AT);
     // TODO: avoid memory allocation inside this function!!
-    us_out = us_in;
-    xs_out = xs_in;
+
+    CHECK_EQ(us_out.size(), us_in.size(), AT);
+    CHECK_EQ(xs_out.size(), xs_in.size(), AT);
+    CHECK_EQ(xs_out.front().size(), xs_in.front().size(), AT);
+    CHECK_EQ(us_out.front().size(), us_in.front().size(), AT);
+
+    for (size_t i = 0; i < us_in.size(); i++) {
+      us_out[i] = us_in[i];
+    }
+
     if (translation_invariance) {
-      for (auto &x : xs_out) {
-        x.head(translation_invariance) += p;
+      for (size_t i = 0; i < xs_in.size(); i++) {
+        xs_out[i] = xs_in[i];
+        xs_out[i].head(translation_invariance) += p;
+      }
+    } else {
+      for (size_t i = 0; i < xs_in.size(); i++) {
+        xs_out[i] = xs_in[i];
       }
     }
   }

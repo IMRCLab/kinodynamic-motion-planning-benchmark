@@ -57,7 +57,11 @@ class Robot():
             self.hitch_length[0]
         self.patch2 = viewer_utils.draw_box_patch(
             ax, xy - link1, self.size[1], theta1, **kwargs)
-        return [self.patch1, self.patch2]
+
+        self.o2 = viewer_utils.draw_box_patch_front(
+            ax, xy, self.size, theta0, color="black")
+
+        return [self.patch1, self.patch2, self.o2]
 
     def update(self, state):
         """
@@ -81,7 +85,12 @@ class Robot():
         t = matplotlib.transforms.Affine2D().rotate_around(
             pos1[0], pos1[1], theta1)
         self.patch2.set_transform(t + self.ax.transData)
-        return [self.patch1, self.patch2]
+
+        p = .2 * np.array([np.cos(theta0), np.sin(theta0)])
+        print(p + xy)
+        self.o2.center = (p + pos0).tolist()
+
+        return [self.patch1, self.patch2, self.o2]
 
 
 class CarWithTrailerViewer(RobotViewer):

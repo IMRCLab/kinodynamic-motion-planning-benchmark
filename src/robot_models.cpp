@@ -1062,11 +1062,21 @@ void Model_quad3d::transform_primitive(
 
   CHECK((p.size() == 3 || 6), AT);
 
+  CHECK_EQ(us_out.size(), us_in.size(), AT);
+  CHECK_EQ(xs_out.size(), xs_in.size(), AT);
+  CHECK_EQ(xs_out.front().size(), xs_in.front().size(), AT);
+  CHECK_EQ(us_out.front().size(), us_in.front().size(), AT);
+
   if (p.size() == 3) {
     Model_robot::transform_primitive(p, xs_in, us_in, xs_out, us_out);
   } else {
     xs_out = xs_in;
-    us_out = us_in;
+
+    for (size_t i = 0; i < us_in.size(); i++) {
+      us_out[i] = us_in[i];
+    }
+
+    xs_out.front() = xs_in.front();
     transform_state(p, xs_in.at(0), xs_out.at(0));
     rollout(xs_out.at(0), us_in, xs_out);
   }
@@ -1759,7 +1769,13 @@ double Model_quad2dpole::lower_bound_time_vel(
     const Eigen::Ref<const Eigen::VectorXd> &x,
     const Eigen::Ref<const Eigen::VectorXd> &y) {
 
-  NOT_IMPLEMENTED;
+  std::array<double, 4> maxs = {std::abs(x(4) - y(4)) / params.max_acc,
+                                std::abs(x(5) - y(5)) / params.max_acc,
+                                std::abs(x(6) - y(6)) / params.max_angular_acc,
+                                std::abs(x(7) - y(7)) / params.max_angular_acc};
+
+  auto it = std::max_element(maxs.cbegin(), maxs.cend());
+  return *it;
 }
 
 double
@@ -1770,15 +1786,19 @@ Model_quad2d::lower_bound_time_vel(const Eigen::Ref<const Eigen::VectorXd> &x,
                                 std::abs(x(4) - y(4)) / params.max_acc,
                                 std::abs(x(5) - y(5)) / params.max_angular_acc};
 
-  auto it = std::max_element(maxs.cbegin(), maxs.cend());
-  return *it;
+  return *std::max_element(maxs.cbegin(), maxs.cend());
 }
 
 double Model_quad2dpole::lower_bound_time_pr(
     const Eigen::Ref<const Eigen::VectorXd> &x,
     const Eigen::Ref<const Eigen::VectorXd> &y) {
 
-  NOT_IMPLEMENTED;
+  std::array<double, 3> maxs = {
+      (x.head<2>() - y.head<2>()).norm() / params.max_vel,
+      so2_distance(x(2), y(2)) / params.max_angular_vel,
+      so2_distance(x(3), y(3)) / params.max_angular_vel};
+
+  return *std::max_element(maxs.cbegin(), maxs.cend());
 }
 
 double
@@ -2009,8 +2029,8 @@ void Unicycle1_params::read_from_yaml(YAML::Node &node) {
   set_from_yaml(node, VAR_WITH_NAME(min_angular_vel));
   set_from_yaml(node, VAR_WITH_NAME(shape));
   set_from_yaml(node, VAR_WITH_NAME(dt));
-  set_from_yaml_eigen(node, VAR_WITH_NAME(size));
-  set_from_yaml_eigen(node, VAR_WITH_NAME(distance_weights));
+  set_from_yaml(node, VAR_WITH_NAME(size));
+  set_from_yaml(node, VAR_WITH_NAME(distance_weights));
 }
 
 void Quad2dpole_params::read_from_yaml(YAML::Node &node) {
@@ -2038,8 +2058,8 @@ void Quad2dpole_params::read_from_yaml(YAML::Node &node) {
 
   set_from_yaml(node, VAR_WITH_NAME(shape));
 
-  set_from_yaml_eigen(node, VAR_WITH_NAME(size));
-  set_from_yaml_eigen(node, VAR_WITH_NAME(distance_weights));
+  set_from_yaml(node, VAR_WITH_NAME(size));
+  set_from_yaml(node, VAR_WITH_NAME(distance_weights));
 }
 
 void Quad2d_params::read_from_yaml(YAML::Node &node) {
@@ -2063,28 +2083,15 @@ void Quad2d_params::read_from_yaml(YAML::Node &node) {
 
   set_from_yaml(node, VAR_WITH_NAME(shape));
 
-  set_from_yaml_eigen(node, VAR_WITH_NAME(size));
-  set_from_yaml_eigen(node, VAR_WITH_NAME(distance_weights));
+  set_from_yaml(node, VAR_WITH_NAME(size));
+  set_from_yaml(node, VAR_WITH_NAME(distance_weights));
 }
 
 void Car_params::read_from_yaml(YAML::Node &node) {
-  set_from_yaml(node, VAR_WITH_NAME(l));
-  set_from_yaml(node, VAR_WITH_NAME(max_vel));
-  set_from_yaml(node, VAR_WITH_NAME(min_vel));
-  set_from_yaml(node, VAR_WITH_NAME(max_steering_abs));
-  set_from_yaml(node, VAR_WITH_NAME(max_angular_vel));
-  set_from_yaml(node, VAR_WITH_NAME(dt));
-  set_from_yaml(node, VAR_WITH_NAME(num_trailers));
-  set_from_yaml(node, VAR_WITH_NAME(shape));
-  set_from_yaml(node, VAR_WITH_NAME(shape_trailer));
-  set_from_yaml(node, VAR_WITH_NAME(dt));
-  set_from_yaml(node, VAR_WITH_NAME(diff_max_abs));
 
-  set_from_yaml_eigen(node, VAR_WITH_NAME(size));
-  set_from_yaml_eigen(node, VAR_WITH_NAME(size_trailer));
-
-  set_from_yaml_eigenx(node, VAR_WITH_NAME(distance_weights));
-  set_from_yaml_eigenx(node, VAR_WITH_NAME(hitch_lengths));
+#define X(a) set_from_yaml(node, VAR_WITH_NAME(a));
+  APPLYXn(CAR_PARAMS_INOUT);
+#undef X
 
   assert(num_trailers == hitch_lengths.size());
 }
@@ -2210,22 +2217,10 @@ void Model_car2::calcDiffV(Eigen::Ref<Eigen::MatrixXd> Jv_x,
 }
 
 void Car2_params::read_from_yaml(YAML::Node &node) {
-  set_from_yaml(node, VAR_WITH_NAME(l));
-  set_from_yaml(node, VAR_WITH_NAME(max_vel));
-  set_from_yaml(node, VAR_WITH_NAME(min_vel));
-  set_from_yaml(node, VAR_WITH_NAME(max_steering_abs));
-  set_from_yaml(node, VAR_WITH_NAME(max_angular_vel));
-  set_from_yaml(node, VAR_WITH_NAME(dt));
-  set_from_yaml(node, VAR_WITH_NAME(shape));
-  set_from_yaml(node, VAR_WITH_NAME(shape_trailer));
-  set_from_yaml(node, VAR_WITH_NAME(dt));
 
-  set_from_yaml(node, VAR_WITH_NAME(max_acc_abs));
-  set_from_yaml(node, VAR_WITH_NAME(max_steer_vel_abs));
-
-  set_from_yaml_eigen(node, VAR_WITH_NAME(size));
-
-  set_from_yaml_eigenx(node, VAR_WITH_NAME(distance_weights));
+#define X(a) set_from_yaml(node, VAR_WITH_NAME(a));
+  APPLYXn(CAR2_PARAMS_INOUT);
+#undef X
 }
 
 void Car2_params::read_from_yaml(const char *file) {
@@ -2280,7 +2275,7 @@ void Acrobot_params::read_from_yaml(YAML::Node &node) {
   set_from_yaml(node, VAR_WITH_NAME(distance_weight_angular_vel));
   set_from_yaml(node, VAR_WITH_NAME(max_torque));
 
-  set_from_yaml_eigen(node, VAR_WITH_NAME(distance_weights));
+  set_from_yaml(node, VAR_WITH_NAME(distance_weights));
 }
 
 void Acrobot_params::read_from_yaml(const char *file) {
@@ -2317,8 +2312,8 @@ void Unicycle2_params::read_from_yaml(YAML::Node &node) {
   set_from_yaml(node, VAR_WITH_NAME(max_acc_abs));
   set_from_yaml(node, VAR_WITH_NAME(max_angular_acc_abs));
   set_from_yaml(node, VAR_WITH_NAME(dt));
-  set_from_yaml_eigen(node, VAR_WITH_NAME(distance_weights));
-  set_from_yaml_eigen(node, VAR_WITH_NAME(size));
+  set_from_yaml(node, VAR_WITH_NAME(distance_weights));
+  set_from_yaml(node, VAR_WITH_NAME(size));
   set_from_yaml(node, VAR_WITH_NAME(shape));
 }
 
@@ -2343,12 +2338,12 @@ void Quad3d_params::read_from_yaml(YAML::Node &node) {
   set_from_yaml(node, VAR_WITH_NAME(t2t));
   set_from_yaml(node, VAR_WITH_NAME(dt));
   set_from_yaml(node, VAR_WITH_NAME(shape));
-  set_from_yaml_eigen(node, VAR_WITH_NAME(J_v));
-  set_from_yaml_eigen(node, VAR_WITH_NAME(distance_weights));
-  set_from_yaml_eigen(node, VAR_WITH_NAME(u_ub));
-  set_from_yaml_eigen(node, VAR_WITH_NAME(u_lb));
+  set_from_yaml(node, VAR_WITH_NAME(J_v));
+  set_from_yaml(node, VAR_WITH_NAME(distance_weights));
+  set_from_yaml(node, VAR_WITH_NAME(u_ub));
+  set_from_yaml(node, VAR_WITH_NAME(u_lb));
 
-  set_from_yaml_eigenx(node, VAR_WITH_NAME(size));
+  set_from_yaml(node, VAR_WITH_NAME(size));
 }
 
 void Quad3d_params::read_from_yaml(const char *file) {
@@ -2358,7 +2353,9 @@ void Quad3d_params::read_from_yaml(const char *file) {
   read_from_yaml(node);
 }
 
-std::unique_ptr<Model_robot> robot_factory(const char *file) {
+std::unique_ptr<Model_robot> robot_factory(const char *file,
+                                           const Eigen::VectorXd &p_lb,
+                                           const Eigen::VectorXd &p_ub) {
 
   // open the robot
 
@@ -2372,21 +2369,21 @@ std::unique_ptr<Model_robot> robot_factory(const char *file) {
   std::cout << STR_(dynamics) << std::endl;
 
   if (dynamics == "unicycle1") {
-    return std::make_unique<Model_unicycle1>(file);
+    return std::make_unique<Model_unicycle1>(file, p_lb, p_ub);
   } else if (dynamics == "unicycle2") {
-    return std::make_unique<Model_unicycle2>(file);
+    return std::make_unique<Model_unicycle2>(file, p_lb, p_ub);
   } else if (dynamics == "quad2d") {
-    return std::make_unique<Model_quad2d>(file);
+    return std::make_unique<Model_quad2d>(file, p_lb, p_ub);
   } else if (dynamics == "quad3d") {
-    return std::make_unique<Model_quad3d>(file);
+    return std::make_unique<Model_quad3d>(file, p_lb, p_ub);
   } else if (dynamics == "acrobot") {
-    return std::make_unique<Model_acrobot>(file);
+    return std::make_unique<Model_acrobot>(file, p_lb, p_ub);
   } else if (dynamics == "car_with_trailers") {
-    return std::make_unique<Model_car_with_trailers>(file);
+    return std::make_unique<Model_car_with_trailers>(file, p_lb, p_ub);
   } else if (dynamics == "car2") {
-    return std::make_unique<Model_car2>(file);
+    return std::make_unique<Model_car2>(file, p_lb, p_ub);
   } else if (dynamics == "quad2dpole") {
-    return std::make_unique<Model_quad2dpole>(file);
+    return std::make_unique<Model_quad2dpole>(file, p_lb, p_ub);
   } else {
     ERROR_WITH_INFO("dynamics not implemented");
   }

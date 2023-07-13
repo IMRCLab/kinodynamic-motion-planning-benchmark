@@ -47,6 +47,9 @@ set(CMAKE_CXX_FLAGS  "${CMAKE_CXX_FLAGS} -Wall -Wextra")
 add_subdirectory(deps/fcl EXCLUDE_FROM_ALL)
 add_subdirectory(deps/sbpl)# EXCLUDE_FROM_ALL)
 add_subdirectory(deps/ompl EXCLUDE_FROM_ALL)
+
+add_subdirectory(deps/spdlog EXCLUDE_FROM_ALL)
+
 # add_subdirectory(deps/rai EXCLUDE_FROM_ALL)
 
 # external projects
@@ -86,6 +89,9 @@ add_library(dbastar
   src/dbastar.cpp
 )
 
+add_library(dbrrt
+  src/dbrrt.cpp
+)
 
 # add_library(ompl_geo
 #   src/ompl_geo.cpp
@@ -143,6 +149,15 @@ add_executable(dev_manifold
 )
 
 
+add_executable(hello_world_spdlog
+  src/hello_world_spdlog.cpp
+)
+
+target_include_directories(hello_world_spdlog
+  PRIVATE ${CMAKE_SOURCE_DIR}/deps/spdlog/include
+)
+
+
 # add_executable(example_nigh
 #   src/example_nigh.cpp
 # )
@@ -171,6 +186,14 @@ target_include_directories(test_idbastar
 )
 
 
+target_include_directories(croco_ocp PRIVATE ${CROCODDYL_INCLUDE_DIRS})
+
+
+
+target_link_libraries(hello_world_spdlog
+  PRIVATE spdlog::spdlog)
+
+
 
 target_link_libraries(robot_models
   yaml-cpp
@@ -188,6 +211,7 @@ target_include_directories(main_ompl
   PRIVATE ${CMAKE_BINARY_DIR}/deps/fcl/include
   PRIVATE ${CMAKE_SOURCE_DIR}/deps/fcl/include
   PRIVATE ${CROCODDYL_INCLUDE_DIRS}
+  PRIVATE deps/nigh/src
 )
 
 target_include_directories(test_ompl_sst
@@ -195,6 +219,7 @@ target_include_directories(test_ompl_sst
   PRIVATE ${CMAKE_SOURCE_DIR}/deps/fcl/include
   PRIVATE ${CROCODDYL_INCLUDE_DIRS}
   src
+  PRIVATE deps/nigh/src
 )
 
 
@@ -232,6 +257,7 @@ target_include_directories(main_ompl_geo
   PRIVATE ${CMAKE_BINARY_DIR}/deps/fcl/include
   PRIVATE ${CMAKE_SOURCE_DIR}/deps/fcl/include
   PRIVATE ${CROCODDYL_INCLUDE_DIRS}
+  PRIVATE deps/nigh/src
 )
 
 
@@ -282,6 +308,12 @@ add_executable(main_dbastar
   src/main_dbastar.cpp
 )
 
+add_executable(main_dbrrt
+  src/main_dbrrt.cpp
+)
+
+
+
 # add_executable(evaluate_nn
 #   src/evaluate_nn.cpp
 # )
@@ -293,6 +325,10 @@ add_executable(test_croco
 
 add_executable(test_db
   unittest/test_db.cpp 
+)
+
+add_executable(test_dbrrt
+  unittest/test_dbrrt.cpp 
 )
 
 
@@ -344,12 +380,24 @@ target_include_directories(test_db
 )
 
 
+target_include_directories(test_dbrrt
+  PRIVATE ${CMAKE_BINARY_DIR}/deps/fcl/include
+  PRIVATE ${CMAKE_SOURCE_DIR}/deps/fcl/include
+  PRIVATE ${CMAKE_SOURCE_DIR}/deps/spdlog/include
+  PRIVATE ${CROCODDYL_INCLUDE_DIRS}
+  PRIVATE deps/nigh/src
+  src
+)
+
+
+
 target_include_directories(test_ompl_geo
   PRIVATE ${CMAKE_BINARY_DIR}/deps/fcl/include
   PRIVATE ${CMAKE_SOURCE_DIR}/deps/fcl/include
   PRIVATE ${CMAKE_SOURCE_DIR}/deps/fcl/include
-PRIVATE ${CROCODDYL_INCLUDE_DIRS}
-src
+  PRIVATE ${CROCODDYL_INCLUDE_DIRS}
+  src
+  PRIVATE deps/nigh/src
 )
 
 
@@ -365,6 +413,39 @@ target_include_directories(dbastar
 
   PRIVATE deps/nigh/src 
 )
+
+
+target_include_directories(main_dbrrt
+  PRIVATE ${CROCODDYL_INCLUDE_DIRS}
+  PRIVATE ${PINOCCHIO_INCLUDE_DIRS}
+  )
+
+
+
+
+target_include_directories(dbrrt
+  PRIVATE ${CMAKE_BINARY_DIR}/deps/fcl/include
+  PRIVATE ${CMAKE_SOURCE_DIR}/deps/fcl/include
+  PRIVATE ${CROCODDYL_INCLUDE_DIRS}
+  PRIVATE ${PINOCCHIO_INCLUDE_DIRS}
+  PRIVATE deps/nigh/src 
+)
+
+
+target_link_libraries(main_dbrrt
+  dbrrt
+  croco_ocp
+  motion_planning_common
+  robot_models
+  ${Boost_LIBRARIES}
+  ${LZ4_LIBRARIES}
+  ompl
+  fcl
+  yaml-cpp
+)
+
+
+
 
 target_link_libraries(main_dbastar
   dbastar
@@ -402,6 +483,17 @@ target_link_libraries(test_idbastar
 )
 
 
+target_link_libraries(test_dbrrt
+  dbrrt
+  croco_ocp
+  motion_planning_common
+  robot_models
+  ${Boost_LIBRARIES}
+  ${LZ4_LIBRARIES}
+  ompl
+  fcl
+  yaml-cpp
+)
 
 
 
@@ -431,7 +523,6 @@ target_link_libraries(test_ompl_geo
 
 
 
-target_include_directories(croco_ocp PRIVATE ${CROCODDYL_INCLUDE_DIRS})
 target_include_directories(test_croco PRIVATE ${CROCODDYL_INCLUDE_DIRS} src)
 target_include_directories(dev_manifold PRIVATE ${CROCODDYL_INCLUDE_DIRS} ${PINOCCHIO_INCLUDE_DIRS})
 

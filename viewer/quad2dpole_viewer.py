@@ -49,6 +49,10 @@ class Robot():
 
         ax.plot(xx, yy, **kwargs)
 
+        ps = [compute_pole_pose(x, r) for x in Xs]
+
+        ax.plot([p[0] for p in ps], [p[1] for p in ps], **kwargs)
+
     def draw_basic(
             self,
             ax,
@@ -65,17 +69,46 @@ class Robot():
 
         p = compute_pole_pose(X, r)
 
-        self.point_pendulumn = ax.plot([p[0]], [p[1]], '.',
-                                       alpha=alpha, color=color, **kwargs)
+        self.point_pendulum = ax.plot([p[0]], [p[1]], '.',
+                                      alpha=alpha, color=color, **kwargs)
 
     def draw(self, ax, X, **kwargs):
         self.ax = ax
         center = X[:2]
         angle = X[2]
+
+        # self.o1 = viewer_utils.draw_box_patch(
+        #     ax, center, self.size, angle, **kwargs)
+        # self.o2 = viewer_utils.draw_box_patch_front(
+        #     ax, center, self.size, angle + np.pi / 2, **kwargs)
+
+        # TODO: refactor this!!!
         self.o1 = viewer_utils.draw_box_patch(
-            ax, center, self.size, angle, **kwargs)
-        self.o2 = viewer_utils.draw_box_patch_front(
-            ax, center, self.size, angle + np.pi / 2, **kwargs)
+            ax, center, self.size, angle, **{'facecolor': 'none', 'edgecolor': 'gray', 'alpha': 0})
+        # self.o2 = viewer_utils.draw_box_patch_front(
+        #     ax, center, self.size, angle + np.pi / 2, **kwargs)
+
+        self.size_internal = np.array([0.5, 0.09])
+        self.offset = np.array([0, -.05])
+
+        self.o3 = viewer_utils.draw_box_patch(
+            ax, center + viewer_utils.rotate(self.offset, angle),
+            self.size_internal, angle, **kwargs)
+
+        # self.o4 = viewer_utils.draw_box_patch(
+        #     ax, center, size_internal, angle, fill="black")
+
+        self.offset_propeller_right = np.array([.1, .05])
+        self.offset_propeller_left = np.array([-.1, .05])
+        p = center + viewer_utils.rotate(self.offset_propeller_left, angle)
+        self.p_left = Circle(p, radius=0.05, **kwargs)
+        ax.add_patch(self.p_left)
+
+        p = center + viewer_utils.rotate(self.offset_propeller_right, angle)
+        self.p_right = Circle(p, radius=0.05, **kwargs)
+        ax.add_patch(self.p_right)
+
+        # THIS is PENDULUMN
 
         p = compute_pole_pose(X, r)
         pc = compute_center_bar_pose(X, r)
@@ -83,13 +116,15 @@ class Robot():
         size = .1
 
         angle_pole = X[2] + X[3]
-        self.o4 = viewer_utils.draw_box_patch(
+        self.pendulum_link = viewer_utils.draw_box_patch(
             ax, pc, self.size_pendulumn, angle_pole + np.pi / 2, **kwargs)
+        ax.add_patch(self.pendulum_link)
 
-        ax.add_patch(self.o4)
-        o = Circle(p, radius=0.05, **kwargs)
-        ax.add_patch(o)
-        self.o3 = o
+        self.pendulum_joint = Circle(center, radius=0.03, color="k")
+        ax.add_patch(self.pendulum_joint)
+
+        self.pendulum_point = Circle(p, radius=0.05, **kwargs)
+        ax.add_patch(self.pendulum_point)
 
     def update(self, X):
         center = X[:2]
@@ -100,25 +135,42 @@ class Robot():
             center[0], center[1], angle)
         self.o1.set_transform(t + self.ax.transData)
 
+        xy = np.asarray(center) + self.offset - \
+            np.asarray(self.size_internal) / 2
+        self.o3.set_xy(xy)
+        t = matplotlib.transforms.Affine2D().rotate_around(
+            center[0], center[1], angle)
+        self.o3.set_transform(t + self.ax.transData)
+
+        self.p_left.center = center + \
+            viewer_utils.rotate(self.offset_propeller_left, angle)
+        self.p_right.center = center + \
+            viewer_utils.rotate(self.offset_propeller_right, angle)
+
         p = .2 * np.array([np.cos(angle + np.pi / 2),
                            np.sin(angle + np.pi / 2)])
-        self.o2.center = (p + center).tolist()
+
+        # self.o2.center = (p + center).tolist()
 
         p = compute_pole_pose(X, r)
 
-        self.o3.center = p.tolist()
+        self.pendulum_joint.center = center
+        self.pendulum_point.center = p.tolist()
 
         pc = compute_center_bar_pose(X, r)
 
-        self.o4.set_xy(pc - np.asarray(self.size_pendulumn) / 2)
+        self.pendulum_link.set_xy(pc - np.asarray(self.size_pendulumn) / 2)
 
         angle_pole = X[2] + X[3]
 
         t = matplotlib.transforms.Affine2D().rotate_around(
             pc[0], pc[1], angle_pole - np.pi / 2)
-        self.o4.set_transform(t + self.ax.transData)
+        self.pendulum_link.set_transform(t + self.ax.transData)
 
-        return [self.o1, self.o2, self.o3, self.o4]
+        # return [self.o1, self.o2, self.o3, self.o4]
+        return [self.o1, self.o3, self.p_left,
+                self.pendulum_joint,
+                self.p_right, self.pendulum_link, self.pendulum_point]
 
 
 class Quad2dpoleViewer(RobotViewer):

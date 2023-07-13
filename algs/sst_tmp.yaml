@@ -1,7 +1,7 @@
 reference: sst_v0
 # params for SST
 default:
-  dummy: 0
+  sst_use_nigh: true
 
 quad2d_v0:
   default:

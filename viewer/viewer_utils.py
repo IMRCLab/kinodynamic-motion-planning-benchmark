@@ -6,6 +6,15 @@ import argparse
 import yaml
 from scipy.spatial.transform import Rotation as RR
 from matplotlib import animation
+from pathlib import Path
+import os
+import shutil
+
+
+def rotate(x: np.ndarray, theta: float):
+    R = np.array([[np.cos(theta), -np.sin(theta)],
+                  [np.sin(theta), np.cos(theta)]])
+    return np.dot(R, x)
 
 
 def draw_tri(ax, X, add_90=False, fill=None, color="k", l=.05, alpha=1.):
@@ -49,7 +58,7 @@ def draw_box_patch_front(ax, center, size, angle=0, **kwargs):
     return o
 
 
-def plot_frame(ax, x, l=.15):
+def plot_frame(ax, x, l=.15, **kwargs):
 
     p = x[:3]
     q = x[3:7]
@@ -61,8 +70,9 @@ def plot_frame(ax, x, l=.15):
     ls = []
     for i in range(3):
         v = R_mat[:, i]
+        color = kwargs.get("color", color_map[i])
         l1, = ax.plot([p[0], p[0] + l * v[0]], [p[1], p[1] + l * v[1]],
-                      [p[2], p[2] + l * v[2]], color=color_map[i])
+                      [p[2], p[2] + l * v[2]], color=color)
         ls.append(l1)
     return ls
 
@@ -87,7 +97,7 @@ def update_frame(ls, x):
 
 def draw_cube(ax, pos, size, **kwargs):
     X, Y, Z = cuboid_data(pos, size)
-    ax.plot_surface(X, Y, Z, color='.5', alpha=.5)
+    ax.plot_surface(X, Y, Z, color='.5', alpha=1)
 
 
 def cuboid_data(pos, size=(1, 1, 1)):
@@ -117,8 +127,17 @@ def check_viewer(viewer, argv=None, show_single_state=False):
     parser = argparse.ArgumentParser()
     parser.add_argument("--env", help="input file containing map")
     parser.add_argument("--result", help="output file containing solution")
+    parser.add_argument("--result2", help="output file containing solution")
+    parser.add_argument("--out", help="file out", default="auto")
+    # parser.add_argument("--", help="output file containing solution")
+    parser.add_argument('-s', '--store',
+                        action='store_true')  # on/off flag
+    parser.add_argument('-i', '--interactive',
+                        action='store_true')  # on/off flag
+
     print("argv", argv)
-    args = parser.parse_args(argv)
+    # args = parser.parse_args(argv)
+    args, unknown = parser.parse_known_args()
 
     # visualize(args.env, args.result, args.image, args.video)
 
@@ -127,16 +146,52 @@ def check_viewer(viewer, argv=None, show_single_state=False):
     is_3d = viewer.is_3d()
 
     if is_3d:
-        fig = plt.figure()
+        # fig = plt.figure()
+        fig = plt.figure(figsize=(16, 10))
         ax = plt.axes(projection='3d')
     else:
         fig, ax = plt.subplots()
 
     with open(filename_env) as env_file:
         env = yaml.safe_load(env_file)
-    viewer.view_problem(ax, env)
 
-    plt.show()
+    viewer.view_problem(ax, env, env_name=filename_env)
+
+    if args.store:
+
+        # for line in ax.xaxis.get_ticklines():
+        #     line.set_visible(False)
+        # for line in ax.yaxis.get_ticklines():
+        #     line.set_visible(False)
+        # for line in ax.zaxis.get_ticklines():
+        #     line.set_visible(False)
+
+        # ax.set_axis_off()
+
+        if is_3d:
+            ax.set_xticks([])
+            ax.set_yticks([])
+            ax.set_zticks([])
+
+        if not is_3d:
+            fig.tight_layout()
+
+        if args.out == "auto":
+            name_out = f"{filename_env}.pdf"
+        else:
+            name_out = args.out
+
+        print("saving to", name_out)
+
+        # tokens = os.path.splitext(filename_env)[0].split("/")
+
+        ax.set_title(env["name"])
+
+        print("saving to", name_out)
+        fig.savefig(name_out, dpi=300)
+
+    if args.interactive:
+        plt.show()
 
     # Load Env
     if show_single_state:
@@ -155,6 +210,20 @@ def check_viewer(viewer, argv=None, show_single_state=False):
     # show state by state
 
     __result = []
+    tmp_file = "tmp_applicable_trajs.yaml"
+
+    print_primitives = False
+    if print_primitives:
+        print("printing primitives for debugging")
+        fig, ax = plt.subplots()
+        viewer.view_problem(ax, env)
+        with open(tmp_file) as f:
+            data = yaml.safe_load(f)
+            for d in data:
+                # viewer.view_trajectory(ax, d)
+                viewer.view_primitive_line_and_end(ax, d)
+        plt.show()
+
     if args.result is not None:
         with open(args.result) as f:
             __result = yaml.safe_load(f)
@@ -165,21 +234,92 @@ def check_viewer(viewer, argv=None, show_single_state=False):
             result = __result["result"][0]
 
         if is_3d:
-            fig = plt.figure()
+            # fig = plt.figure()
+            fig = plt.figure(figsize=(16, 10))
             ax = plt.axes(projection='3d')
+            ax.grid(b=None)
+            # ax.axis('off')
         else:
             fig, ax = plt.subplots()
 
         viewer.view_problem(ax, env)
         viewer.view_trajectory(ax, result)
-        plt.show()
+
+        if args.result2 is not None:
+            with open(args.result2) as f:
+                __result = yaml.safe_load(f)
+
+            if ("states" in __result and "actions" in __result):
+                result = __result
+            else:
+                result = __result["result"][0]
+
+            viewer.view_trajectory_minimal(ax, result)
+
+        ax.set_title(env["name"] + "-trajectory")
+        if args.store:
+            if not is_3d:
+                fig.tight_layout()
+
+            if args.out == "auto":
+                name_out = f"{filename_env}-solution.pdf"
+            else:
+                name_out = args.out.replace(".pdf", "-solution.pdf")
+
+            print("saving to", name_out)
+
+            # tokens = os.path.splitext(filename_env)[0].split("/")
+            #
+            # ax.set_title(f"{tokens[2]} -- {tokens[3]}--trajectory")
+
+            print("saving to", name_out)
+            fig.savefig(name_out, dpi=300)
+
+        if args.interactive:
+            plt.show()
 
         fig, (ax1, ax2) = plt.subplots(2)
         viewer.plot_traj((ax1, ax2), result)
+        plt.title(env["name"] + "-states-actions")
+
+        if args.store:
+            if not is_3d:
+                fig.tight_layout()
+
+            if args.out == "auto":
+                name_out = f"{filename_env}-states-actions.pdf"
+            else:
+                name_out = args.out.replace(".pdf", "-states-actions.pdf")
+
+            print("saving to", name_out)
+
+            # tokens = os.path.splitext(filename_env)[0].split("/")
+            #
+            # ax.set_title(name_out)
+
+            print("saving to", name_out)
+            fig.savefig(name_out, dpi=300)
+
         plt.show()
 
+        if "primitives" in __result:
+            fig, ax = plt.subplots()
+            viewer.view_problem(ax, env)
+            viewer.view_primitives(ax, result)
+            plt.show()
+
         viewer.make_video(env, result)
-        viewer = viewer.make_video(env, result, "tmp.mp4")
+        Path("/tmp/dbastar").mkdir(parents=True, exist_ok=True)
+        viewer = viewer.make_video(env, result, "/tmp/dbastar/tmp.mp4")
+
+        if args.store:
+            if args.out == "auto":
+                name_out = f"{filename_env}-solution.mp4"
+            else:
+                name_out = args.out.replace(".pdf", "-solution.mp4")
+
+            print("copy from /tmp/dbastar/tmp.mp4 to", name_out)
+            shutil.copy("/tmp/dbastar/tmp.mp4", name_out)
 
 
 def plot_traj_default(axs, result, labels_x, labels_u, **kwargs):
@@ -222,15 +362,29 @@ def draw_problem_2d(ax, env, Robot):
         #     size = np.array([0.5, 0.25])
         r = Robot()
         state = robot["start"]
-        r.draw(ax, state, facecolor='none', edgecolor='green')
+        r.draw(ax, state, facecolor='green', edgecolor='green')
         state = robot["goal"]
-        r.draw(ax, state, facecolor='none', edgecolor='red')
+        r.draw(ax, state, facecolor='red', edgecolor='red')
         # else:
         #     raise Exception("Unknown robot type!")
 
     ax.set_xlim(env["environment"]["min"][0], env["environment"]["max"][0])
     ax.set_ylim(env["environment"]["min"][1], env["environment"]["max"][1])
     ax.set_aspect("equal")
+
+
+def draw_traj_minimal(ax, result, Robot):
+
+    r = Robot()
+
+    if isinstance(result, str):
+        with open(result) as f:
+            __result = yaml.safe_load(f)
+        result = __result["result"][0]
+
+    states = result["states"]
+    print(states)
+    r.draw_traj_minimal(ax, states)
 
 
 def draw_traj_default(ax, result, Robot, draw_basic_every=5):
@@ -246,9 +400,23 @@ def draw_traj_default(ax, result, Robot, draw_basic_every=5):
     print(states)
     r.draw_traj_minimal(ax, states)
 
-    for i in range(0, len(states), draw_basic_every):
+    # for i in range(0, len(states), draw_basic_every):
+    #     r = Robot()
+    #     r.draw_basic(ax, states[i])
+
+    # draw_normal_every = 50
+    for i in range(draw_basic_every, len(states) -
+                   draw_basic_every, draw_basic_every):
         r = Robot()
-        r.draw_basic(ax, states[i])
+        r.draw(ax, states[i], alpha=.5, color='blue')
+
+    # for i in range(1, len(states) - 1):
+    #     r = Robot()
+    #     r.draw(ax, states[i], alpha=.5, color='blue')
+
+    # for the quad3d recovery
+    # r = Robot()
+    # r.draw(ax, states[30], alpha=.5, color='blue')
 
 
 def make_video_default(
@@ -262,6 +430,7 @@ def make_video_default(
     ax = fig.add_subplot(111, aspect='equal')
     plot_env_func(ax, env)
 
+    plt.title(env["name"])
     robot = Robot()
     X = result["states"][0]
     T = len(result["states"])

@@ -5,6 +5,7 @@ default:
   smooth_traj: true
   window_optimize: 50
   window_shift: 20
+  shift_repeat: false
 
 unicycle1_v0:
   default:
@@ -21,9 +22,12 @@ unicycle2_v0:
 
 quad2d_v0:
   default:
-    window_optimize: 300
-    window_shift: 100
+    window_optimize: 100
+    window_shift: 40
     k_linear: 100
+    weight_goal: 200
+    soft_control_bounds: False
+    max_iter: 50
 
 acrobot_v0:
   default:
@@ -42,15 +46,9 @@ acrobot_v0:
 
 quad3d_v0:
   default:
-    max_iter: 200
-    weight_goal: 300
-    smooth_traj: true
-    delta_factor_goal: .5
-    use_nigh_nn: true # library for knn
-    # motionsFile: "../cloud/motionsV2/good/quad3d_v0/quad3d_v0_all.bin.sp.bin.c10000.bin"
-    num_primitives_0: 120000
-    check_cols: false
-    delta_0: .9
-    k_linear: 50
-  quad_one_obs:
-    check_cols: true
+    window_optimize: 100
+    window_shift: 40
+    max_iter: 50
+    k_linear: 100
+    weight_goal: 100
+    soft_control_bounds: False

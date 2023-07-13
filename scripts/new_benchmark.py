@@ -17,6 +17,107 @@ import pandas
 import argparse
 import os
 import shutil
+from scipy.interpolate import interp1d
+
+
+D_key_to_nice_name = [
+
+    ("move_with_up", "move v0"),
+    ("move_with_down", "move v1"),
+    ("swing_down", "swing down"),
+    # ("down", "swing down"),
+    # ("swing_up_obs",  "swing up obstacles v0"),
+    # ("swing_up_obs_hard",  "swing up obstacles v1"),
+    ("quad2d_recovery_wo_obs", "recovery"),
+    ("quad2d_recovery_obs", "recovery obstacles"),
+    ("quad_bugtrap", "bugtrap"),
+    ("quad_obs_column", "column"),
+    ("up obs", "swing up obstacles"),
+    ("fall_through", "holle"),
+    ("window_easy", "column"),
+    ("window_hard", "small window"),
+    ("acrobot", "Acrobot"),
+    ("car_first_order_with_1_trailers_0", "Trailer"),
+    ("quad2dpole", "Rotor Pole"),
+    ("quad2d", "Planar Rotor"),
+    ("recovery_with_obs", "recovery obstacles"),
+    ("wall_0", "wall"),
+    ("quad_one_obs", "obstacle"),
+    ("_easy", ""),
+    ("quadrotor_0", "Quadcopter Force"),
+    ("quadrotor_ompl", "Quadcopter Thrust"),
+    ("uni1_0", "Unicycle 1 v0"),
+    ("uni1_1", "Unicycle 1 v1"),
+    ("uni1_2", "Unicycle 1 v2"),
+    ("uni2_0", "Unicycle 2"),
+    ("swing_down_easy", "half swing down"),
+    ("swing_up_empty", "swing up"),
+    ("bugtrap_0", "bugtrap"),
+    ("kink_0", "kink"),
+    ("empty_0", "empty v0"),
+    ("empty_1", "empty v1"),
+    ("recovery_wo_obs", "recovery"),
+    # ("up_obs", "swing up obstacles"),
+
+    ("swing_up_obs_hard", "swing up obstacles v1"),
+    ("swing_up_obs", "swing up obstacles v0"),
+
+    ("up_obs", "swing up obstacles"),
+
+]
+
+
+def generate_texpdf(filename_tex: str) -> None:
+
+    lines = [r"\documentclass{standalone}",
+             r"\usepackage{amsmath}",
+             r"\usepackage{amsfonts}",
+             r"\usepackage{siunitx}",
+             r"\usepackage{booktabs}"
+             r"\begin{document}",
+             r"\input{" + filename_tex + "}",
+             r"\end{document}"]
+
+    print("writing to ", filename_tex + ".tex")
+    with open(filename_tex + ".tex", "w") as f:
+        f.writelines(lines)
+
+    pathlib.Path("/tmp/dbastar/").mkdir(parents=True, exist_ok=True)
+    pathlib.Path("/tmp/dbastar/tex").mkdir(parents=True, exist_ok=True)
+    f_stdout = open("/tmp/dbastar/latexmk_out.log", 'w')
+    f_stderr = open("/tmp/dbastar/latexmk_err.log", 'w')
+
+    cmd = f"latexmk -f -pdf -output-directory=/tmp/dbastar/tex/ {filename_tex}.tex".split(
+    )
+
+
+#     /tmp/dbastar/tex/
+# #
+# #
+# #         summary_timeopt_2023-07-07--10-57-08.tex.pdf
+# #
+# #     filename_pdf, '/tmp/tmp_compare.pdf')
+#
+
+    print("running cmd: ", " ".join(cmd))
+    subprocess.run(cmd,
+                   stdout=f_stdout,
+                   stderr=f_stderr)
+
+    f_stdout.close()
+    f_stderr.close()
+
+    p = Path(filename_tex)
+    pdf_name = "/tmp/dbastar/tex/" + str(p.stem) + ".tex.pdf"
+
+    print(f"copy  {pdf_name} to {filename_tex + '.pdf'}")
+    shutil.copy(pdf_name, filename_tex + ".pdf")
+
+    tmp_location = "/tmp/dbastar/table_tex.pdf"
+
+    print(f"copy  {pdf_name} to {tmp_location}")
+    shutil.copy(pdf_name, tmp_location)
+
 
 print_lock = multiprocessing.Lock()
 
@@ -73,6 +174,7 @@ benchmark_problems = [
     # "quad2dpole/window_easy",
     # "quad2dpole/window",
     "quad2dpole/window_hard",
+
     "acrobot/swing_up_empty",
     # "acrobot/swing_up_obs",
     "acrobot/swing_up_obs_hard",
@@ -111,7 +213,7 @@ bench_cfg = args.bench_cfg
 file_in = args.file_in
 dynamics = args.dynamics
 
-MAX_TIME_PLOTS = 120
+MAX_TIME_PLOTS = 180
 
 
 do_compare = False
@@ -259,10 +361,10 @@ def create_empty_env(start: List, goal: List, robot_model: str):
 
 
 color_map = {
-    "sst_v0": "blue",
+    "sst_v0": "red",
     "geo_v0": "green",
-    "geo_v1": "red",
-    "idbastar_v0": "cyan",
+    "geo_v1": "cyan",
+    "idbastar_v0": "blue",
     "idbastar_v0_heu0": "lightgreen",
     "idbastar_v0_heu1": "yellow",
     "idbastar_v0_heuNO": "turquoise",
@@ -301,7 +403,7 @@ def get_config(alg: str, dynamics: str, problem: str):
 
     print(f"loading {file}")
     with open(file, "r") as f:
-        data = yaml.safe_load(f)
+        data = yaml.load(f, Loader=yaml.CLoader)
     # print("data is:\n", data)
 
     cfg = {}
@@ -349,8 +451,7 @@ def solve_problem_time(
 
     # get the dynamics
     with open(problem, 'r') as f:
-        data_problem = yaml.safe_load(f)
-
+        data_problem = yaml.load(f, Loader=yaml.CLoader)
     print(f"data_problem {data_problem}")
 
     dynamics = data_problem["robots"][0]["type"]
@@ -373,16 +474,14 @@ def solve_problem_time(
     return cmd
 
 
-def solve_problem_search(
-        env: str,
-        alg: str,
-        out: str) -> List[str]:
+def solve_problem_search(env: str,
+                         alg: str,
+                         out: str) -> List[str]:
 
     problem = env
 
-    # get the dynamics
     with open(problem, 'r') as f:
-        data_problem = yaml.safe_load(f)
+        data_problem = yaml.load(f, Loader=yaml.CLoader)
 
     print(f"data_problem {data_problem}")
 
@@ -414,7 +513,7 @@ def solve_problem_with_alg(
 
     # get the dynamics
     with open(problem, 'r') as f:
-        data_problem = yaml.safe_load(f)
+        data_problem = yaml.load(f, Loader=yaml.CLoader)
 
     print(f"data_problem {data_problem}")
 
@@ -532,16 +631,16 @@ def compare_search(
         interactive: bool = False):
 
     print("calling compare_search:")
-    print(f"files {files}")
+    print(f"files: {files}")
 
     # load
     datas = []
     for file in files:
-        print("loading ", file)
+        print("loading: ", file)
         with open(file, 'r') as f:
-            data = yaml.safe_load(f)
+            data = yaml.load(f, Loader=yaml.CLoader)
             datas.append(data)
-    print("datas\n", datas)
+    # print("datas\n", datas)
 
     # print("artificially adding the problem...")
     # for data in datas:
@@ -595,7 +694,7 @@ def compare_search(
         # f.write("---")
         # f.write(filename_csv)
 
-    print("saving reduced data to", filename_csv)
+    print("saving reduced data to:", filename_csv)
     with open(filename_csv, 'w') as f:
         writer = csv.writer(f)
         writer.writerow(fields)
@@ -627,12 +726,18 @@ def compare_search(
 
     keys = ["expands_mean", "time_search_mean"]
 
+
+    n_id =  [ r"n  { \scriptsize $[\cdot 10^3]$ }" , r"t [s]" ]
     header = [
-        r"\begin{tabular}{lcccccc}",
+        r"\begin{tabular}{llcccccc}",
         r"\toprule",
-        r"&   \multicolumn{2}{c}{eucl} & \multicolumn{2}{c}{roadmap} & \multicolumn{2}{c}{blind} \\",
-        r"\cmidrule(lr){2-3}\cmidrule(lr){4-5}\cmidrule(lr){6-7}",
-        r"&   n & t & n & t & n & t  \\",
+        # r"&   \multicolumn{2}{c}{eucl} & \multicolumn{2}{c}{roadmap} & \multicolumn{2}{c}{blind} \\",
+        #
+        r" & &   \multicolumn{2}{c}{Euclidean} & \multicolumn{2}{c}{Roadmap} & \multicolumn{2}{c}{Blind} \\",
+
+        # r"\cmidrule(lr){2-3}\cmidrule(lr){4-5}\cmidrule(lr){6-7}",
+        r"\cmidrule(lr){3-4}\cmidrule(lr){5-6}\cmidrule(lr){7-8}",
+        r" Dynamics & Instance & " + " & ".join(n_id * 3) +  r"\\",
         r"\midrule"]
     lines = []
 
@@ -645,9 +750,22 @@ def compare_search(
                 return False
         return True
 
+    separate_dynamics_scenario = True
+
+    scale_data = True
+    scale_factor = 1e-3
+
     for problem in problems:
         line = []
-        line.append(problem)
+        ll = problem.split("/")
+        dynamics = ll[0]
+        scenario = ll[1]
+        if separate_dynamics_scenario:
+            line.append(dynamics)
+            line.append(scenario)
+        else:
+            line.append(problem)
+
         for alg in algs:
             for key in keys:
                 if float(df.loc[(df["problem"] == problem) & (
@@ -658,6 +776,9 @@ def compare_search(
                     val = float(df.loc[(df["problem"] == problem) & (
                         df["alg"] == alg)][key].iloc[0])
                     is_bold = is_best(val, key, problem, algs)
+
+                    if scale_data:
+                        val = val * scale_factor
 
                     if is_bold:
                         tt = r"\textbf{" + f'{val:.1f}' + "}"
@@ -697,6 +818,11 @@ def compare_search(
         dd = {"input": files, "output": filename_tex,
               "date": date_time, "hostname": os.uname()[1]}
         yaml.dump(dd, f)
+
+
+    generate_texpdf(filename_tex) 
+
+
 
     from matplotlib.backends.backend_pdf import PdfPages
 
@@ -786,21 +912,19 @@ def compare_time(
     print("calling compare:")
     print(f"files {files}")
 
+    file_out_debug = "/tmp/dbastar/compare_time.yaml"
+    Path(file_out_debug).parent.mkdir(parents=True, exist_ok=True)
+    with open(file_out_debug, "w") as f:
+        yaml.dump({"files": files}, f)
+
     # load
     datas = []
     for file in files:
         print("loading ", file)
         with open(file, 'r') as f:
-            data = yaml.safe_load(f)
+            data = yaml.load(f, Loader=yaml.CLoader)
             datas.append(data)
     print("datas\n", datas)
-
-    # print("artificially adding the problem...")
-    # for data in datas:
-    #     data["problem"] = "unicycle_first_order_0/bugtrap_0"
-    # print(datas)
-
-    # organize by problem
 
     D = {}
     fields = [
@@ -824,14 +948,10 @@ def compare_time(
         reduced_data.append(dd)
 
     # save as csv file
-
-    # id = str(uuid.uuid4())[:7]
     now = datetime.now()  # current date and time
     date_time = now.strftime("%Y-%m-%d--%H-%M-%S")
     filename_csv = f"../results_new_search/summary/summary_search_{date_time}.csv"
     pathlib.Path(filename_csv).parent.mkdir(parents=True, exist_ok=True)
-
-    # log file
 
     filename_csv_log = filename_csv + ".log"
 
@@ -866,91 +986,7 @@ def compare_time(
     # TODO: what happens if success rate is not high?
     # Lets use .8 as threshold?
 
-    algs = [
-        # "idbastar_v0_fixedtime",
-        "idbastar_v0_freetime",
-        "idbastar_v0_search",
-        "idbastar_v0_mpc",
-        "idbastar_v0_mpcc"
-    ]
-
-    df = pandas.DataFrame.from_dict(reduced_data)
-
-    print("df")
-    print(df)
-    guesses = df["guess"].unique().tolist()
-
-    keys = ["cost_mean", "time_mean"]
-
-    header = [
-        r"\begin{tabular}{lcccccccc}",
-        r"\toprule",
-        r"&   \multicolumn{2}{c}{dt} & \multicolumn{2}{c}{search} & \multicolumn{2}{c}{mpc}",
-        r"& \multicolumn{2}{c}{mpcc} \\",
-        r"\cmidrule(lr){2-3}\cmidrule(lr){4-5}\cmidrule(lr){6-7}\cmidrule(lr){8-9}",
-        r"&   c & t & c & t & c & t & c & t \\",
-        r"\midrule"]
-
-    footer = [r"\bottomrule", r"\end{tabular}"]
-
-    def is_best(val: float, key: str, problem: str, algs: List[str]):
-        delta = 1e-10
-        for alg in algs:
-            b = float(df.loc[(df["guess"] == problem)
-                             & (df["alg"] == alg)][key].iloc[0])
-            if val > b + delta:
-                return False
-        return True
-
-    lines = []
-    for guess in guesses:
-        line = []
-        line.append(guess)
-        for alg in algs:
-            for key in keys:
-                print(guess, alg, key)
-                val = float(df.loc[(df["guess"] == guess)
-                                   & (df["alg"] == alg)][key].iloc[0])
-                is_bold = is_best(val, key, guess, algs)
-
-                if is_bold:
-                    tt = r"\textbf{" + f'{val:.1f}' + "}"
-                else:
-                    tt = f"{val:.1f}"
-                line.append(tt)
-        lines.append(line)
-
-    filename_tex = f"../results_new_timeopt/summary/summary_timeopt_{date_time}.tex"
-
-    print(f"writing to {filename_tex}")
-
-    with open(filename_tex, "w") as f:
-        for h in header:
-            f.write(h)
-            f.write('\n')
-        for cl in lines:
-            print("cl ", cl)
-            _str = format_latex_str(' & '.join(cl))
-            f.write(_str)
-
-            f.write(r'\\')
-            f.write("\n")
-        for fo in footer:
-            f.write(fo)
-            f.write('\n')
-
-    copy_to = '/tmp/tmp_search.tex'
-    shutil.copy(filename_tex, copy_to)
-    print(f"copy_to {copy_to}")
-
-    filename_log_tex = filename_tex + ".log"
-
-    with open(filename_log_tex, "w") as f:
-        dd = {"input": files, "output": filename_tex,
-              "date": date_time, "hostname": os.uname()[1]}
-
-        yaml.dump(dd, f)
-
+    # PLOT
     from matplotlib.backends.backend_pdf import PdfPages
 
     filename_pdf = f"../results_new_timeopt/plots/plot_time_{date_time}.pdf"
@@ -972,6 +1008,8 @@ def compare_time(
 
     all_problems = set([data["problem"] + "+" + data["guess"]
                         for data in reduced_data])
+
+    all_problems = sorted(list(all_problems))
 
     D = {}
 
@@ -1030,6 +1068,178 @@ def compare_time(
     copy_to = '/tmp/tmp_compare_time.pdf'
     shutil.copy(filename_pdf, copy_to)
     print(f"copy_to {copy_to}")
+
+    # END PLOT
+
+    algs = [
+        # "idbastar_v0_fixedtime",
+        "idbastar_v0_freetime",
+        "idbastar_v0_search",
+        "idbastar_v0_mpc",
+        "idbastar_v0_mpcc"
+    ]
+
+    df = pandas.DataFrame.from_dict(reduced_data)
+
+    df["time_mean"] = df["time_mean"] / 1000.
+
+    current_algs = df["alg"].unique().tolist()
+
+    algs_selected_and_current = [i for i in algs if i in current_algs]
+
+    print("df")
+    print(df)
+    guesses = df["guess"].unique().tolist()
+    guesses.sort()  # SORTED
+
+    keys = ["cost_mean", "time_mean"]
+
+    include_num_timestes = True
+
+    if include_num_timestes:
+        cols = ["J[s]", "t[s]"]
+        header = [
+            r"\begin{tabular}{llcccccccccc}",
+            r"\toprule",
+            r" & & & &  \multicolumn{2}{c}{dt} & \multicolumn{2}{c}{search} & \multicolumn{2}{c}{mpc}",
+            r"& \multicolumn{2}{c}{mpcc} \\",
+            r"\cmidrule(lr){5-6}\cmidrule(lr){7-8}\cmidrule(lr){9-10}\cmidrule(lr){11-12}",
+            r"System & Instance & $\delta$ & K  & " +
+            " & ".join(4 * cols) + r" \\",
+            r"\midrule"]
+    else:
+        raise ValueError("not implemented")
+        # header = [
+        #     # r"\begin{tabular}{lcccccccc}",
+        #     r"\begin{tabular}{lllcccccccc}",
+        #     r"\toprule",
+        #     r" & & &   \multicolumn{2}{c}{dt} & \multicolumn{2}{c}{search} & \multicolumn{2}{c}{mpc}",
+        #     r"& \multicolumn{2}{c}{mpcc} \\",
+        #     r"\cmidrule(lr){4-5}\cmidrule(lr){6-7}\cmidrule(lr){8-9}\cmidrule(lr){10-11}",
+        #     r"System & Instance & $\delta$   &   c [s] & t [ms] & c [s] & t [ms] & c [s] & t [ms] & c [s] & t [ms] \\",
+        #     r"\midrule"]
+
+    footer = [r"\bottomrule", r"\end{tabular}"]
+
+    def is_best(val: float, key: str, problem: str, algs: List[str]):
+        delta = 1e-10
+        for alg in algs:
+            b = float(df.loc[(df["guess"] == problem)
+                             & (df["alg"] == alg)][key].iloc[0])
+            if val > b + delta:
+                return False
+        return True
+
+    lines = []
+    success_rate_limit = .8
+
+    df.loc[df.success_rate < success_rate_limit, 'cost_mean'] = np.nan
+    df.loc[df.success_rate < success_rate_limit, 'time_mean'] = np.nan
+
+    separate_dynamics_scenario = True
+
+    for guess in guesses:
+
+        line = []
+        # get the number of time steps
+
+        with open(f"../benchmark_initguess/{guess}.yaml", "r") as f:
+            dd = yaml.load(f, Loader=yaml.CLoader)
+        if "result" in dd:
+            num_time_steps = len(dd["result"][0]["actions"])
+        else:
+            num_time_steps = len(dd["actions"])
+
+        print("num_time_steps", num_time_steps)
+
+        def extract_delta(s: str):
+            """
+            Example:
+            delta_05_v0
+            Output:
+            0.5
+            """
+            s = s.split("_")[1]
+            return float(s) / 10
+
+            raise NotImplementedError
+
+        if separate_dynamics_scenario:
+
+            ll = guess.split("/")
+            dynamics = ll[0]
+            scenario = ll[1]
+            delta = str(extract_delta(ll[2]))
+
+            line.append(dynamics)
+            line.append(scenario)
+            line.append(delta)
+            if include_num_timestes:
+                line.append(str(num_time_steps))
+
+        else:
+            line.append(guess)
+
+        for alg in algs:
+            for key in keys:
+                print(guess, alg, key)
+
+                if alg not in current_algs:
+                    tt = "-"
+                else:
+                    success_rate = float(df.loc[(df["guess"] == guess) & (
+                        df["alg"] == alg)]["success_rate"].iloc[0])
+                    if success_rate < .8:
+                        print("WARNING", "success rate is ", success_rate)
+
+                    val = float(df.loc[(df["guess"] == guess)
+                                       & (df["alg"] == alg)][key].iloc[0])
+                    is_bold = is_best(
+                        val, key, guess, algs_selected_and_current)
+
+                    if is_bold:
+                        tt = r"\textbf{" + f'{val:.1f}' + "}"
+                    else:
+                        tt = f"{val:.1f}"
+                line.append(tt)
+        lines.append(line)
+
+    filename_tex = f"../results_new_timeopt/summary/summary_timeopt_{date_time}.tex"
+
+    print(f"writing to {filename_tex}")
+
+    with open(filename_tex, "w") as f:
+        for h in header:
+            f.write(h)
+            f.write('\n')
+        for cl in lines:
+            print("cl ", cl)
+            _str = format_latex_str(' & '.join(cl))
+            f.write(_str)
+
+            f.write(r'\\')
+            f.write("\n")
+        for fo in footer:
+            f.write(fo)
+            f.write('\n')
+
+    copy_to = '/tmp/tmp_search.tex'
+    shutil.copy(filename_tex, copy_to)
+    print(f"copy_to {copy_to}")
+
+    filename_log_tex = filename_tex + ".log"
+
+    with open(filename_log_tex, "w") as f:
+        dd = {"input": files, "output": filename_tex,
+              "date": date_time, "hostname": os.uname()[1]}
+
+        yaml.dump(dd, f)
+
+    generate_pdf_latex = True
+
+    if generate_pdf_latex:
+        generate_texpdf(filename_tex)
+
     # create_latex_table(filename_csv)
     #
     # # check
@@ -1116,7 +1326,7 @@ def compare_time(
 def __benchmark_search(bench_cfg: str) -> List[str]:
 
     with open(bench_cfg) as f:
-        data = yaml.safe_load(f)
+        data = yaml.load(f, Loader=yaml.CLoader)
 
     print("bench cfg")
     print(data)
@@ -1192,27 +1402,43 @@ def __benchmark_search(bench_cfg: str) -> List[str]:
 
 
 def benchmark_search(bench_cfg: str) -> None:
-    # fileouts = __benchmark_search(bench_cfg)
 
-    fileouts = [
-        '../results_new_search/unicycle_first_order_0/bugtrap_0/dbastar_v0_heu0/2023-06-22--20-40-26/report.yaml',
-        '../results_new_search/unicycle_first_order_0/bugtrap_0/dbastar_v0_heu1/2023-06-22--20-40-26/report.yaml',
-        '../results_new_search/unicycle_first_order_0/bugtrap_0/dbastar_v0_heuNO/2023-06-22--20-40-26/report.yaml',
-        '../results_new_search/unicycle_second_order_0/bugtrap_0/dbastar_v0_heu0/2023-06-22--20-40-26/report.yaml',
-        '../results_new_search/unicycle_second_order_0/bugtrap_0/dbastar_v0_heu1/2023-06-22--20-40-26/report.yaml',
-        '../results_new_search/unicycle_second_order_0/bugtrap_0/dbastar_v0_heuNO/2023-06-22--20-40-26/report.yaml',
-        '../results_new_search/quad2d/quad_bugtrap/dbastar_v0_heu0/2023-06-22--20-40-26/report.yaml',
-        '../results_new_search/quad2d/quad_bugtrap/dbastar_v0_heu1/2023-06-22--20-40-26/report.yaml',
-        '../results_new_search/quad2d/quad_bugtrap/dbastar_v0_heuNO/2023-06-22--20-40-26/report.yaml',
-        '../results_new_search/quadrotor_0/quad_one_obs/dbastar_v0_heu0/2023-06-22--20-40-26/report.yaml',
-        '../results_new_search/quadrotor_0/quad_one_obs/dbastar_v0_heu1/2023-06-22--20-40-26/report.yaml',
-        '../results_new_search/quadrotor_0/quad_one_obs/dbastar_v0_heuNO/2023-06-22--20-40-26/report.yaml']
+    # open the bench_cfg file
 
+    with open(bench_cfg) as f:
+        data = yaml.load(f, Loader=yaml.CLoader)
+
+    if "files" in data:
+        print(f"{bench_cfg} is a file list -- only analyze them")
+        fileouts = data["files"]
+
+    if "input" in data:
+        print(f"{bench_cfg} is a file list -- only analyze them")
+        fileouts = data["input"]
+
+    else:
+        print(f"{bench_cfg} is a bench file for doing experiments")
+        fileouts = __benchmark_search(bench_cfg)
+
+    # data_file = "../bench/search_results.yaml"
+    # with open(data_file) as f:
+    #     d = yaml.safe_load(f)
     #
+    # print(d)
 
-    # fileouts =  ['../results_new_search/unicycle_first_order_0/bugtrap_0/dbastar_v0_heu0/2023-06-22--20-31-26/report.yaml', '../results_new_search/unicycle_first_order_0/bugtrap_0/dbastar_v0_heuNO/2023-06-22--20-31-26/report.yaml', '../results_new_search/unicycle_second_order_0/bugtrap_0/dbastar_v0_heu0/2023-06-22--20-31-26/report.yaml', '../results_new_search/unicycle_second_order_0/bugtrap_0/dbastar_v0_heuNO/2023-06-22--20-31-26/report.yaml']
-
-    print(f"fileouts {fileouts}")
+    # fileouts = [
+    #     '../results_new_search/unicycle_first_order_0/bugtrap_0/dbastar_v0_heu0/2023-06-22--20-40-26/report.yaml',
+    #     '../results_new_search/unicycle_first_order_0/bugtrap_0/dbastar_v0_heu1/2023-06-22--20-40-26/report.yaml',
+    #     '../results_new_search/unicycle_first_order_0/bugtrap_0/dbastar_v0_heuNO/2023-06-22--20-40-26/report.yaml',
+    #     '../results_new_search/unicycle_second_order_0/bugtrap_0/dbastar_v0_heu0/2023-06-22--20-40-26/report.yaml',
+    #     '../results_new_search/unicycle_second_order_0/bugtrap_0/dbastar_v0_heu1/2023-06-22--20-40-26/report.yaml',
+    #     '../results_new_search/unicycle_second_order_0/bugtrap_0/dbastar_v0_heuNO/2023-06-22--20-40-26/report.yaml',
+    #     '../results_new_search/quad2d/quad_bugtrap/dbastar_v0_heu0/2023-06-22--20-40-26/report.yaml',
+    #     '../results_new_search/quad2d/quad_bugtrap/dbastar_v0_heu1/2023-06-22--20-40-26/report.yaml',
+    #     '../results_new_search/quad2d/quad_bugtrap/dbastar_v0_heuNO/2023-06-22--20-40-26/report.yaml',
+    #     '../results_new_search/quadrotor_0/quad_one_obs/dbastar_v0_heu0/2023-06-22--20-40-26/report.yaml',
+    #     '../results_new_search/quadrotor_0/quad_one_obs/dbastar_v0_heu1/2023-06-22--20-40-26/report.yaml',
+    #     '../results_new_search/quadrotor_0/quad_one_obs/dbastar_v0_heuNO/2023-06-22--20-40-26/report.yaml']
 
     compare_search(fileouts)
 
@@ -1220,8 +1446,7 @@ def benchmark_search(bench_cfg: str) -> None:
 def __benchmark_opti(bench_cfg: str) -> List[str]:
 
     with open(bench_cfg) as f:
-        data = yaml.safe_load(f)
-
+        data = yaml.load(f, Loader=yaml.CLoader)
     print("bench cfg")
     n_cores = data["n_cores"]
 
@@ -1316,7 +1541,19 @@ def __benchmark_opti(bench_cfg: str) -> List[str]:
 
 
 def benchmark_opti(bench_cfg: str) -> None:
-    fileouts = __benchmark_opti(bench_cfg)
+
+    with open(bench_cfg) as f:
+        d = yaml.load(f, Loader=yaml.CLoader)
+    if "files" in d:
+        print(f"{bench_cfg} is a file list -- only analyze them")
+        fileouts = d["files"]
+    elif "input" in d:
+        print(f"{bench_cfg} is a file list -- only analyze them")
+        fileouts = d["input"]
+    else:
+        print(f"{bench_cfg} is a bench file for doing experiments")
+        fileouts = __benchmark_opti(bench_cfg)
+
     print(f"fileouts: { fileouts }")
     compare_time(fileouts)
 
@@ -1326,8 +1563,7 @@ def benchmark_opti(bench_cfg: str) -> None:
 def __benchmark(bench_cfg: str):
 
     with open(bench_cfg) as f:
-        data = yaml.safe_load(f)
-
+        data = yaml.load(f, Loader=yaml.CLoader)
     print("bench cfg")
     print(data)
     n_cores = data["n_cores"]
@@ -1351,7 +1587,11 @@ def __benchmark(bench_cfg: str):
             path = folder_results + problem + "/" + alg + "/" + date_time
             paths.append(path)
             pathlib.Path(path).mkdir(parents=True, exist_ok=True)
-            experiments.append(Experiment(path=path, problem=problem, alg=alg))
+            experiments.append(
+                Experiment(
+                    path=path,
+                    problem=problem,
+                    alg=alg))
             for i in range(data["trials"]):
                 out = path + f"/run_{i}_out.yaml"
                 cmd = solve_problem_with_alg(
@@ -1380,6 +1620,16 @@ def __benchmark(bench_cfg: str):
         parents=True, exist_ok=True)
     with open(filename_experimentes_out, "w") as f:
         yaml.dump(experiments_outs, f)
+
+    # experiments = []
+    # fileouts = []
+
+    # path = "../results_new/unicycle_first_order_0/bugtrap_0/geo_v0/2023-07-06--14-22-28/"
+    # experiments.append(
+    #     Experiment(
+    #         path=path,
+    #         problem="unicycle_first_order_0/bugtrap_0",
+    #         alg="geo_v0"))
 
     for experiment in experiments:
         print("experiment")
@@ -1440,11 +1690,11 @@ def compare(
     for file in files:
         print("loading ", file)
         with open(file, 'r') as f:
-            data = yaml.safe_load(f)
+            data = yaml.load(f, Loader=yaml.CLoader)
             datas.append(data)
     # print("datas\n", datas)
-    print(len(datas))
-    print(datas[0])
+    # print(len(datas))
+    # print(datas[0])
 
     use_only_some_algs = False
 
@@ -1470,6 +1720,7 @@ def compare(
         "cost_at_05",
         "cost_at_10",
         "cost_at_20",
+        "success_rate",
         "cost_first_solution",
         "time_first_solution",
         "last_cost"]
@@ -1518,33 +1769,33 @@ def compare(
     import shutil
     copy_to = '/tmp/tmp_reduced_data.csv'
     shutil.copy(filename_csv, copy_to)
-    print(f"copy_to { copy_to} ")
+    print(f"copy_to: { copy_to} ")
 
     create_latex_table(filename_csv)
 
     # check
-    print("checking data")
-    with open(filename_csv, 'r') as myFile:
-        print(myFile.read())
+    # print("checking data")
+    # with open(filename_csv, 'r') as myFile:
+    #     print(myFile.read())
 
     all_problems = set([data["problem"] for data in reduced_data])
     all_problems = sorted(list(all_problems))
 
     for problem in all_problems:
-        print(f"problem {problem}")
+        # print(f"problem {problem}")
         # check if data belongs to this problem
         _datas = []
         for data in datas:
-            print("**")
-            print(data["problem"])
-            print(problem)
-            print("**")
-            print("**")
+            # print("**")
+            # print(data["problem"])
+            # print(problem)
+            # print("**")
+            # print("**")
             if data["problem"] == problem:
-                print("match!")
+                # print("match!")
                 _datas.append(data)
         D[problem] = _datas
-    print("D", D)
+    # print("D", D)
 
     # now print the data!
 
@@ -1571,35 +1822,49 @@ def compare(
             fig, ax = plt.subplots(2, 1, sharex=True)
             fig.suptitle(problem)
             for d in D[problem]:
-                print("d", d)
+                # print("d", d)
                 alg = d["alg"]
                 times = d["times"]
                 success = d["success"]
                 cost_mean = d["cost_mean"]
-                cost_std = d["cost_std"]
+                # cost_std = d["cost_std"]
+                cost_lb = d["cost_lb"]
+                cost_ub = d["cost_ub"]
                 if alg in color_map:
                     color = color_map[alg]
                 else:
-                    print("Warning: not in color map")
-                    print("ADDING")
+                    print("Warning: not in color map -- Using random color")
                     N = 30
                     import random
                     nn = random.randint(0, N - 1)
                     color = get_cmap(N, name='hsv')(nn)
                     color_map[alg] = color
 
-                ax[0].plot(times, cost_mean, color=color, label=alg)
+                # ax[0].plot(times, cost_mean, color=color, label=alg)
+                ax[0].step(
+                    times,
+                    cost_mean,
+                    color=color,
+                    label=alg,
+                    where='post')
                 ax[0].fill_between(times,
-                                   np.array(cost_mean) + np.array(cost_std),
-                                   np.array(cost_mean) - np.array(cost_std),
+                                   cost_lb, cost_ub,
+                                   # np.array(cost_mean) + np.array(cost_std),
+                                   # np.array(cost_mean) - np.array(cost_std),
                                    facecolor=color,
                                    alpha=0.5)
-                ax[1].plot(times, success, color=color, label=alg)
+                # ax[1].plot(times, success, color=color, label=alg)
+                ax[1].step(
+                    times,
+                    success,
+                    color=color,
+                    label=alg,
+                    where='post')
 
                 ax[0].set_xscale('log')
                 ax[1].set_xscale('log')
 
-            ax[1].legend()
+            ax[1].legend(loc='lower right')
             ax[0].set_ylabel("cost")
             ax[1].set_xlabel("time [s]")
             ax[1].set_ylabel("success %")
@@ -1616,7 +1881,7 @@ def compare(
     import shutil
     copy_to = '/tmp/tmp_compare.pdf'
     shutil.copy(filename_pdf, copy_to)
-    print(f"copy_to {copy_to}")
+    print(f"copy_to: {copy_to}")
 
 
 def make_videos(robot: str, problem: str, file: str):
@@ -1665,31 +1930,65 @@ def get_cost_evolution(ax, file: str, **kwargs):
                     best_cost = cs
 
     if len(time_cost_pairs) == 0:
-        print("there is not solution...")
-        time_cost_pairs.append([unsolved_num, unsolved_num])
+        print("there is no solution...")
+        time_cost_pairs.append([np.nan, np.nan])
 
     # plot
 
     ts = [x[0] for x in time_cost_pairs]
     cs = [x[1] for x in time_cost_pairs]
 
-    ax.plot(ts, cs, color=kwargs.get("color", "blue"), alpha=0.3)
+    ts.append(MAX_TIME_PLOTS)
+    cs.append(cs[-1])
+
+    ax.step(ts, cs, color=kwargs.get("color", "blue"), alpha=0.3, where='post')
     return time_cost_pairs
 
 
-def get_av_cost(all_costs_np) -> Tuple[np.ndarray, np.ndarray]:
+def get_av_cost_new(all_costs_np) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    # continue here
+    # all_costs_np_ = np.nan_to_num(all_costs_np, nan=float("inf"))
+    # median = all_costs_np.median(axis=0)
+    num_instances = all_costs_np.shape[0]
+    median = []
+    median_ub = []
+    median_lb = []
+    rate_ub = .8
+    rate_lb = .2
+    for j in range(all_costs_np.shape[1]):
+        column = np.copy(all_costs_np[:, j])
+        # how many nan?
+        non_nan = np.count_nonzero(~np.isnan(column))
+        # print(column)
+        # print(non_nan)
+        if non_nan >= int(num_instances / 2):
+            print("success rate is enough")
+            # cc = column[~np.isnan(column)]
+            cc = np.nan_to_num(column, nan=float("inf"))
+            print("cc", cc)
+            cc.sort()
+
+            median.append(cc[max(int(0.5 * (len(cc) - 1)), 0)])
+            median_ub.append(cc[max(int(rate_ub * (len(cc) - 1)), 0)])
+            median_lb.append(cc[max(int(rate_lb * (len(cc) - 1)), 0)])
+            # meda.append(cc.mean())
+            # std.append(cc.std())
+        else:
+            print("success rate is very slow")
+            median.append(np.nan)
+            median_ub.append(np.nan)
+            median_lb.append(np.nan)
+
+    return np.array(median), np.array(median_lb), np.array(median_ub)
+
+
+def get_av_cost(
+        all_costs_np) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     # easy
-    mean = all_costs_np.mean(axis=0)
-    std = all_costs_np.std(axis=0)
+    # mean = all_costs_np.mean(axis=0)
+    # std = all_costs_np.std(axis=0)
 
     # more complex.
-    # wait until half of them are solved
-
-    # print("all_costs_np")
-    # print(all_costs_np)
-    #
-    # if (all_costs_np.size() == 0):
-    #
     num_instances = all_costs_np.shape[0]
     mean = []
     std = []
@@ -1699,7 +1998,7 @@ def get_av_cost(all_costs_np) -> Tuple[np.ndarray, np.ndarray]:
         non_nan = np.count_nonzero(~np.isnan(column))
         print(column)
         print(non_nan)
-        if non_nan > int(num_instances / 2):
+        if non_nan >= int(num_instances / 2):
             print("success rate is enough")
             cc = column[~np.isnan(column)]
             print("cc", cc)
@@ -1710,7 +2009,8 @@ def get_av_cost(all_costs_np) -> Tuple[np.ndarray, np.ndarray]:
             mean.append(np.nan)
             std.append(np.nan)
 
-    return np.array(mean), np.array(std)
+    return np.array(mean), np.array(
+        mean) - np.array(std), np.array(mean) + np.array(std), np.array(std)
 
 
 def first(iterable, condition):
@@ -1756,7 +2056,7 @@ def analyze_search(path_to_dir: str,
     for file in [str(f) for f in files]:
         print(f"loading file: {file}")
         with open(file) as f:
-            data = yaml.safe_load(f)
+            data = yaml.load(f, Loader=yaml.CLoader)
             # I am interested in cost of solution
             D = {
                 "cost": data["cost"],
@@ -1814,12 +2114,12 @@ def analyze_runs_time(path_to_dir: str,
     for file in [str(f) for f in files]:
         print(f"loading file: {file}")
         with open(file) as f:
-            data = yaml.safe_load(f)
+            data = yaml.load(f, Loader=yaml.CLoader)
             cost = data["cost"]
-            # time = data["info"]["time_ddp_total"] # OR time_raw
-            time = data["info"]["time_raw"]  # OR time_raw
-            # TODO: read feasible from the file!!
-            D = {"cost": cost, "time": time, "feasible": 1}
+            feasible = data["feasible"]
+            time = data["info"]["time_ddp_total"]  # OR time_raw
+            # time = data["info"]["time_raw"]  # OR time_raw
+            D = {"cost": cost, "time": time, "feasible": feasible}
             Ds.append(D)
 
     data_out = {}
@@ -1859,7 +2159,10 @@ def analyze_runs(path_to_dir: str,
                  visualize: bool, **kwargs) -> Tuple[str, str]:
 
     print(
-        f"path_to_dir:{path_to_dir}\nproblem:{problem}\nalg:{alg}\nvisualize:{visualize}")
+        f"path_to_dir:{path_to_dir}",
+        f"problem:{problem}",
+        f"alg:{alg}",
+        f"visualize:{visualize}")
 
     __files = [f for f in pathlib.Path(
         path_to_dir).iterdir() if f.is_file()]
@@ -1903,16 +2206,20 @@ def analyze_runs(path_to_dir: str,
             t.append(T)
             c.append(c[-1])
 
-            cost_times = np.interp(times, t, c)
-            print(cost_times)
+            f = interp1d(t, c, kind="previous")
+            cost_times = f(times)
+            # print(cost_times)
             all_costs.append(cost_times)
 
         all_costs_np = np.array(all_costs)
-    print("all_costs_np")
-    print(all_costs_np)
-    print(all_costs_np.shape)
-    print(all_costs_np[0])
-    mean, std = get_av_cost(all_costs_np)
+    # print("all_costs_np")
+    # print(all_costs_np)
+    # print(all_costs_np.shape)
+    # print(all_costs_np[0])
+
+    std = np.array([])
+    # mean, mean_lb, mean_ub, std = get_av_cost(all_costs_np)
+    mean, mean_lb, mean_ub = get_av_cost_new(all_costs_np)
 
     # // nan nan 1
 
@@ -1923,7 +2230,9 @@ def analyze_runs(path_to_dir: str,
         time_first_solution = float(dt * (__where[-1] + 1))
 
     try:
-        cost_first_solution = first(mean.tolist(), lambda x: not np.isnan(x))
+        cost_first_solution = first(
+            mean.tolist(),
+            lambda x: not np.isnan(x) and not np.isinf(x))
         last_cost = float(mean[-1])
     except StopIteration:
         # TODO : define a way to deal whit this numbers
@@ -1945,22 +2254,32 @@ def analyze_runs(path_to_dir: str,
         ~np.isnan(all_costs_np),
         axis=0) / all_costs_np.shape[0] * 100
 
-    ax[0].plot(times, mean, color='blue')
+    print(all_costs_np.shape)
+
+    print("all_costs_np")
+    for i in all_costs_np:
+        print(i)
+
+    ax[0].step(times, mean, color='blue', where='post')
     ax[0].fill_between(
         times,
-        mean + std,
-        mean - std,
+        mean_ub,
+        mean_lb,
+        # mean + std,
+        # mean - std,
         facecolor='blue',
         alpha=0.2)
     ax[0].set_ylabel("cost")
 
-    ax[1].plot(times, success)
+    # ax[1].plot(times, success)
+    ax[1].step(times, success, where='post')
+
     ax[1].set_xlabel("time [s]")
     ax[1].set_ylabel("success %")
 
     # ax[0].set_ylim([0, 30])
-    ax[1].set_xlim([0, 20])
-    ax[0].set_xlim([0, 20])
+    # ax[1].set_xlim([0, 20])
+    # ax[0].set_xlim([0, ])
 
     data_out = {}
     data_out["times"] = times.tolist()
@@ -1971,6 +2290,7 @@ def analyze_runs(path_to_dir: str,
     print(type(time_first_solution))
     data_out["time_first_solution"] = time_first_solution
     data_out["cost_first_solution"] = cost_first_solution
+    data_out["success_rate"] = float(success[-1]) / 100
 
     data_out["cost_at_01"] = cost_at_1
     data_out["cost_at_05"] = cost_at_5
@@ -1981,10 +2301,17 @@ def analyze_runs(path_to_dir: str,
     data_out["cost_mean"] = mean.tolist()
 
     data_out["cost_std"] = std.tolist()
+
+    data_out["cost_ub"] = mean_ub.tolist()
+    data_out["cost_lb"] = mean_lb.tolist()
+
     data_out["raw_data"] = raw_data
 
     data_out["problem"] = problem
+
     data_out["alg"] = alg
+    data_out["path_to_dir"] = path_to_dir
+    data_out["files"] = [str(f) for f in files]
 
     fileout = path_to_dir + "/report.yaml"
     print(f"fileout {fileout}")
@@ -2133,13 +2460,18 @@ def visualize_primitives(motions: list, robot: str,
         plt.show()
 
 
-def fancy_table(filenames: List[str]):
+def fancy_table(
+        filenames: List[str],
+        benchmark_problems: List[str],
+        benchmark_algs: List[str]):
 
     df = pandas.DataFrame()
 
     for file in filenames:
         __df = pandas.read_csv(file)
         df = pandas.concat([df, __df], axis=0)
+
+    print(list(df.columns))
 
     def get_data(frame, alg: str, problem: str, field: str, **kwargs):
         print(alg, problem, field)
@@ -2157,20 +2489,26 @@ def fancy_table(filenames: List[str]):
 
     data = []
 
-    algs = ["idbastar_v0", "sst_tmp", "geo_v1"]
+    algs = benchmark_algs
+    # algs = ["idbastar_v0", "sst_tmp", "geo_v1"] # default
+
     # algs = ["sst_v0", "sst_tmp", "geo_v1"]
     # algs = ["sst_v0", "sst_tmp", "geo_v1"]
-    fields = ["cost_first_solution", "last_cost", "time_first_solution"]
+    fields = [
+        "success_rate",
+        "time_first_solution",
+        "cost_first_solution",
+        "last_cost"]
 
     def alg_short(alg: str) -> str:
         if alg == "idbastar_v0":
             token1 = "i"
         elif alg == "sst_v0":
             token1 = "s"
-        elif alg == "geo_v1":
+        elif alg == "geo_v0":
             token1 = "g"
-        elif alg == "sst_tmp":
-            token1 = "st"
+        # elif alg == "sst_tmp":
+        #     token1 = "st"
         else:
             raise KeyError(alg)
         return token1
@@ -2184,8 +2522,10 @@ def fancy_table(filenames: List[str]):
             token2 = "tf"
         elif field == "last_cost":
             token2 = "lc"
+        elif field == "success_rate":
+            token2 = "p"
         else:
-            raise KeyError()
+            raise KeyError(field)
         return token1 + token2
 
     # problems = [
@@ -2200,11 +2540,8 @@ def fancy_table(filenames: List[str]):
 
     problems = sorted(list(problems))
 
-    only_chosen = True
-
-    if only_chosen:
+    if len(benchmark_problems):
         print("Warning: only chose problems!!")
-
         problems = sorted(
             list(
                 set(problems).intersection(
@@ -2245,8 +2582,15 @@ def fancy_table(filenames: List[str]):
 
     lines = str_.splitlines()
 
-    algs_line = r"&  \multicolumn{3}{c}{idba*} & \multicolumn{3}{c}{sst} & \multicolumn{3}{c}{geo}\\"
-    mid_rules = r"\cmidrule(lr){2-4}\cmidrule(lr){5-7}\cmidrule(lr){8-10}"
+    also_success = True
+
+    if also_success:
+        algs_line = r"& & &  \multicolumn{4}{c}{iDbA*} & \multicolumn{4}{c}{SST*} & \multicolumn{4}{c}{RRT*+TO}\\"
+        mid_rules = r"\cmidrule(lr){4-7}\cmidrule(lr){8-11}\cmidrule(lr){12-15}"
+    else:
+        algs_line = r"&  \multicolumn{3}{c}{iDbA*} & \multicolumn{3}{c}{SST*} & \multicolumn{3}{c}{RRT*+TO}\\"
+        mid_rules = r"\cmidrule(lr){2-4}\cmidrule(lr){5-7}\cmidrule(lr){8-10}"
+
     lines.insert(2, algs_line)
     lines.insert(3, mid_rules)
 
@@ -2270,21 +2614,46 @@ def fancy_table(filenames: List[str]):
 
     _algs = [alg_short(alg) for alg in algs]
 
-    _metrics = ["cf", "lc", "tf"]
+    _metrics = ["p", "tf", "cf", "lc"]
 
     def is_best(val: float, metric: str, problem: str, _algs: List[str]):
+        factor = 1
+        if metric == "p":
+            factor = -1
         delta = 1e-10
         for a in _algs:
             key = a + metric
             b = dict_data[problem][key]
-            if val > b + delta:
+            if factor * val > factor * b + delta:
                 return False
         return True
 
     custom_lines = []
+    id = 0
+    separate_dynamics_scenario = True
     for problem in problems:
         custom_line = []
-        custom_line.append(problem)
+        custom_line.append(str(id))
+        id += 1
+        ll = problem.split("/")
+
+        dynamics = ll[0]
+        scenario = ll[1]
+
+        if separate_dynamics_scenario:
+            custom_line.append(dynamics)
+            custom_line.append(scenario)
+
+        else:
+            custom_line.append(problem)
+
+        # custom_line.append(problem)
+
+        # separate for dynamics
+
+        # code to separate string by a character
+        # res = [i for j in s.split(' ') for i in (j, ' ')][:-1]
+
         for ik, k in enumerate(_algs):
             for token in _metrics:
                 full_key = k + token
@@ -2299,13 +2668,20 @@ def fancy_table(filenames: List[str]):
         custom_lines.append(custom_line)
     print(custom_lines)
 
+    _table_cols = [
+        "$p$",
+        r"$t^{\textup{st}} [s]$",
+        r"$J^{\textup{st}}[s]$",
+        r"$J^{\textup{f}}[s]$"]
+
     header = [
-        r"\begin{tabular}{lrrrrrrrrr}",
-        r"\toprule",
-        r"&  \multicolumn{3}{c}{idba*} & \multicolumn{3}{c}{sst*} & \multicolumn{3}{c}{geo}\\",
-        r"\cmidrule(lr){2-4}\cmidrule(lr){5-7}\cmidrule(lr){8-10}",
-        r"& cf & cl & tf & cf & cl & tf & cf & cl & tf \\",
-        r"\midrule"]
+        # r"\begin{tabular}{lrrrrrrrrr}",
+        # r"\begin{tabular}{lrrrrrrrrrrrr}",
+        # r"\begin{tabular}{lrrrrrrrrrrrrr}",  # include a number
+        r"\begin{tabular}{cccrrrrrrrrrrrr}",
+        # include a number #1 and separte dynamics and scenario
+        r"\toprule", algs_line, mid_rules,
+        r" \# & System & Instance & " + r" & ".join(3 * _table_cols) + r"\\", r"\midrule"]
 
     footer = [r"\bottomrule", r"\end{tabular}"]
 
@@ -2321,6 +2697,7 @@ def fancy_table(filenames: List[str]):
             _str = _str.replace("999.0", "-")
             # _str = _str.replace("40.1", "-")
             _str = _str.replace("120.1", "-")
+            _str = _str.replace("180.1", "-")
             f.write(_str)
 
             f.write(r'\\')
@@ -2349,6 +2726,8 @@ def fancy_table(filenames: List[str]):
     print("writing:", fileout)
     with open(fileout, "w") as f:
         f.write('\n'.join(lines))
+
+    generate_texpdf(fileout_nice)
 
     fileout_log = fileout + ".log"
     print("saving", fileout_log)
@@ -2381,9 +2760,21 @@ def format_latex_str(str_in: str) -> str:
     for k, v in D.items():
         str_ = str_.replace(k, v)
 
+    for k, v in D_key_to_nice_name:
+        print(f"replacing {k} with {v}")
+
+        print(str_)
+        str_ = str_.replace(k, v)
+        print(str_)
+
     str_ = str_.replace("_", "\\_")
-    print("final string is:")
-    print(str_)
+    # print("final string is:")
+    # print(str_)
+
+    # raise ValueError("stop here")
+
+    str_ = str_.replace("nan", "-")
+
     return str_
 
 
@@ -2401,8 +2792,7 @@ def parse_for_component_analysis(files: List[str]):
     Ds = []
     for file in files:
         with open(file) as f:
-            _D = yaml.safe_load(f)
-
+            _D = yaml.load(f, Loader=yaml.CLoader)
         assert ('infos_opt' in _D)
         assert ('infos_raw' in _D)
 
@@ -2663,7 +3053,7 @@ if __name__ == "__main__":
     if do_table_search:
         file = "../results_new_search/plots/plot_search_2023-06-06--12-49-13.pdf.log"
         with open(file) as f:
-            D = yaml.safe_load(f)
+            D = yaml.load(f, Loader=yaml.CLoader)
 
         assert ("input" in D)
         files = D["input"]
@@ -2676,7 +3066,7 @@ if __name__ == "__main__":
     if do_table_opti:
         file = "../results_new_timeopt/plots/plot_time_2023-06-06--15-36-24.pdf.log"
         with open(file) as f:
-            D = yaml.safe_load(f)
+            D = yaml.load(f, Loader=yaml.CLoader)
         assert ("input" in D)
         files = D["input"]
         compare_time(files)
@@ -2696,11 +3086,13 @@ if __name__ == "__main__":
         #     "/home/quim/stg/wolfgang/kinodynamic-motion-planning-benchmark/results_new/summary/summary_2023-05-11--17-34-33.csv",
         # ]
 
-        files = ["../results_new/summary/summary_2023-06-21--11-24-51.csv",
-                 "../results_new/summary/summary_2023-06-21--13-56-25.csv"]
+        with open(bench_cfg, "r") as f:
+            D = yaml.load(f, Loader=yaml.CLoader)
+        # files = ["../results_new/summary/summary_2023-06-21--11-24-51.csv",
+        #          "../results_new/summary/summary_2023-06-21--13-56-25.csv"]
 
-        fancy_table(files)
-        sys.exit(0)
+        fancy_table(D["files"], D["benchmark_problems"], D["benchmark_algs"])
+
     if do_compare:
         # folders = ["geo_v0/04-04-2023--15-59-51",
         #            "idbastar_v0/04-04-2023--15-59-51",
@@ -2726,7 +3118,7 @@ if __name__ == "__main__":
     if do_debug:
         file = "../results_new/unicycle_second_order_0/parallelpark_0/idbastar_v0/04-06-2023--14-52-41/run_1_out.yaml"
         with open(file, "r") as f:
-            data = yaml.safe_load(f)
+            data = yaml.load(f, Loader=yaml.CLoader)
         print(data)
     if do_vis_primitives:
         # file = "../cloud/motionsV2/tmp_car1.bin.yaml"
@@ -2744,7 +3136,7 @@ if __name__ == "__main__":
         file = file_in
         robot = dynamics
         with open(file, "r") as f:
-            motions = yaml.safe_load(f)
+            motions = yaml.load(f, Loader=yaml.CLoader)
         visualize_primitives(motions, robot, True, "out.pdf")
 
     # path = "/home/quim/stg/wolfgang/kinodynamic-motion-planning-benchmark/results_new/unicycle_first_order_0/bugtrap_0/sst_v0/04-04-2023--11-08-40"

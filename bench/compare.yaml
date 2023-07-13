@@ -1,33 +1,35 @@
 trials: 10
-timelimit: 120
-n_cores: 10 # -1=auto
+timelimit: 180
+n_cores: -1 # -1=auto
 
 # TODO? Should I randomize the primitives that I take? Specially if I am not using 
 # the sorting algorithm.
 
 # TODO
-# - [ ] sst* should use nigh
+# - [x] sst* should use nigh
 # - [ ] fix terminal state of quaternion. Now i just change the goal.
 # - [ ] think about randomizing the primitives
 # - [ ] Issue with out of bounds for position after optimization (program crash)
-# - [ ] Quadcopters 3d model: I should try solver=1
+# - [x] Quadcopters 3d model: I should try solver=1
 # TODO: NOT able to solve all of them with 100% succes...(e.g 90% or 80%)
 ### ISSUE: with memory when several threads at the same time
 #
 #
 
 problems:
+
+  # # # #
   - unicycle_first_order_0/parallelpark_0
   - unicycle_first_order_0/bugtrap_0
   - unicycle_first_order_0/kink_0
-  # #
+  # # # #
   - unicycle_first_order_1/kink_0
   - unicycle_first_order_2/wall_0
-  # #
+  # # # #
   - unicycle_second_order_0/kink_0
   - unicycle_second_order_0/parallelpark_0
   - unicycle_second_order_0/bugtrap_0
-  # #
+  # # # # #
   - car_first_order_with_1_trailers_0/kink_0
   - car_first_order_with_1_trailers_0/bugtrap_0 
   - car_first_order_with_1_trailers_0/parallelpark_0
@@ -39,7 +41,7 @@ problems:
   - quad2d/quad2d_recovery_wo_obs
   - quad2d/quad2d_recovery_obs
   - quad2d/fall_through
-  # #
+
   - quad2dpole/move_with_down
   - quad2dpole/move_with_up
   - quad2dpole/up
@@ -48,22 +50,20 @@ problems:
   - quad2dpole/window_easy 
   - quad2dpole/window 
   - quad2dpole/window_hard
-  #
+  # #
   - acrobot/swing_up_empty
   - acrobot/swing_up_obs
   - acrobot/swing_up_obs_hard 
   - acrobot/swing_down_easy
   - acrobot/swing_down
-  # # # 
-  # # # #  QUADROTOR_0
+  # # # # # #  QUADROTOR_0
   - quadrotor_0/empty_0_easy
   - quadrotor_0/empty_1_easy
   - quadrotor_0/window
   - quadrotor_0/recovery
   - quadrotor_0/recovery_with_obs
   - quadrotor_0/quad_one_obs
-  # # #
-  # # # # quadrotor_ompl
+  # # # # # # quadrotor_ompl
   - quadrotor_ompl/empty_0_easy
   - quadrotor_ompl/empty_1_easy
   - quadrotor_ompl/window
@@ -78,7 +78,7 @@ algs:
   # - idbastar_tmp
   
   # SST*
-  # - sst_v0
+  - sst_v0
   # - sst_tmp
   # - sst_v1
   # - sst_v2
@@ -92,8 +92,8 @@ algs:
   # 
   # # GEO
   # - geo_v1
-  # - geo_v0 # Does not work on quad, because time guess is very bad!!
-  # #
+  - geo_v0 
+  # # #
   # #
   # #
   # # - "idbastar_v0_mpcc"

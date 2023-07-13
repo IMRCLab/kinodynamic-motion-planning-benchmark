@@ -105,34 +105,43 @@ void set_from_yaml(const YAML::Node &node, T &var, const char *name) {
   }
 }
 
-void inline set_from_yaml_v(YAML::Node &node, std::vector<double> &var,
-                            const char *name) {
+void inline set_from_yaml(YAML::Node &node, std::vector<double> &var,
+                          const char *name) {
   if (YAML::Node parameter = node[name]) {
     var = parameter.as<std::vector<double>>();
   }
 }
 
-template <int T>
-void inline set_from_yaml_eigen(YAML::Node &node,
-                                Eigen::Matrix<double, T, 1> &v,
-                                const char *name) {
-  using Vd = Eigen::Matrix<double, T, 1>;
-  std::vector<double> var;
-  if (YAML::Node parameter = node[name]) {
-    var = parameter.as<std::vector<double>>();
-    assert(var.size() == T);
-    v = Vd(var.data());
-  }
-}
-
-void inline set_from_yaml_eigenx(YAML::Node &node, Eigen::VectorXd &v,
-                                 const char *name) {
+void inline set_from_yaml(YAML::Node &node, Eigen::VectorXd &v,
+                          const char *name) {
   std::vector<double> var;
   if (YAML::Node parameter = node[name]) {
     var = parameter.as<std::vector<double>>();
     v = Eigen::Map<Eigen::VectorXd>(var.data(), var.size());
   }
 }
+
+#define SET_FROM_YAML(T)                                                       \
+  void inline set_from_yaml(YAML::Node &node, Eigen::Matrix<double, T, 1> &v,  \
+                            const char *name) {                                \
+    using Vd = Eigen::Matrix<double, T, 1>;                                    \
+    std::vector<double> var;                                                   \
+    if (YAML::Node parameter = node[name]) {                                   \
+      var = parameter.as<std::vector<double>>();                               \
+      assert(var.size() == T);                                                 \
+      v = Vd(var.data());                                                      \
+    }                                                                          \
+  }
+
+SET_FROM_YAML(1)
+SET_FROM_YAML(2)
+SET_FROM_YAML(3)
+SET_FROM_YAML(4)
+SET_FROM_YAML(5)
+SET_FROM_YAML(6)
+SET_FROM_YAML(7)
+SET_FROM_YAML(8)
+SET_FROM_YAML(9)
 
 template <typename T>
 void set_from_boostop(po::options_description &desc, T &var, const char *name) {
@@ -296,3 +305,33 @@ void inline create_dir_if_necessary(const char *file) {
 void inline create_dir_if_necessary(const std::string file) {
   create_dir_if_necessary(file.c_str());
 }
+
+struct Loader {
+
+  bool use_boost = true; // boost (true) or yaml (false)
+  bool print = false;
+  void *source = nullptr;
+  std::string be = "";
+  std::string af = ": ";
+
+  template <typename T> void set(T &x, const char *name) {
+
+    if (use_boost) {
+      po::options_description *p =
+          static_cast<po::options_description *>(source);
+      CHECK(p, AT);
+      set_from_boostop(*p, x, name);
+    } else {
+      if (!print) {
+        YAML::Node *p = static_cast<YAML::Node *>(source);
+        CHECK(p, AT);
+        set_from_yaml(*p, x, name);
+      }
+      if (print) {
+        // use a write method
+        std::ostream *p = static_cast<std::ostream *>(source);
+        *p << be << name << af << x << std::endl;
+      }
+    }
+  }
+};

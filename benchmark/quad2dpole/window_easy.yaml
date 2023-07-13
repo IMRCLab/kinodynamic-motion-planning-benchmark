@@ -1,6 +1,7 @@
+name: quad2dpole_v0-window_easy
 environment:
-  min: [-2, -1]
-  max: [5, 4]
+  min: [-1, -1]
+  max: [5, 3]
   obstacles:
     # - type: box
     #   center: [2, 0]
@@ -22,6 +23,6 @@ environment:
 robots:
   - type: quad2dpole_v0
     # start: [0,0,0.0,.1,0,0,0,0]
-    start: [0, 0, 0.1, 0.785, 0, 0, 0, 0]
+    start: [0, 0, 0, 0, 0, 0, 0, 0]
     # goal: [0,0,0,0,0,0,0,0]
     goal: [3, 0, 0, 3.14, 0, 0, 0, 0]

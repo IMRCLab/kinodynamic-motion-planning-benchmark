@@ -62,6 +62,7 @@ public:
 
 void Options_trajopt::add_options(po::options_description &desc) {
 
+  set_from_boostop(desc, VAR_WITH_NAME(soft_control_bounds));
   set_from_boostop(desc, VAR_WITH_NAME(rollout_warmstart));
   set_from_boostop(desc, VAR_WITH_NAME(u_bound_scale));
   set_from_boostop(desc, VAR_WITH_NAME(interp));
@@ -99,6 +100,7 @@ void Options_trajopt::read_from_yaml(const char *file) {
 
 void Options_trajopt::__read_from_node(const YAML::Node &node) {
 
+  set_from_yaml(node, VAR_WITH_NAME(soft_control_bounds));
   set_from_yaml(node, VAR_WITH_NAME(noise_level));
   set_from_yaml(node, VAR_WITH_NAME(welf_format));
   set_from_yaml(node, VAR_WITH_NAME(rollout_warmstart));
@@ -142,6 +144,8 @@ void Options_trajopt::read_from_yaml(YAML::Node &node) {
 void Options_trajopt::print(std::ostream &out, const std::string &be,
                             const std::string &af) const {
 
+  out << be << STR(shift_repeat, af) << std::endl;
+  out << be << STR(soft_control_bounds, af) << std::endl;
   out << be << STR(welf_format, af) << std::endl;
   out << be << STR(u_bound_scale, af) << std::endl;
   out << be << STR(interp, af) << std::endl;
@@ -331,6 +335,19 @@ generate_problem(const Generate_params &gen_args,
   ptr<Cost> control_feature =
       mk<Control_cost>(nx, nu, nu, dyn->u_weight, dyn->u_ref);
 
+  CSTR_(options_trajopt.control_bounds);
+  CSTR_(options_trajopt.soft_control_bounds);
+
+  bool use_hard_bounds = options_trajopt.control_bounds;
+
+  if (options_trajopt.soft_control_bounds) {
+    use_hard_bounds = false;
+  }
+
+  // CHECK(
+  //     !(options_trajopt.control_bounds &&
+  //     options_trajopt.soft_control_bounds), AT);
+
   for (size_t t = 0; t < gen_args.N; t++) {
 
     std::vector<ptr<Cost>> feats_run;
@@ -342,6 +359,16 @@ generate_problem(const Generate_params &gen_args,
     }
 
     feats_run.push_back(control_feature);
+
+    if (options_trajopt.soft_control_bounds) {
+      std::cout << "Experimental" << std::endl;
+      Eigen::VectorXd v = Eigen::VectorXd(nu);
+      v.setConstant(100);
+      feats_run.push_back(mk<Control_bounds>(nx, nu, nu, dyn->u_lb, -v));
+      feats_run.push_back(mk<Control_bounds>(nx, nu, nu, dyn->u_ub, v));
+    }
+
+    // feats_run.push_back(mk<State_bounds>(nx, nu, nx, v, -v);
 
     if (gen_args.collisions && gen_args.model_robot->env) {
       ptr<Cost> cl_feature = mk<Col_cost>(nx, nu, 1, gen_args.model_robot,
@@ -575,7 +602,7 @@ generate_problem(const Generate_params &gen_args,
     boost::shared_ptr<crocoddyl::ActionModelAbstract> am_run =
         to_am_base(mk<ActionModelQ>(dyn, feats_run));
 
-    if (options_trajopt.control_bounds) {
+    if (use_hard_bounds) {
       am_run->set_u_lb(options_trajopt.u_bound_scale * dyn->u_lb);
       am_run->set_u_ub(options_trajopt.u_bound_scale * dyn->u_ub);
     }
@@ -1517,6 +1544,7 @@ void __trajectory_optimization(const Problem &problem,
           window_optimize_i = options_trajopt_local.window_optimize;
           // next goal:
           size_t goal_index = index + window_optimize_i;
+          CSTR_(goal_index);
           if (goal_index > xs_init.size() - 1) {
             std::cout << "trying to reach the goal " << std::endl;
             goal_mpc = goal;
@@ -2709,6 +2737,12 @@ void trajectory_optimization(const Problem &problem,
     tmp_init_guess = from_welf_to_quim(init_guess, robot_derived->u_nominal);
   }
 
+  if (startsWith(problem.robotType, "quad3d")) {
+    for (auto &s : tmp_init_guess.states) {
+      s.segment<4>(3).normalize();
+    }
+  }
+
   CSTR_(model_robot->ref_dt);
 
   if (!tmp_init_guess.states.size() && tmp_init_guess.num_time_steps == 0) {
@@ -2896,6 +2930,72 @@ void trajectory_optimization(const Problem &problem,
       CSTR_(time_ddp_total);
     }
     CHECK_EQ(traj.feasible, opti_out.feasible, AT);
+
+  } break;
+
+  case SOLVER::first_fixed_then_free_time: {
+    // TODO: test this!!
+
+    bool do_free_time = true;
+
+    options_trajopt_local.solver_id = static_cast<int>(SOLVER::traj_opt);
+    options_trajopt_local.debug_file_name =
+        "/tmp/dbastar/debug_file_trajopt_0.yaml";
+
+    std::cout << "**\nopti params is " << std::endl;
+    options_trajopt_local.print(std::cout);
+
+    __trajectory_optimization(problem, model_robot, tmp_init_guess,
+                              options_trajopt_local, tmp_solution, opti_out);
+
+    time_ddp_total += std::stod(opti_out.data.at("ddp_time"));
+    CSTR_(time_ddp_total);
+    if (!opti_out.success) {
+      std::cout << "warning"
+                << " "
+                << "not of smoothing" << std::endl;
+      do_free_time = false;
+    }
+
+    if (do_free_time) {
+
+      bool do_final_repair_step = true;
+      options_trajopt_local.control_bounds = true;
+      options_trajopt_local.solver_id =
+          static_cast<int>(SOLVER::traj_opt_free_time_proxi);
+      options_trajopt_local.debug_file_name =
+          "/tmp/dbastar/debug_file_trajopt_freetime_proxi.yaml";
+      std::cout << "**\nopti params is " << std::endl;
+      options_trajopt_local.print(std::cout);
+
+      __trajectory_optimization(problem, model_robot, tmp_solution,
+                                options_trajopt_local, tmp_solution, opti_out);
+      time_ddp_total += std::stod(opti_out.data.at("ddp_time"));
+      CSTR_(time_ddp_total);
+
+      if (!opti_out.success) {
+        std::cout << "warning"
+                  << " "
+                  << "infeasible" << std::endl;
+        do_final_repair_step = false;
+      }
+
+      if (do_final_repair_step) {
+
+        std::cout << "time proxi was feasible, doing final step " << std::endl;
+        options_trajopt_local.control_bounds = true;
+        options_trajopt_local.solver_id = static_cast<int>(SOLVER::traj_opt);
+        options_trajopt_local.control_bounds = 1;
+        options_trajopt_local.debug_file_name =
+            "/tmp/dbastar/debug_file_trajopt_after_freetime_proxi.yaml";
+
+        __trajectory_optimization(problem, model_robot, tmp_solution,
+                                  options_trajopt_local, traj, opti_out);
+        time_ddp_total += std::stod(opti_out.data.at("ddp_time"));
+        CSTR_(time_ddp_total);
+      }
+      CHECK_EQ(traj.feasible, opti_out.feasible, AT);
+    }
 
   } break;
 

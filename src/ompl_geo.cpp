@@ -1,8 +1,25 @@
 #include "ompl_geo.hpp"
+#include "nigh_custom_spaces.hpp"
 #include "ocp.hpp"
 
 namespace ob = ompl::base;
 namespace og = ompl::geometric;
+
+struct RRTstar_public_interface : public og::RRTstar {
+
+  RRTstar_public_interface(const ob::SpaceInformationPtr &si)
+      : og::RRTstar(si) {}
+
+  ~RRTstar_public_interface() = default;
+
+  void setNearestNeighbors(const std::string &name,
+                           const std::shared_ptr<RobotOmpl> &robot) {
+    auto t = nigh_factory<og::RRTstar::Motion *>(
+        name, robot, [](og::RRTstar::Motion *m) { return m->state; });
+
+    nn_.reset(t);
+  }
+};
 
 void solve_ompl_geometric(const Problem &problem,
                           const Options_geo &options_geo,
@@ -28,7 +45,12 @@ void solve_ompl_geometric(const Problem &problem,
   // create a planner for the defined space
   std::shared_ptr<ob::Planner> planner;
   if (options_geo.planner == "rrt*") {
-    auto pp = new og::RRTstar(si);
+    auto pp = new RRTstar_public_interface(si);
+
+    if (options_geo.geo_use_nigh) {
+      pp->setNearestNeighbors(problem.robotType, robot);
+    }
+
     if (options_geo.range > 0) {
       pp->setRange(options_geo.range);
     }
@@ -60,15 +82,17 @@ void solve_ompl_geometric(const Problem &problem,
 
   std::string id = gen_random(6);
   size_t num_founds_geo_trajs = 0;
+  const bool use_non_counter_time = true;
 
+  double non_counter_time = 0;
   pdef->setIntermediateSolutionCallback(
       [&](const ob::Planner *, const std::vector<const ob::State *> &states,
           const ob::Cost cost) {
-        double t = get_time_stamp_ms();
-
         Trajectory traj;
         Trajectory traj_geo;
-        traj_geo.time_stamp = t;
+        traj_geo.time_stamp =
+            get_time_stamp_ms() - int(use_non_counter_time) * non_counter_time;
+
         state_to_eigen(traj_geo.start, si, startState);
         state_to_eigen(traj_geo.goal, si, goalState);
         traj_geo.states.push_back(traj_geo.start);
@@ -152,8 +176,14 @@ void solve_ompl_geometric(const Problem &problem,
           // compute approximate time.
 
           std::cout << "*** Sart optimization ***" << std::endl;
+
+          Stopwatch watch;
           trajectory_optimization(problem, traj_geo, options_trajopt, traj,
                                   result);
+          double raw_time = watch.elapsed_ms();
+
+          non_counter_time +=
+              raw_time - std::stof(result.data.at("time_ddp_total"));
 
           std::cout << "*** Optimization done ***" << std::endl;
 
@@ -175,7 +205,8 @@ void solve_ompl_geometric(const Problem &problem,
             }
           }
 
-          traj.time_stamp = get_time_stamp_ms();
+          traj.time_stamp = get_time_stamp_ms() -
+                            int(use_non_counter_time) * non_counter_time;
           info_out_omplgeo.trajs_opt.push_back(traj);
         }
 

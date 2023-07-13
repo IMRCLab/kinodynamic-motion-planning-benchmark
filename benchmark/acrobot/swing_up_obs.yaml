@@ -1,3 +1,4 @@
+name: acrobot_v0-swing_up_obstacles
 environment:
   min: [-2.5, -2.5] # what to use here?
   max: [2.5, 2.5]

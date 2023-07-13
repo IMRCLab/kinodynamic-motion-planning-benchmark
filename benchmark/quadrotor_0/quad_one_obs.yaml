@@ -1,3 +1,4 @@
+name: quadrotor_v0-obstacles
 environment:
   min: [0, 0, 0]
   max: [6, 6, 6]

@@ -1,6 +1,7 @@
 
 
 #include "ompl_sst.hpp"
+#include "nigh_custom_spaces.hpp"
 #include "ocp.hpp"
 
 namespace ob = ompl::base;
@@ -23,6 +24,14 @@ struct SST_public_interface : public oc::SST {
   std::vector<unsigned> get_prevSolutionSteps_() const {
     return prevSolutionSteps_;
   };
+
+  void setNearestNeighbors(const std::string &name,
+                           const std::shared_ptr<RobotOmpl> &robot) {
+    auto t = nigh_factory<oc::SST::Motion *>(name, robot);
+    auto t2 = nigh_factory<oc::SST::Motion *>(name, robot);
+    nn_.reset(t);
+    witnesses_.reset(t2);
+  }
 
   ompl::base::Cost get_prevSolutionCost_() const { return prevSolutionCost_; }
 };
@@ -84,13 +93,20 @@ void solve_sst(const Problem &problem, const Options_sst &options_ompl_sst,
 
   // create a planner for the defined space
   std::shared_ptr<ob::Planner> planner;
+
+  auto robot_type = problem.robotType;
+
   if (options_ompl_sst.planner == "rrt") {
     auto rrt = new oc::RRT(si);
     rrt->setGoalBias(options_ompl_sst.goal_bias);
     planner.reset(rrt);
   } else if (options_ompl_sst.planner == "sst") {
-    // auto sst = new oc::SST(si);
+    // auto sst =fnew oc::SST(si);
     auto sst = new SST_public_interface(si);
+
+    if (options_ompl_sst.sst_use_nigh)
+      sst->setNearestNeighbors(problem.robotType, robot);
+
     sst->setGoalBias(options_ompl_sst.goal_bias);
 
     sst->setSelectionRadius(options_ompl_sst.selection_radius);
@@ -130,6 +146,9 @@ void solve_sst(const Problem &problem, const Options_sst &options_ompl_sst,
 
   size_t num_solutions = 0;
 
+  double non_counter_time = 0;
+  const bool use_non_counter_time = true;
+
   pdef->setIntermediateSolutionCallback(
       [&](const ob::Planner *pp, const std::vector<const ob::State *> &states,
           const ob::Cost cost) {
@@ -137,7 +156,8 @@ void solve_sst(const Problem &problem, const Options_sst &options_ompl_sst,
 
         (void)states;
         std::cout << "hello world " << std::endl;
-        double tt = get_time_stamp_ms();
+        double tt =
+            get_time_stamp_ms() - int(use_non_counter_time) * non_counter_time;
         {
 
           Trajectory traj_sst;
@@ -227,11 +247,18 @@ void solve_sst(const Problem &problem, const Options_sst &options_ompl_sst,
             Result_opti result;
             Trajectory traj_opt;
             std::cout << "*** Sart optimization ***" << std::endl;
+
+            // NOTE: I don't consider the time spent in optimization,
+            // as it was not part of planning time (i.e. this is a lower bound
+            // on true cost)
+            Stopwatch sw;
             trajectory_optimization(problem, traj_sst, options_trajopt,
                                     traj_opt, result);
+            non_counter_time += sw.elapsed_ms();
 
             std::cout << "*** Optimization done ***" << std::endl;
-            traj_opt.time_stamp = get_time_stamp_ms();
+            traj_opt.time_stamp = get_time_stamp_ms() -
+                                  int(use_non_counter_time) * non_counter_time;
             info_out_omplsst.trajs_opt.push_back(traj_opt);
 
             if (traj_opt.feasible) {

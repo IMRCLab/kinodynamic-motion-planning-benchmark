@@ -1,3 +1,4 @@
+name: unicycle2_v0-parallelpark_0
 environment:
   min: [0.0, -0.5]
   max: [3.0, 1.5]

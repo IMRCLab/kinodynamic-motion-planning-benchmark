@@ -8,9 +8,11 @@
 #include <ompl/control/SpaceInformation.h>
 #include <ompl/control/spaces/RealVectorControlSpace.h>
 
-// FCL
-#include <fcl/fcl.h>
 #include <yaml-cpp/node/node.h>
+
+// FCL
+#include "fclHelper.hpp"
+#include <fcl/fcl.h>
 
 struct Model_robot;
 
@@ -200,3 +202,46 @@ std::ostream &printState(std::ostream &stream,
 std::ostream &printAction(std::ostream &stream,
                           std::shared_ptr<ompl::control::SpaceInformation> si,
                           ompl::control::Control *action);
+
+class Motion {
+
+public:
+  std::vector<ompl::base::State *> states;
+  std::vector<ompl::control::Control *> actions;
+  Trajectory traj;
+
+  std::shared_ptr<ShiftableDynamicAABBTreeCollisionManager<double>>
+      collision_manager;
+  std::vector<fcl::CollisionObjectd *> collision_objects;
+
+  double cost;
+  size_t idx;
+  // std::string name;
+  bool disabled = false;
+  double get_cost() const { return cost; }
+
+  void print(std::ostream &out,
+             std::shared_ptr<ompl::control::SpaceInformation> &si);
+
+  const ompl::base::State *getState() const {
+    assert(states.size());
+    return states.front();
+  }
+
+  const Eigen::VectorXd &getStateEig() const { return traj.states.front(); }
+};
+
+void load_motion_primitives_new(const std::string &motionsFile,
+                                RobotOmpl &robot, std::vector<Motion> &motions,
+                                int max_motions, bool cut_actions, bool shuffle,
+                                bool compute_col = true,
+                                bool allocate_ompl = true);
+
+void load_motion_primitives(const std::string &motionsFile, RobotOmpl &robot,
+                            std::vector<Motion> &motions, int max_motions,
+                            bool cut_actions, bool shuffle);
+
+void traj_to_motion(const Trajectory &traj, RobotOmpl &robot,
+                    Motion &motion_out, bool compute_col);
+
+void compute_col_shape(Motion &m, RobotOmpl &robot);

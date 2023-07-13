@@ -150,7 +150,7 @@ void Trajectory::update_feasibility(double traj_tol, double goal_tol,
   }
 }
 
-void Trajectory::check(std::shared_ptr<Model_robot> &robot, bool verbose) {
+void Trajectory::check(std::shared_ptr<Model_robot> robot, bool verbose) {
 
   max_collision = check_cols(robot, states);
   Eigen::VectorXd dts;
@@ -370,7 +370,8 @@ double check_trajectory(const std::vector<Vxd> &xs_out,
       CSTR_V(xnext);
       CSTR_V(xs_out.at(i + 1));
 
-      max_jump_distance = jump;
+      if (jump > max_jump_distance)
+        max_jump_distance = jump;
     }
   }
 
@@ -477,6 +478,7 @@ void resample_trajectory(std::vector<Eigen::VectorXd> &xs_out,
 void Info_out::print(std::ostream &out, const std::string &be,
                      const std::string &af) const {
   STRY(solved, out, be, af);
+  STRY(solved_raw, out, be, af);
   STRY(cost, out, be, af);
 }
 
@@ -500,6 +502,7 @@ void Info_out::to_yaml(std::ostream &out, const std::string &be,
                        const std::string &af) const {
 
   STRY(solved, out, be, af);
+  STRY(solved_raw, out, be, af);
   STRY(cost, out, be, af);
 
   out << be << "trajs_opt_size: " << trajs_opt.size() << std::endl;
@@ -853,3 +856,33 @@ Trajectories cut_trajectory(const Trajectory &traj, size_t number_of_cuts,
 
   // I have to convert to canonical motions
 };
+
+void make_trajs_canonical(Model_robot &robot,
+                          const std::vector<Trajectory> &trajs,
+                          std::vector<Trajectory> &trajs_canonical) {
+
+  for (const auto &traj : trajs) {
+
+    Eigen::VectorXd x0(traj.states.front().size());
+    robot.canonical_state(traj.states.front(), x0);
+    std::vector<Eigen::VectorXd> xx = traj.states;
+    robot.rollout(x0, traj.actions, xx);
+
+    Trajectory traj_out;
+    traj_out.actions = traj.actions;
+    traj_out.states = xx;
+    traj_out.goal = traj_out.states.back();
+    traj_out.start = traj_out.states.front();
+    traj_out.cost = traj.cost;
+
+    {
+      traj_out.check(std::shared_ptr<Model_robot>(&robot, [](Model_robot *) {}),
+                     true);
+      traj_out.update_feasibility();
+      // CHECK(traj_out.feasible, AT); // NOTE: some can go out of
+      // bounds in the canonical form.
+    }
+
+    trajs_canonical.push_back(traj_out);
+  }
+}

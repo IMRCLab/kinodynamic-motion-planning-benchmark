@@ -3890,6 +3890,12 @@ BOOST_AUTO_TEST_CASE(test_quad2d_recovery_obs) {
   Trajectory traj, traj_out;
   const char *filename = "../build/traj_db_04_recovery_obs_fail.yaml";
 
+  // const char *filename = "/tmp/dbastar/init_guess_JfS6n1.yaml";
+
+  // const char *filename = "../build/debugQuad2dRecoveryOBS.yaml";
+
+    // /tmp/dbastar/init_guess_JfS6n1.yaml";
+
   traj.read_from_yaml(filename);
 
   Problem problem("../benchmark/quad2d/quad2d_recovery_obs.yaml");
@@ -3901,10 +3907,15 @@ BOOST_AUTO_TEST_CASE(test_quad2d_recovery_obs) {
 
   Options_trajopt options_trajopt;
   options_trajopt.max_iter = 200;
-  options_trajopt.weight_goal = 100;
+  options_trajopt.weight_goal = 50;
+  options_trajopt.control_bounds = false;
+  options_trajopt.soft_control_bounds = true;
+
+  // options_trajopt.control_bounds = false;
   // options_trajopt.collision_weight = 400;
-  options_trajopt.smooth_traj = true;
+  options_trajopt.smooth_traj = false;
   options_trajopt.solver_id = 1;
+  // options_trajopt.th_acceptnegstep = .05;
   // options_trajopt.k_contour = 50;
 
   Result_opti opti_out;

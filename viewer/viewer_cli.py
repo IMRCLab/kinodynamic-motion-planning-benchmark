@@ -44,12 +44,17 @@ def get_robot_viewer(robot: str) -> robot_viewer.RobotViewer:
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--env", help="input file containing map")
-    parser.add_argument("--result", help="output file containing solution")
+    # parser.add_argument("--env", help="input file containing map")
+    # parser.add_argument("--result", help="output file containing solution")
+    # parser.add_argument("--result2", help="output file containing solution")
     parser.add_argument("--robot", help="output file containing solution")
-    args = parser.parse_args()
-
+    args, unk = parser.parse_known_args()
+    #
     viewer = get_robot_viewer(args.robot)
 
+    # viewer_utils.check_viewer(
+    # viewer, ["--env", args.env, "--result", args.result, "--result2",
+    # args.result2])
+
     viewer_utils.check_viewer(
-        viewer, ["--env", args.env, "--result", args.result])
+        viewer, args)

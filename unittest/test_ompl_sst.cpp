@@ -1,9 +1,3 @@
-#include "ompl_sst.hpp"
-#include <algorithm>
-#include <cmath>
-#include <fstream>
-#include <iostream>
-#include <limits>
 
 // #include <boost/test/unit_test_suite.hpp>
 // #define BOOST_TEST_DYN_LINK
@@ -12,10 +6,19 @@
 // see
 // https://www.boost.org/doc/libs/1_81_0/libs/test/doc/html/boost_test/usage_variants.html
 // #define BOOST_TEST_MODULE test module name
-
 #define BOOST_TEST_MODULE test module name
 #define BOOST_TEST_DYN_LINK
 #include <boost/test/unit_test.hpp>
+
+
+#include "ompl_sst.hpp"
+#include <algorithm>
+#include <cmath>
+#include <fstream>
+#include <iostream>
+#include <limits>
+
+
 
 BOOST_AUTO_TEST_CASE(parallel_park_1) {
 

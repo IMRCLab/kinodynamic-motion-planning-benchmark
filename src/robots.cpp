@@ -22,6 +22,8 @@
 #include <ompl/datastructures/NearestNeighborsGNATNoThreadSafety.h>
 #include <ompl/datastructures/NearestNeighborsSqrtApprox.h>
 
+#include "fclHelper.hpp"
+
 namespace ob = ompl::base;
 namespace oc = ompl::control;
 
@@ -3028,3 +3030,149 @@ std::shared_ptr<RobotOmpl> robot_factory_ompl(const Problem &problem) {
 
   return out;
 }
+
+void load_motion_primitives_new(const std::string &motionsFile,
+                                RobotOmpl &robot, std::vector<Motion> &motions,
+                                int max_motions, bool cut_actions, bool shuffle,
+                                bool compute_col, bool allocate_ompl) {
+
+  if (!allocate_ompl) {
+    // TODO: needs small refactoring
+    NOT_IMPLEMENTED;
+  }
+
+  Trajectories trajs;
+
+  trajs.load_file_boost(motionsFile.c_str());
+
+  // CSTR_(max_motions);
+  // CSTR_(trajs.data.size());
+  if (max_motions < trajs.data.size())
+    trajs.data.resize(max_motions);
+
+  std::cout << "trajs " << std::endl;
+  std::cout << "first state is " << std::endl;
+  CSTR_V(trajs.data.front().states.front());
+
+  motions.resize(trajs.data.size());
+
+  bool add_noise_first_state = true;
+  CSTR_(add_noise_first_state);
+
+  if (add_noise_first_state) {
+    std::cout << "WARNING:"
+              << "adding noise to first and last state" << std::endl;
+    const double noise = 1e-7;
+    for (auto &t : trajs.data) {
+      t.states.front() +=
+          noise * Eigen::VectorXd::Random(t.states.front().size());
+
+      t.states.back() +=
+          noise * Eigen::VectorXd::Random(t.states.back().size());
+    }
+  }
+  // ensure
+
+  if (startsWith(robot.diff_model->name, "quad3d")) {
+    // ensure quaternion
+    for (auto &t : trajs.data) {
+      for (auto &s : t.states) {
+        s.segment<4>(3).normalize();
+      }
+    }
+  }
+
+  CSTR_(trajs.data.size());
+  std::cout << "from boost to motion " << std::endl;
+
+  std::transform(trajs.data.begin(), trajs.data.end(), motions.begin(),
+                 [&](const auto &traj) {
+                   // traj.to_yaml_format(std::cout, "");
+                   Motion m;
+                   traj_to_motion(traj, robot, m, compute_col);
+                   return m;
+                 });
+
+  std::cout << "from boost to motion -- DONE " << std::endl;
+
+  CHECK(motions.size(), AT);
+  if (motions.front().cost > 1e5) {
+    std::cout << "WARNING: motions have infinite cost." << std::endl;
+    std::cout << "-- using default cost: TIME" << std::endl;
+    for (auto &m : motions) {
+      m.cost = robot.diff_model->ref_dt * m.actions.size();
+    }
+  }
+
+  if (cut_actions) {
+    NOT_IMPLEMENTED;
+  }
+
+  if (shuffle) {
+    std::shuffle(std::begin(motions), std::end(motions),
+                 std::default_random_engine{});
+  }
+
+  for (size_t idx = 0; idx < motions.size(); ++idx) {
+    motions[idx].idx = idx;
+  }
+
+  std::cout << "Second time: first state is " << std::endl;
+  CSTR_V(trajs.data.front().states.front());
+}
+
+void traj_to_motion(const Trajectory &traj, RobotOmpl &robot,
+                    Motion &motion_out, bool compute_col) {
+
+  auto si = robot.getSpaceInformation();
+
+  motion_out.states.resize(traj.states.size());
+  motion_out.traj = traj;
+
+  std::transform(traj.states.begin(), traj.states.end(),
+                 motion_out.states.begin(), [&](auto &x) {
+                   // CSTR_V(x);
+                   ob::State *state = si->allocState();
+                   // printState(std::cout, si, state);
+                   robot.fromEigen(state, x);
+                   robot.enforceBounds(state);
+                   // printState(std::cout, si, state);
+                   return state;
+                 });
+
+  motion_out.actions.resize(traj.actions.size());
+
+  std::transform(traj.actions.begin(), traj.actions.end(),
+                 motion_out.actions.begin(), [&](auto &a) {
+                   oc::Control *action = si->allocControl();
+                   control_from_eigen(a, si, action);
+                   return action;
+                 });
+
+  if (compute_col)
+    compute_col_shape(motion_out, robot);
+  motion_out.cost = traj.cost;
+}
+
+void compute_col_shape(Motion &m, RobotOmpl &robot) {
+  Eigen::VectorXd x(robot.diff_model->nx);
+  for (auto &state : m.states) {
+    robot.toEigen(state, x);
+    auto &ts_data = robot.diff_model->ts_data;
+    auto &col_geo = robot.diff_model->collision_geometries;
+    robot.diff_model->transformation_collision_geometries(x, ts_data);
+
+    for (size_t i = 0; i < ts_data.size(); i++) {
+      auto &transform = ts_data.at(i);
+      auto co = new fcl::CollisionObjectd(col_geo.at(i));
+      co->setTranslation(transform.translation());
+      co->setRotation(transform.rotation());
+      co->computeAABB();
+      m.collision_objects.push_back(co);
+    }
+  }
+
+  m.collision_manager.reset(
+      new ShiftableDynamicAABBTreeCollisionManager<double>());
+  m.collision_manager->registerObjects(m.collision_objects);
+};

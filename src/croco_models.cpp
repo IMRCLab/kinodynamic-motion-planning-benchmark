@@ -747,6 +747,48 @@ void State_bounds::calcDiff(Eigen::Ref<Eigen::VectorXd> Lx,
   calcDiff(Lx, Lxx, x);
 }
 
+Control_bounds::Control_bounds(size_t nx, size_t nu, size_t nr, const Vxd &ub,
+                               const Vxd &weight)
+    : Cost(nx, nu, nr), ub(ub), weight(weight) {
+  name = "xbound";
+  CHECK_EQ(weight.size(), ub.size(), AT);
+  CHECK_EQ(nu, nr, AT);
+  CHECK_EQ(static_cast<size_t>(weight.size()), nu, AT);
+}
+
+void Control_bounds::calc(Eigen::Ref<Vxd> r, const Eigen::Ref<const Vxd> &x,
+                          const Eigen::Ref<const Vxd> &u) {
+  check_input_calc(r, x, u);
+  r = ((u - ub).cwiseProduct(weight)).cwiseMax(0.);
+}
+
+void Control_bounds::calc(Eigen::Ref<Vxd> r, const Eigen::Ref<const Vxd> &x) {
+  ERROR_WITH_INFO("should not be called");
+}
+
+void Control_bounds::calcDiff(Eigen::Ref<Eigen::VectorXd> Lx,
+                              Eigen::Ref<Eigen::MatrixXd> Lxx,
+                              const Eigen::Ref<const Eigen::VectorXd> &x) {
+
+  ERROR_WITH_INFO("should not be called");
+}
+
+void Control_bounds::calcDiff(Eigen::Ref<Eigen::VectorXd> Lx,
+                              Eigen::Ref<Eigen::VectorXd> Lu,
+                              Eigen::Ref<Eigen::MatrixXd> Lxx,
+                              Eigen::Ref<Eigen::MatrixXd> Luu,
+                              Eigen::Ref<Eigen::MatrixXd> Lxu,
+                              const Eigen::Ref<const Eigen::VectorXd> &x,
+                              const Eigen::Ref<const Eigen::VectorXd> &u) {
+
+  Eigen::Matrix<bool, Eigen::Dynamic, 1> result =
+      (u - ub).cwiseProduct(weight).array() >= 0;
+
+  Lu += (u - ub).cwiseProduct(weight).cwiseMax(0.).cwiseProduct(weight);
+  Luu.diagonal() +=
+      (result.cast<double>()).cwiseProduct(weight).cwiseProduct(weight);
+}
+
 // void State_bounds::calcDiff(Eigen::Ref<Eigen::MatrixXd> Jx,
 //                             const Eigen::Ref<const Vxd> &x) {
 //
@@ -1421,19 +1463,20 @@ void Dynamics::calc(Eigen::Ref<Eigen::VectorXd> xnext,
                     const Eigen::Ref<const VectorXs> &x,
                     const Eigen::Ref<const VectorXs> &u) {
   CHECK_GE(dt, 0, AT);
-  size_t _nx = robot_model->nx;
-  size_t _nu = robot_model->nu;
+  const size_t &_nx = robot_model->nx;
+  const size_t &_nu = robot_model->nu;
 
-  size_t nx = x.size();
-  size_t nu = u.size();
+  const size_t &nx = x.size();
+  const size_t &nu = u.size();
 
   if (control_mode == Control_Mode::default_mode) {
     robot_model->step(xnext, x, u, dt);
   } else if (control_mode == Control_Mode::free_time) {
-    CHECK_GEQ(u(robot_model->nu), 0., AT);
+    // CHECK_GEQ(u(robot_model->nu), 0., AT);
+    WARN_GEQ(u(robot_model->nu), 0, "time cannot be negative!");
     robot_model->step(xnext, x, u.head(_nu), dt * u(_nu));
   } else if (control_mode == Control_Mode::free_time_linear) {
-    CHECK_GEQ(u(robot_model->nu), 0., AT);
+    WARN_GEQ(u(robot_model->nu), 0, "time cannot be negative!");
     robot_model->step(xnext.head(_nx), x.head(_nx), u.head(_nu), dt * u(_nu));
     xnext(_nx) = u(_nu);
   } else if (control_mode == Control_Mode::contour) {

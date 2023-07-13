@@ -809,7 +809,6 @@ struct Control_cost : Cost {
 };
 
 // x - ub  <= 0
-
 struct State_bounds : Cost {
   // weight * ( x - ub ) <= 0
   //
@@ -837,10 +836,45 @@ struct State_bounds : Cost {
   virtual void calc(Eigen::Ref<Eigen::VectorXd> r,
                     const Eigen::Ref<const Eigen::VectorXd> &x) override;
 
-  // virtual void calcDiff(Eigen::Ref<Eigen::MatrixXd> Jx,
-  //                       Eigen::Ref<Eigen::MatrixXd> Ju,
-  //                       const Eigen::Ref<const Eigen::VectorXd> &x,
-  //                       const Eigen::Ref<const Eigen::VectorXd> &u);
+  virtual void calcDiff(Eigen::Ref<Eigen::VectorXd> Lx,
+                        Eigen::Ref<Eigen::VectorXd> Lu,
+                        Eigen::Ref<Eigen::MatrixXd> Lxx,
+                        Eigen::Ref<Eigen::MatrixXd> Luu,
+                        Eigen::Ref<Eigen::MatrixXd> Lxu,
+                        const Eigen::Ref<const Eigen::VectorXd> &x,
+                        const Eigen::Ref<const Eigen::VectorXd> &u) override;
+
+  virtual void calcDiff(Eigen::Ref<Eigen::VectorXd> Lx,
+                        Eigen::Ref<Eigen::MatrixXd> Lxx,
+                        const Eigen::Ref<const Eigen::VectorXd> &x) override;
+};
+
+struct Control_bounds : Cost {
+  // weight * ( x - ub ) <= 0
+  //
+  // NOTE:
+  // you can implement lower bounds
+  // weight = -w
+  // ub = lb
+  // DEMO:
+  // -w ( x - lb ) <= 0
+  // w ( x - lb ) >= 0
+  // w x >= w lb
+
+  Eigen::VectorXd ub;
+  Eigen::VectorXd weight;
+
+  Control_bounds(size_t nx, size_t nu, size_t nr, const Eigen::VectorXd &ub,
+                 const Eigen::VectorXd &weight);
+
+  virtual ~Control_bounds() = default;
+
+  virtual void calc(Eigen::Ref<Eigen::VectorXd> r,
+                    const Eigen::Ref<const Eigen::VectorXd> &x,
+                    const Eigen::Ref<const Eigen::VectorXd> &u) override;
+
+  virtual void calc(Eigen::Ref<Eigen::VectorXd> r,
+                    const Eigen::Ref<const Eigen::VectorXd> &x) override;
 
   virtual void calcDiff(Eigen::Ref<Eigen::VectorXd> Lx,
                         Eigen::Ref<Eigen::VectorXd> Lu,
@@ -854,6 +888,7 @@ struct State_bounds : Cost {
                         Eigen::Ref<Eigen::MatrixXd> Lxx,
                         const Eigen::Ref<const Eigen::VectorXd> &x) override;
 };
+
 struct State_cost : Cost {
 
   Eigen::VectorXd x_weight;

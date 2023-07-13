@@ -116,38 +116,14 @@ struct HeuNodeWithIndex {
   int index;
   const ob::State *state;
   double dist;
-  const ob::State *get_first_state() const { return state; }
+  const ob::State *getState() const { return state; }
 };
 
 struct HeuNode {
   const ob::State *state;
   double dist;
 
-  const ob::State *get_first_state() const { return state; }
-};
-
-class Motion {
-public:
-  std::vector<ob::State *> states;
-  std::vector<oc::Control *> actions;
-  Trajectory traj;
-
-  std::shared_ptr<ShiftableDynamicAABBTreeCollisionManager<double>>
-      collision_manager;
-  std::vector<fcl::CollisionObjectd *> collision_objects;
-
-  double cost;
-  size_t idx;
-  // std::string name;
-  bool disabled = false;
-
-  void print(std::ostream &out,
-             std::shared_ptr<ompl::control::SpaceInformation> &si);
-
-  const ob::State *get_first_state() const {
-    assert(states.size());
-    return states.front();
-  }
+  const ob::State *getState() const { return state; }
 };
 
 // forward declaration
@@ -166,10 +142,13 @@ typedef typename boost::heap::d_ary_heap<AStarNode *, boost::heap::arity<2>,
 // Node type (used for open and explored states)
 struct AStarNode {
   const ob::State *state;
+  Eigen::VectorXd state_eig;
 
   float fScore;
   float gScore;
   float hScore;
+
+  double get_cost() const { return gScore; }
 
   const AStarNode *came_from;
   fcl::Vector3d used_offset;
@@ -181,7 +160,17 @@ struct AStarNode {
   bool is_in_open = false;
   bool valid = true;
 
-  const ob::State *get_first_state() { return state; }
+  const ob::State *getState() { return state; }
+  const Eigen::VectorXd &getStateEig() { return state_eig; }
+
+  void write(std::ostream &out) {
+    out << state_eig.format(FMT) << std::endl;
+    out << "fScore: " << fScore << " gScore: " << gScore
+        << " hScore: " << hScore << std::endl;
+    out << " used_motion: " << used_motion
+        << " intermediate_state: " << intermediate_state
+        << " is_in_open: " << is_in_open << " valid: " << valid << std::endl;
+  }
 };
 
 float heuristic(std::shared_ptr<RobotOmpl> robot, const ob::State *s,
@@ -328,6 +317,14 @@ enum class Terminate_status {
   EMPTY_QUEUE = 2,
   MAX_TIME = 3,
   UNKNOWN = 4,
+  SOLVED_RAW = 5,
+  SOLVED_OPT = 6,
+};
+
+static const char *terminate_status_str[] = {
+    "SOLVED",  "MAX_EXPANDS", "EMPTY_QUEUE", "MAX_TIME",
+    "UNKNOWN", "SOLVED_RAW",  "SOLVED_OPT",
+
 };
 
 struct Out_info_db {
@@ -439,6 +436,10 @@ struct Result_db {
 
 struct Time_benchmark {
 
+  double time_alloc_primitive = 0.0;
+  double build_heuristic = 0.0;
+  double time_transform_primitive = 0.0;
+  double time_queue = 0.0;
   double time_hfun = 0.0;
   double time_nearestMotion = 0.0;
   double time_nearestNode = 0.0;
@@ -455,10 +456,38 @@ struct Time_benchmark {
   int states_tree_size = 0;
   double time_search = 0;
 
-  void write(std::ostream &out);
+  void inline write(std::ostream &out) {
 
-  std::map<std::string, std::string> to_data() const {
+    std::string be = "";
+    std::string af = ": ";
+
+    out << be << STR(time_alloc_primitive, af) << std::endl;
+    out << be << STR(time_transform_primitive, af) << std::endl;
+    out << be << STR(build_heuristic, af) << std::endl;
+    out << be << STR(time_queue, af) << std::endl;
+    out << be << STR(time_search, af) << std::endl;
+    out << be << STR(time_nearestMotion, af) << std::endl;
+    out << be << STR(time_nearestNode, af) << std::endl;
+    out << be << STR(time_nearestNode_add, af) << std::endl;
+    out << be << STR(time_nearestNode_search, af) << std::endl;
+    out << be << STR(time_collisions, af) << std::endl;
+    out << be << STR(prepare_time, af) << std::endl;
+    out << be << STR(total_time, af) << std::endl;
+    out << be << STR(expands, af) << std::endl;
+    out << be << STR(num_nn_motions, af) << std::endl;
+    out << be << STR(num_nn_states, af) << std::endl;
+    out << be << STR(num_col_motions, af) << std::endl;
+    out << be << STR(motions_tree_size, af) << std::endl;
+    out << be << STR(states_tree_size, af) << std::endl;
+    out << be << STR(time_hfun, af) << std::endl;
+  };
+
+  inline std::map<std::string, std::string> to_data() const {
     std::map<std::string, std::string> out;
+    out.insert(NAME_AND_STRING(time_alloc_primitive));
+    out.insert(NAME_AND_STRING(time_transform_primitive));
+    out.insert(NAME_AND_STRING(build_heuristic));
+    out.insert(NAME_AND_STRING(time_queue));
     out.insert(NAME_AND_STRING(time_search));
     out.insert(NAME_AND_STRING(time_nearestMotion));
     out.insert(NAME_AND_STRING(time_nearestNode));
@@ -481,10 +510,6 @@ struct Time_benchmark {
 // void generate_env(YAML::Node &env,
 //                   std::vector<fcl::CollisionObjectf *> &obstacles,
 //                   fcl::BroadPhaseCollisionManagerf *bpcm_env);
-
-void load_motion_primitives(const std::string &motionsFile, RobotOmpl &robot,
-                            std::vector<Motion> &motions, int max_motions,
-                            bool cut_actions, bool shuffle);
 
 double automatic_delta(double delta_in, double alpha, RobotOmpl &robot,
                        ompl::NearestNeighbors<Motion *> &T_m);
@@ -581,11 +606,6 @@ bool check_edge_at_resolution_new(const Eigen::VectorXd &start,
 void dbastar(const Problem &problem, const Options_dbastar &options_dbastar,
              Trajectory &traj_out, Out_info_db &out_info_db);
 
-void load_motion_primitives_new(const std::string &motionsFile,
-                                RobotOmpl &robot, std::vector<Motion> &motions,
-                                int max_motions, bool cut_actions, bool shuffle,
-                                bool compute_col);
-
 void write_heu_map(const std::vector<Heuristic_node> &heu_map, const char *file,
                    const char *header = nullptr);
 
@@ -593,6 +613,3 @@ void generate_heuristic_map(const Problem &problem,
                             std::shared_ptr<RobotOmpl> robot_ompl,
                             const Options_dbastar &options_dbastar,
                             std::vector<Heuristic_node> &heu_map);
-
-void traj_to_motion(const Trajectory &traj, RobotOmpl &robot,
-                    Motion &motion_out, bool compute_col);
