@@ -9,8 +9,8 @@ from robot_viewer import RobotViewer
 from pathlib import Path
 import sys
 sys.path.append(str(Path(__file__).parent))
-from pyplot3d.uav import Uav
-from pyplot3d.utils import ypr_to_R
+from pyplot3d2.uav import Uav
+from pyplot3d2.utils import ypr_to_R
 
 from scipy.spatial.transform import Rotation as RR
 
