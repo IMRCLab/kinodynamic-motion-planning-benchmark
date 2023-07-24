@@ -1,5 +1,7 @@
 # kinodynamic-motion-planning-benchmark
 
+NOTE: This repository is now Deprecated. Move to [Dynoplan](https://github.com/quimortiz/dynoplan) and [Dynobench](https://github.com/quimortiz/dynobench).
+
 This repository compares different motion planners for dynamical systems.
 
 The following algorithms are currently supported:
